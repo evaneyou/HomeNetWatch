@@ -170,6 +170,48 @@ the tunnel destroys the namespace `rtnp` is attached to: the container still rep
 nothing in any log. The script recreates `rtnp` whenever `wireguard` is recreated.
 Named services work too: `./scripts/deploy.sh server dashboard`.
 
+## Patching the server
+
+Ubuntu LTS installs security updates by itself (`unattended-upgrades`). Everything else, and the
+reboot that a new kernel needs, is done by hand. Plan for a few minutes of downtime: the Pi's
+results simply resume afterwards.
+
+1. **Back up first**, because Docker and the tunnel restart: `./scripts/backup.sh`.
+2. **See what is waiting**, without installing anything:
+
+   ```bash
+   sudo apt-get update
+   apt list --upgradable
+   cat /var/run/reboot-required.pkgs 2>/dev/null   # present when a reboot is already pending
+   ```
+
+3. **Install the updates:**
+
+   ```bash
+   sudo NEEDRESTART_MODE=a DEBIAN_FRONTEND=noninteractive apt-get -y \
+     -o Dpkg::Options::=--force-confold upgrade
+   ```
+
+   When `docker-ce` or `containerd.io` is in the list, Docker restarts and so do all the containers
+   (about a minute offline). Containers come back on their own (`restart: unless-stopped`) and the
+   database and WireGuard volumes are untouched. Never run `docker volume rm` or `docker compose down -v`.
+4. **Reboot when `/var/run/reboot-required` exists:** `sudo systemctl reboot`. A new kernel is only
+   used after this. Keep a way to reach the cloud console, because a kernel that fails to boot has to be
+   rolled back there by choosing the previous kernel at start-up.
+5. **Check afterwards:**
+   - `uname -r` shows the new kernel and `/var/run/reboot-required` is gone.
+   - `docker compose ps` shows every service up, with `db` and `librespeed` healthy.
+   - `docker compose exec wireguard wg show` shows recent handshakes.
+   - `https://<domain>/api/v1/healthz` returns 200, and the dashboard loads.
+   - From the Pi, `10.7.0.1:8999`, `:8080` and `:8847` accept a connection, and new results arrive
+     within a minute or two. If `8999` refuses, `rtnp` lost the tunnel's network namespace (see
+     [Updating](#updating)): `docker compose up -d --force-recreate rtnp`.
+   - Errors in `docker compose logs server` from the moment of the reboot are expected: the database
+     stops before the server. New errors after start-up are not.
+
+A new Ubuntu release (`do-release-upgrade`) is a larger change than any of this. Take a backup and a
+cloud snapshot, and do it on its own, not as part of routine patching.
+
 ## Troubleshooting
 
 | Symptom | Check |

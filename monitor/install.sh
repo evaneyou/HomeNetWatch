@@ -49,6 +49,16 @@ if [ -n "$need" ]; then
   apt-get update
   apt-get install -y $need
 fi
+# Keep the Wi-Fi link radio awake so power-save naps do not add latency spikes to probes.
+install -d -m 755 /etc/NetworkManager/conf.d
+cat > /etc/NetworkManager/conf.d/hnw-wifi-powersave.conf <<'EOF'
+[connection]
+wifi.powersave = 2
+EOF
+link_wifi="$(python3 -c 'import sys; sys.path.insert(0, "/opt/monitor"); from checks import wifi_roles; print(wifi_roles().get("link") or "")' 2>/dev/null || true)"
+if [ -n "$link_wifi" ] && command -v iw >/dev/null 2>&1; then
+  iw dev "$link_wifi" set power_save off 2>/dev/null || true
+fi
 cat > /usr/local/bin/hnw-reset <<'EOF'
 #!/bin/sh
 set -eu

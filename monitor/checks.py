@@ -121,6 +121,16 @@ def scan_may_run(*, role: str, last_link_scan: float, now: float, link_busy: boo
     return now - last_link_scan >= LINK_SCAN_FLOOR
 
 
+def _is_monitor_vif(entry: Path) -> bool:
+    if entry.name.endswith("mon"):
+        return True
+    try:
+        # 803 is ARPHRD_IEEE80211_RADIOTAP (Kismet / airmon monitor interface).
+        return (entry / "type").read_text(encoding="utf-8").strip() == "803"
+    except OSError:
+        return False
+
+
 def _wireless_entries(root: Path) -> list[Path]:
     if not root.is_dir():
         return []
@@ -128,6 +138,8 @@ def _wireless_entries(root: Path) -> list[Path]:
     for entry in sorted(root.iterdir()):
         name = entry.name
         if name == "lo" or name.startswith(("wg", "tun", "docker", "veth", "br-", "_")):
+            continue
+        if _is_monitor_vif(entry):
             continue
         if (entry / "wireless").is_dir():
             found.append(entry)
@@ -352,9 +364,15 @@ def check_http(test: dict) -> dict:
     started_at = _now()
     stages: list[dict] = []
     url = str(test.get("target") or "")
-    parsed = urlsplit(url)
-    host = parsed.hostname
-    if parsed.scheme not in {"http", "https"} or not host:
+    try:
+        parsed = urlsplit(url)
+        host = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        parsed = urlsplit("")
+        host = None
+        port = 80
+    if parsed.scheme not in {"http", "https"} or not host or not (1 <= port <= 65535):
         return _result(
             test,
             started_at,
@@ -363,7 +381,6 @@ def check_http(test: dict) -> dict:
             {"rtt_ms": 0.0, "loss_pct": 100.0, "total_ms": 0.0},
             "Web service target must be an http or https URL",
         )
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
     path = parsed.path or "/"
     if parsed.query:
         path = f"{path}?{parsed.query}"

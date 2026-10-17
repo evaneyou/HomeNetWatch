@@ -125,6 +125,8 @@ def client_config(
         f"PostUp = ip rule add fwmark {fwmark} lookup {table} priority {rule_priority}",
         f"PostUp = {_pin_command(link, table, source_priority)}",
         f"PostDown = ip rule del fwmark {fwmark} lookup {table} priority {rule_priority} 2>/dev/null || true",
+        f"PostDown = ip rule del lookup {table} priority {source_priority} 2>/dev/null || true",
+        f"PostDown = ip route flush table {table} 2>/dev/null || true",
         f"PostDown = ip route del {server_ip}/32 dev %i 2>/dev/null || true",
         "",
         "[Peer]",

@@ -32,6 +32,13 @@ def joined_link() -> tuple[str, str]:
     if not iface:
         return "", ""
     try:
+        subprocess.run(
+            ["iw", "dev", iface, "set", "power_save", "off"],
+            check=False,
+            timeout=3,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         text = subprocess.check_output(
             ["iw", "dev", iface, "link"],
             text=True,

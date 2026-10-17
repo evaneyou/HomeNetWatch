@@ -46,6 +46,7 @@ def _connect(host: str, timeout: float = 8.0) -> http.client.HTTPConnection:
 def measure_ping(host: str, count: int = 8) -> tuple[Optional[float], Optional[float]]:
     """Round trip and jitter in ms: a request over one connection, the first (which connects) not counted."""
     times: list[float] = []
+    conn: Optional[http.client.HTTPConnection] = None
     try:
         conn = _connect(host, 5.0)
         for index in range(count + 1):
@@ -54,11 +55,11 @@ def measure_ping(host: str, count: int = 8) -> tuple[Optional[float], Optional[f
             conn.getresponse().read()
             if index:
                 times.append((time.perf_counter() - started) * 1000)
-        conn.close()
-    except OSError:
+    except (OSError, http.client.HTTPException):
         pass
-    except http.client.HTTPException:
-        pass
+    finally:
+        if conn is not None:
+            conn.close()
     if not times:
         return None, None
     gaps = [abs(b - a) for a, b in zip(times, times[1:])]
@@ -68,6 +69,7 @@ def measure_ping(host: str, count: int = 8) -> tuple[Optional[float], Optional[f
 def _download_worker(host: str, index: int, counters: list[int], stop: threading.Event) -> None:
     buffer = bytearray(READ_BUFFER)
     while not stop.is_set():
+        conn: Optional[http.client.HTTPConnection] = None
         try:
             conn = _connect(host)
             conn.request("GET", f"/garbage.php?ckSize=200&r={time.time_ns()}")
@@ -77,14 +79,17 @@ def _download_worker(host: str, index: int, counters: list[int], stop: threading
                 if not got:
                     break
                 counters[index] += got
-            conn.close()
         except (OSError, http.client.HTTPException):
             if stop.wait(0.2):
                 return
+        finally:
+            if conn is not None:
+                conn.close()
 
 
 def _upload_worker(host: str, index: int, counters: list[int], stop: threading.Event) -> None:
     while not stop.is_set():
+        conn: Optional[http.client.HTTPConnection] = None
         try:
             conn = _connect(host)
             conn.putrequest("POST", f"/empty.php?r={time.time_ns()}")
@@ -98,10 +103,12 @@ def _upload_worker(host: str, index: int, counters: list[int], stop: threading.E
                 counters[index] += len(UP_CHUNK)
             if sent >= UP_BODY_BYTES:
                 conn.getresponse().read()
-            conn.close()
         except (OSError, http.client.HTTPException):
             if stop.wait(0.2):
                 return
+        finally:
+            if conn is not None:
+                conn.close()
 
 
 def run_phase(host: str, phase: str, seconds: float, emit: Emit, cancelled: threading.Event, seq_start: int = 0) -> tuple[Optional[float], int]:

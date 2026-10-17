@@ -186,6 +186,31 @@ def test_agent_module_matches_the_path_rule():
     ]
 
 
+def test_agent_key_writes_skip_unchanged_files(tmp_path: Path):
+    path = Path(__file__).resolve().parents[2] / "monitor" / "synthetic.py"
+    if not path.is_file():
+        return
+    spec = importlib.util.spec_from_file_location("monitor_synthetic_keys", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(path.parent))
+    module.KEY_PATH = tmp_path / "rtnp.key"
+    module.SRTP_PATH = tmp_path / "rtnp-srtp.key"
+    module._write_key("secret-key")
+    key_inode = module.KEY_PATH.stat().st_ino
+    module._write_key("secret-key")
+    assert module.KEY_PATH.stat().st_ino == key_inode
+    srtp_hex = "ab" * 30
+    module._write_srtp(srtp_hex)
+    srtp_inode = module.SRTP_PATH.stat().st_ino
+    module._write_srtp(srtp_hex)
+    assert module.SRTP_PATH.stat().st_ino == srtp_inode
+
+
 def test_recommended_profiles_and_comparison_report(client, db, monitor_token):
     if db.scalar(select(User).where(User.username == "admin")) is None:
         db.add(User(username="admin", password_hash=hash_password("admin-change-me"), role=UserRole.admin, is_active=True))

@@ -332,12 +332,21 @@ def _write_srtp(hex_key: str) -> None:
         return
     if len(raw) != 30:
         return
-    SRTP_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SRTP_PATH.write_bytes(raw)
     try:
-        os.chmod(SRTP_PATH, 0o600)
+        if SRTP_PATH.is_file() and SRTP_PATH.read_bytes() == raw:
+            return
     except OSError:
         pass
+    SRTP_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SRTP_PATH.with_name(f"{SRTP_PATH.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(raw)
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    tmp.replace(SRTP_PATH)
 
 
 def _budget() -> dict[str, Any]:
@@ -354,7 +363,9 @@ def _budget() -> dict[str, Any]:
 def _save_budget(state: dict[str, Any]) -> None:
     try:
         BUDGET_PATH.parent.mkdir(parents=True, exist_ok=True)
-        BUDGET_PATH.write_text(json.dumps(state), encoding="utf-8")
+        tmp = BUDGET_PATH.with_name(f"{BUDGET_PATH.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(state), encoding="utf-8")
+        tmp.replace(BUDGET_PATH)
     except OSError:
         return
 
@@ -381,12 +392,22 @@ def _charge(payload: dict[str, Any]) -> bool:
 
 
 def _write_key(key: str) -> None:
-    KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    KEY_PATH.write_text(key + "\n", encoding="ascii")
+    content = key + "\n"
     try:
-        os.chmod(KEY_PATH, 0o600)
+        if KEY_PATH.is_file() and KEY_PATH.read_text(encoding="ascii") == content:
+            return
     except OSError:
         pass
+    KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = KEY_PATH.with_name(f"{KEY_PATH.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="ascii") as handle:
+        handle.write(content)
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    tmp.replace(KEY_PATH)
 
 
 def route_get_args(target: str, source: Optional[str] = None) -> list[str]:
@@ -450,9 +471,12 @@ def last_failure() -> str:
 
 def _reap_strays() -> None:
     """A reload leaves the previous senders running. Stop any this process did not start."""
+    proc_root = Path("/proc")
+    if not proc_root.is_dir():
+        return
     with _lock:
         ours = {item["proc"].pid for item in _running.values()}
-    for entry in Path("/proc").iterdir():
+    for entry in proc_root.iterdir():
         if not entry.name.isdigit():
             continue
         pid = int(entry.name)
@@ -469,9 +493,43 @@ def _reap_strays() -> None:
         except OSError:
             pass
         try:
-            os.waitpid(pid, os.WNOHANG)
+            os.waitpid(pid, 0)
         except OSError:
             pass
+
+
+_routing_pinned: set[tuple[str, str, str]] = set()
+
+
+def _ensure_link_routing(link: str, interface: Optional[str], source: Optional[str]) -> None:
+    """Ensure policy routing table and WireGuard fwmark exist for this physical link."""
+    if not interface or not source or not Path("/proc").is_dir():
+        return
+    key = (link, interface, source)
+    with _lock:
+        if key in _routing_pinned:
+            return
+    fwmark, table, wg_iface = (51821, 101, "wg1") if link == "wireless" else (51820, 100, "wg0")
+    source_priority = table + 1000
+    script = (
+        f"wg set {wg_iface} fwmark {fwmark} 2>/dev/null || true; "
+        f"ip rule del fwmark {fwmark} lookup {table} priority {table} 2>/dev/null || true; "
+        f"ip rule add fwmark {fwmark} lookup {table} priority {table} 2>/dev/null || true; "
+        f"GW=$(ip route show default dev {interface} 2>/dev/null | awk '{{print $3; exit}}'); "
+        f"LINK=$(ip -4 route show dev {interface} scope link 2>/dev/null | awk '{{print $1; exit}}'); "
+        f"if [ -n \"$LINK\" ]; then ip route replace \"$LINK\" dev {interface} table {table} 2>/dev/null || true; fi; "
+        f"if [ -n \"$GW\" ]; then ip route replace default via \"$GW\" dev {interface} table {table} 2>/dev/null || true; "
+        f"else ip route replace default dev {interface} table {table} 2>/dev/null || true; fi; "
+        f"ip rule del from {source} lookup {table} priority {table} 2>/dev/null || true; "
+        f"ip rule del from {source} lookup {table} priority {source_priority} 2>/dev/null || true; "
+        f"ip rule add from {source} lookup {table} priority {source_priority} 2>/dev/null || true"
+    )
+    try:
+        subprocess.run(["sh", "-c", script], check=False, capture_output=True, timeout=5)
+        with _lock:
+            _routing_pinned.add(key)
+    except (OSError, subprocess.TimeoutExpired):
+        return
 
 
 def sync(config: dict, get_json: Callable, post_json: Callable) -> bool:
@@ -526,6 +584,7 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
             raise ValueError("Wi-Fi has no address")
         if link == "wireless" and not BIND_LIB.is_file():
             raise ValueError("Wi-Fi traffic needs the interface binding")
+        _ensure_link_routing(link, interface, source)
         route = _route_text(target, source)
         if route and not route_is_physical(route, plan["interface"]):
             device = route_device(route) or ""
@@ -634,7 +693,11 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
             )
         except (OSError, ValueError, KeyError):
             continue
-    code = proc.wait()
+    try:
+        code = proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        code = proc.wait(timeout=5)
     note = ""
     if proc.stderr is not None:
         try:
@@ -642,6 +705,16 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
             note = lines[-1].strip()[:200] if lines else ""
         except (OSError, ValueError):
             note = ""
+        finally:
+            try:
+                proc.stderr.close()
+            except OSError:
+                pass
+    if proc.stdout is not None:
+        try:
+            proc.stdout.close()
+        except OSError:
+            pass
     with _lock:
         state = _running.get(item)
         mode = state["mode"] if state else None
@@ -711,3 +784,14 @@ def _stop(item: tuple[str, str]) -> None:
     proc = state["proc"]
     if proc.poll() is None:
         proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def stop_all() -> None:
+    with _lock:
+        items = list(_running)
+    for item in items:
+        _stop(item)

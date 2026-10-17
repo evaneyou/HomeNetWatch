@@ -43,6 +43,8 @@ def test_usb_mediatek_is_the_radio_when_a_builtin_carries_traffic(tmp_path: Path
     _iface(tmp_path, "wlan0", builtin, "1")
     _iface(tmp_path, "wlan1", generic, "0", "usb:v0b05p")
     _iface(tmp_path, "wlan2", mediatek, "0", "usb:v0E8Dp7615d0000")
+    _iface(tmp_path, "hnwradio0mon", mediatek, "1", "usb:v0E8Dp7615d0000")
+    (tmp_path / "hnwradio0mon" / "type").write_text("803\n", encoding="utf-8")
     roles = checks.wifi_roles(tmp_path, ipv4_of=lambda name: "10.0.0.2" if name == "wlan0" else None)
     assert roles["link"] == "wlan0"
     assert roles["radio"] == "wlan2"

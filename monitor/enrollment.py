@@ -79,8 +79,8 @@ def _write_secret(path: Path, text: str) -> None:
 
 def _openssl(args: list[str], payload: bytes | None = None) -> bytes:
     try:
-        result = subprocess.run(["openssl", *args], input=payload, capture_output=True, check=False)
-    except OSError as exc:
+        result = subprocess.run(["openssl", *args], input=payload, capture_output=True, check=False, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError("openssl is required for enrollment") from exc
     if result.returncode != 0:
         raise RuntimeError("openssl is required for enrollment")
@@ -340,6 +340,8 @@ def tunnel_config_text(
         f"PostUp = ip rule add fwmark {fwmark} lookup {table} priority {rule_priority}",
         f"PostUp = {_pin_command(chosen, table, source_priority)}",
         f"PostDown = ip rule del fwmark {fwmark} lookup {table} priority {rule_priority} 2>/dev/null || true",
+        f"PostDown = ip rule del lookup {table} priority {source_priority} 2>/dev/null || true",
+        f"PostDown = ip route flush table {table} 2>/dev/null || true",
         f"PostDown = ip route del {server_ip}/32 dev %i 2>/dev/null || true",
         "",
         "[Peer]",
@@ -379,8 +381,8 @@ def apply_tunnels(wired_private: str, wireless_private: str, tunnels: list[dict]
         _write_secret(directory / f"{iface}.conf", text)
         wrote = True
         if directory == Path("/etc/wireguard"):
-            subprocess.run(["systemctl", "enable", f"wg-quick@{iface}"], check=False)
-            subprocess.run(["systemctl", "restart", f"wg-quick@{iface}"], check=False)
+            subprocess.run(["systemctl", "enable", f"wg-quick@{iface}"], check=False, timeout=15)
+            subprocess.run(["systemctl", "restart", f"wg-quick@{iface}"], check=False, timeout=15)
     return wrote
 
 def _safe_error(detail: str, config: dict) -> str:

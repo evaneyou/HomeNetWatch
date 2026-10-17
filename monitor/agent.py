@@ -156,12 +156,15 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     def _send(self, code: int, body: bytes, content_type: str) -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except OSError:
+            return
 
     def do_GET(self) -> None:
         if self.path.startswith("/api/status"):
@@ -191,7 +194,13 @@ class Handler(BaseHTTPRequestHandler):
         if not self.path.startswith("/api/setup"):
             self._send(404, b"{}", "application/json")
             return
-        length = int(self.headers.get("Content-Length") or "0")
+        try:
+            length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            length = -1
+        if length < 0 or length > 65536:
+            self._send(400, json.dumps({"detail": "Invalid request"}).encode("utf-8"), "application/json")
+            return
         try:
             incoming = json.loads(self.rfile.read(length).decode("utf-8"))
         except (UnicodeError, json.JSONDecodeError):
@@ -254,9 +263,13 @@ def ensure_health_loop() -> None:
     if start_synthetic:
         threading.Thread(target=scheduler.synthetic_loop, name="synthetic", daemon=True).start()
     if start_speedtest:
+        def _locked_config() -> dict:
+            with state._lock:
+                return load_config()
+
         threading.Thread(
             target=speedtest.poll_loop,
-            args=(state._stop, load_config, health.get_json, health.post_json),
+            args=(state._stop, _locked_config, health.get_json, health.post_json),
             name="speedtest",
             daemon=True,
         ).start()

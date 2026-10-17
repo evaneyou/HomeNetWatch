@@ -30,6 +30,7 @@ def honor_restart(config: dict, restart: bool) -> None:
             config.get("token"),
             config.get("name"),
         )
+        synthetic.stop_all()
         os.execv(sys.executable, [sys.executable, *sys.argv])
     except (OSError, urllib.error.URLError, TimeoutError, ValueError):
         with state._lock:

@@ -38,6 +38,9 @@ function ChannelView({ snapshot, ctx }: { snapshot: RfChannelSnapshot; ctx: AirC
   const advice = ctx.overview?.bands.find((item) => item.band === snapshot.band);
   const recommended = advice?.recommended_channel ?? snapshot.recommended_channel;
   const reason = advice?.reason ?? snapshot.reason;
+  // "Your 2.4 GHz band is crowded. Channel 1 would be quieter than channel 6." restates the title and the
+  // Busiest channel tile below it, so the line is only shown when it says something else.
+  const extra = /crowded/i.test(reason) ? "" : reason;
   const strongest = shown[0];
   const busiest = advice?.busiest_channel;
   const onBusiest = busiest == null ? 0 : snapshot.series.filter((series) => series.channel === busiest).length;
@@ -72,9 +75,9 @@ function ChannelView({ snapshot, ctx }: { snapshot: RfChannelSnapshot; ctx: AirC
             </svg>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div className="air-kicker">Recommended</div>
+            <div className="air-kicker">Recommended for {snapshot.band} GHz</div>
             <h2>Try channel {recommended}</h2>
-            <p className="air-reason">{reason}</p>
+            {extra ? <p className="air-reason">{extra}</p> : null}
           </div>
         </div>
         <div className="npv-stats">
@@ -109,7 +112,7 @@ function ChannelView({ snapshot, ctx }: { snapshot: RfChannelSnapshot; ctx: AirC
             </text>
             <rect x={shadeLeft + 12} y={30} width={Math.max(shadeRight - shadeLeft - 24, 120)} height={28} rx={14} fill="rgba(94,234,212,0.22)" />
             <text x={(shadeLeft + shadeRight) / 2} y={49} fill="#5eead4" fontSize={14} fontWeight={800} textAnchor="middle">
-              Best pick · Ch {recommended}
+              Quietest zone
             </text>
             {axis.labels.map((channel) => {
               const load = channelLoad(snapshot, channel);

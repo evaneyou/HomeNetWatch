@@ -213,7 +213,7 @@ export default function AirwavesLayout() {
         </div>
       ) : null}
 
-      {overview?.headline ? <p className="aw-advice">{overview.headline}</p> : null}
+      {overview?.headline && loc.pathname.replace(/\/$/, "") === "/airwaves" ? <p className="aw-advice">{overview.headline}</p> : null}
       <Outlet context={state} />
     </div>
   );

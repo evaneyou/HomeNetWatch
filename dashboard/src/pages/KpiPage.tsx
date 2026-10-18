@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Area,
@@ -64,9 +64,11 @@ const PERIODS: { key: Period; label: string; text: string }[] = [
 const C = { good: "#4fd1b5", warn: "#ffc24d", bad: "#ff8a7a", blue: "#6aa8ff", violet: "#a78bfa", grid: "#232d49", axis: "#9aa6c4" };
 const LINKS = { wired: "Wired", wireless: "Wi-Fi" } as const;
 
-/** Availability shown to two decimals and never rounded up to 100: 99.996 reads 99.99%. */
+/** Two decimals, never rounded up to 100: 99.996 reads 99.99%. A whole 100 or 0 has no decimals. */
 function pct(value: number | null | undefined, digits = 2): string {
   if (value == null || Number.isNaN(value)) return "—";
+  if (value >= 100) return "100%";
+  if (value === 0) return "0%";
   const scale = 10 ** digits;
   return `${(Math.floor(value * scale + 1e-9) / scale).toFixed(digits)}%`;
 }
@@ -185,11 +187,40 @@ function niceDay(iso: string): string {
   return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
-/** The stored daily KPIs, newest first. Pick a day to open its 24 hours. */
-function DailyHistory({ selected, onPick }: { selected: string | null; onPick: (day: string) => void }) {
+const DAY_TONES = { good: "Met every target", warn: "Close to a target", bad: "Missed a target", none: "No data" } as const;
+
+/** The worst result of the day against the targets, as one colour. */
+function dayTone(row: DailyRow | null, targets: Report["targets"]): Tone {
+  if (!row) return "none";
+  const tones = [
+    availabilityTone(row.internet, targets.internet),
+    availabilityTone(row.voice, targets.voice),
+    availabilityTone(row.video, targets.video),
+    lossTone(row.loss, targets.loss_pct),
+  ].filter((tone) => tone !== "none");
+  if (tones.length === 0) return "none";
+  return tones.includes("bad") ? "bad" : tones.includes("warn") ? "warn" : "good";
+}
+
+function missed(row: DailyRow, targets: Report["targets"]): string[] {
+  const out: string[] = [];
+  if (availabilityTone(row.internet, targets.internet) !== "good" && row.internet != null) out.push("Internet");
+  if (availabilityTone(row.voice, targets.voice) !== "good" && row.voice != null) out.push("Voice");
+  if (availabilityTone(row.video, targets.video) !== "good" && row.video != null) out.push("Video");
+  if (lossTone(row.loss, targets.loss_pct) !== "good" && row.loss != null) out.push("Packet drop");
+  return out;
+}
+
+type Cell = { day: string; row: DailyRow | null; pad?: boolean };
+
+/** One coloured square per day. Hover (or focus) a square for that day's numbers, click it to open the day. */
+function DailyHistory({ selected, onPick, targets, since }: { selected: string | null; onPick: (day: string) => void; targets: Report["targets"]; since: string | null }) {
+  // Start no earlier than the first day with data, so the grid is not mostly empty.
+  const clamp = (day: string) => (since && day < since ? since : day);
   const [last, setLast] = useState(isoToday());
-  const [first, setFirst] = useState(shiftDay(isoToday(), -29));
-  const valid = ISO_DAY.test(first) && ISO_DAY.test(last) && first <= last;
+  const [first, setFirst] = useState(() => clamp(shiftDay(isoToday(), -89)));
+  const [tip, setTip] = useState<{ cell: Cell; x: number; y: number } | null>(null);
+  const valid = ISO_DAY.test(first) && ISO_DAY.test(last) && first <= last && first >= shiftDay(last, -400);
   const rows = useQuery({
     queryKey: ["kpi-daily", first, last],
     queryFn: () => api.kpiDaily(first, last) as Promise<DailyRow[]>,
@@ -198,6 +229,29 @@ function DailyHistory({ selected, onPick }: { selected: string | null; onPick: (
     placeholderData: (previous) => previous,
   });
   const list = valid ? rows.data ?? [] : [];
+
+  // Every day in the range, oldest first, so the calendar has no holes. Weeks run top to bottom, Monday first.
+  const cells = useMemo(() => {
+    if (!valid) return [] as Cell[];
+    const byDay = new Map(list.map((row) => [row.day, row]));
+    const days: Cell[] = [];
+    for (let day = first; day <= last; day = shiftDay(day, 1)) days.push({ day, row: byDay.get(day) ?? null });
+    const [year, month, date] = first.split("-").map(Number);
+    const lead = (new Date(Date.UTC(year, month - 1, date)).getUTCDay() + 6) % 7;
+    return [...Array.from({ length: lead }, (_unused, index) => ({ day: `pad-${index}`, row: null, pad: true }) as Cell), ...days];
+  }, [list, first, last, valid]);
+  const weeks = Math.ceil(cells.length / 7);
+  const monthLabels = useMemo(() => {
+    const labels: string[] = [];
+    let previous = "";
+    for (let week = 0; week < weeks; week += 1) {
+      const firstReal = cells.slice(week * 7, week * 7 + 7).find((cell) => !cell.pad);
+      const name = firstReal ? new Date(`${firstReal.day}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", timeZone: "UTC" }) : "";
+      labels.push(name && name !== previous ? name : "");
+      if (name) previous = name;
+    }
+    return labels;
+  }, [cells, weeks]);
 
   function download() {
     const head = ["Date", "Internet %", "Wired %", "Wi-Fi %", "Voice %", "Video %", "Packet drop %", "Offline min", "Outages"];
@@ -211,11 +265,20 @@ function DailyHistory({ selected, onPick }: { selected: string | null; onPick: (
     URL.revokeObjectURL(link.href);
   }
 
+  function show(cell: Cell, element: HTMLElement) {
+    const box = element.getBoundingClientRect();
+    const frame = element.closest(".kpi-heat")?.getBoundingClientRect();
+    if (!frame) return;
+    const centre = box.left - frame.left + box.width / 2;
+    // Keep the card inside the panel when the square is near an edge.
+    setTip({ cell, x: Math.min(Math.max(centre, 115), Math.max(115, frame.width - 115)), y: box.top - frame.top });
+  }
+
   return (
     <section className="kpi-panel kpi-history">
       <header>
         <h3>Daily KPI history</h3>
-        <span>One stored record per day. Pick a day to open its 24 hours.</span>
+        <span>One square per day, coloured against the targets. Hover for the numbers, click to open the day.</span>
       </header>
       <div className="kpi-filter">
         <label>
@@ -237,7 +300,7 @@ function DailyHistory({ selected, onPick }: { selected: string | null; onPick: (
               type="button"
               onClick={() => {
                 setLast(isoToday());
-                setFirst(shiftDay(isoToday(), -Number(days)));
+                setFirst(clamp(shiftDay(isoToday(), -Number(days))));
               }}
             >
               {label}
@@ -248,41 +311,89 @@ function DailyHistory({ selected, onPick }: { selected: string | null; onPick: (
           Download CSV
         </button>
       </div>
-      {!valid ? <p className="kpi-clear muted">Choose a start date that is on or before the end date.</p> : null}
-      <div className="kpi-scroll" role="region" aria-label="Daily KPI records" tabIndex={0}>
-        <table className="kpi-table kpi-daily">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Internet</th>
-              <th>Wired</th>
-              <th>Wi-Fi</th>
-              <th>Voice</th>
-              <th>Video</th>
-              <th>Packet drop</th>
-              <th>Offline</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.map((row) => (
-              <tr key={row.day} className={row.day === selected ? "is-selected" : ""}>
-                <th scope="row">
-                  <button type="button" onClick={() => onPick(row.day)}>
-                    {niceDay(row.day)}
-                  </button>
-                </th>
-                <td className={`tone-${availabilityTone(row.internet, 99.9)}`}>{pct(row.internet)}</td>
-                <td className={`tone-${availabilityTone(row.internet_wired, 99.9)}`}>{pct(row.internet_wired)}</td>
-                <td className={`tone-${availabilityTone(row.internet_wireless, 99.9)}`}>{pct(row.internet_wireless)}</td>
-                <td className={`tone-${availabilityTone(row.voice, 99.5)}`}>{pct(row.voice)}</td>
-                <td className={`tone-${availabilityTone(row.video, 99.5)}`}>{pct(row.video)}</td>
-                <td className={`tone-${lossTone(row.loss, 1)}`}>{pct(row.loss)}</td>
-                <td>{row.offline_minutes > 0 ? minutes(row.offline_minutes) : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {valid && list.length === 0 ? <p className="kpi-clear muted kpi-none">No stored days in this range.</p> : null}
+      {!valid ? <p className="kpi-clear muted">Choose a start date that is on or before the end date, within about a year.</p> : null}
+
+      <div className="kpi-heat" onMouseLeave={() => setTip(null)}>
+        <div className="kpi-heat-scroll">
+          <div className="kpi-heat-body">
+            <div className="kpi-heat-months" style={{ gridTemplateColumns: `repeat(${weeks}, var(--cell))` }} aria-hidden="true">
+              {monthLabels.map((name, index) => (
+                <span key={index}>{name}</span>
+              ))}
+            </div>
+            <div className="kpi-heat-main">
+              <div className="kpi-heat-days" aria-hidden="true">
+                <span>Mon</span>
+                <span />
+                <span>Wed</span>
+                <span />
+                <span>Fri</span>
+                <span />
+                <span />
+              </div>
+              <div className="kpi-heat-grid" role="list" aria-label="Daily results">
+                {cells.map((cell) =>
+                  cell.pad ? (
+                    <i key={cell.day} className="kpi-cell pad" aria-hidden="true" />
+                  ) : (
+                    <button
+                      key={cell.day}
+                      type="button"
+                      role="listitem"
+                      className={`kpi-cell tone-${dayTone(cell.row, targets)}${cell.day === selected ? " is-selected" : ""}`}
+                      aria-label={`${niceDay(cell.day)}: ${cell.row ? (missed(cell.row, targets).length ? `missed ${missed(cell.row, targets).join(", ")}` : "met every target") : "no data"}`}
+                      onMouseEnter={(event) => show(cell, event.currentTarget)}
+                      onFocus={(event) => show(cell, event.currentTarget)}
+                      onBlur={() => setTip(null)}
+                      onClick={() => onPick(cell.day)}
+                    />
+                  ),
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+        {tip ? (
+          <div className="kpi-tip" role="tooltip" style={{ left: tip.x, top: tip.y }}>
+            <b>{niceDay(tip.cell.day)}</b>
+            {tip.cell.row ? (
+              <>
+                <span className={`kpi-tip-status tone-${dayTone(tip.cell.row, targets)}`}>
+                  {missed(tip.cell.row, targets).length ? `Below target: ${missed(tip.cell.row, targets).join(", ")}` : DAY_TONES.good}
+                </span>
+                <dl>
+                  <dt>Internet</dt>
+                  <dd>
+                    {pct(tip.cell.row.internet)} <small>wired {pct(tip.cell.row.internet_wired)} · Wi-Fi {pct(tip.cell.row.internet_wireless)}</small>
+                  </dd>
+                  <dt>Voice</dt>
+                  <dd>{pct(tip.cell.row.voice)}</dd>
+                  <dt>Video</dt>
+                  <dd>{pct(tip.cell.row.video)}</dd>
+                  <dt>Packet drop</dt>
+                  <dd>{pct(tip.cell.row.loss)}</dd>
+                  <dt>Offline</dt>
+                  <dd>
+                    {tip.cell.row.offline_minutes > 0 ? minutes(tip.cell.row.offline_minutes) : "none"}
+                    {tip.cell.row.outages ? ` · ${tip.cell.row.outages} outage${tip.cell.row.outages === 1 ? "" : "s"}` : ""}
+                  </dd>
+                  <dt>Latency</dt>
+                  <dd>{tip.cell.row.rtt_ms == null ? "—" : `${num(tip.cell.row.rtt_ms)} ms`}</dd>
+                </dl>
+              </>
+            ) : (
+              <span className="kpi-tip-status tone-none">No data for this day</span>
+            )}
+          </div>
+        ) : null}
+        <ul className="kpi-heat-legend" aria-label="Colour key">
+          {(["good", "warn", "bad", "none"] as const).map((tone) => (
+            <li key={tone}>
+              <i className={`kpi-cell tone-${tone}`} aria-hidden="true" />
+              {DAY_TONES[tone]}
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );
@@ -476,7 +587,7 @@ export default function KpiPage() {
           <span className="kpi-split">
             Voice {pct(voice.loss_avg)} · Video {pct(video.loss_avg)}
           </span>
-          <span className="kpi-split">Worst interval {appLossPeak ? `${appLossPeak.toFixed(1)}%` : "—"}</span>
+          <span className="kpi-split">Worst interval {appLossPeak ? pct(appLossPeak, 1) : "—"}</span>
         </Card>
         <Card label="Time offline" value={internet.samples ? minutes(internet.outage_minutes) : "—"} tone={internet.samples === 0 ? "none" : internet.incidents === 0 ? "good" : "warn"}>
           <span className="kpi-split">
@@ -632,6 +743,8 @@ export default function KpiPage() {
       </div>
 
       <DailyHistory
+        targets={targets}
+        since={report.data_since ? report.data_since.slice(0, 10) : null}
         selected={day}
         onPick={(picked) => {
           go({ period: "day", date: picked });

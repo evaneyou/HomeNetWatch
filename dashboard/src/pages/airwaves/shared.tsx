@@ -149,7 +149,6 @@ export default function AirwavesLayout() {
     { path: "/airwaves/clients", label: "Clients" },
     { path: "/airwaves/channels", label: "Channels" },
   ];
-  const band = params.get("band") === "5" ? "5" : "2.4";
 
   return (
     <div className="npv airwaves aw">
@@ -203,15 +202,6 @@ export default function AirwavesLayout() {
         ))}
       </nav>
 
-      {loc.pathname === "/airwaves/channels" ? (
-        <div className="aw-pills" role="group" aria-label="Band">
-          {["2.4", "5"].map((item) => (
-            <button key={item} className={band === item ? "aw-pill active" : "aw-pill"} type="button" aria-pressed={band === item} onClick={() => setQuery({ band: item })}>
-              {item} GHz
-            </button>
-          ))}
-        </div>
-      ) : null}
 
       {overview?.headline && loc.pathname.replace(/\/$/, "") === "/airwaves" ? <p className="aw-advice">{overview.headline}</p> : null}
       <Outlet context={state} />

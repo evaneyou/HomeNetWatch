@@ -721,3 +721,229 @@
   font-size: 13px;
   font-weight: 700;
 }
+
+/* Channels: band buttons and a compact recommendation on one row, then the graph and the networks, full width. */
+.awc {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.awc-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.awc-rec {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 10px 14px;
+  background: rgba(79, 209, 181, 0.1);
+  border: 1px solid rgba(79, 209, 181, 0.4);
+  border-radius: 14px;
+}
+
+.awc-rec-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--aw-mint);
+}
+
+.awc-rec-main {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.awc-rec-main small {
+  color: var(--aw-mint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.awc-rec-main b {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.awc-rec-main span {
+  color: var(--aw-muted);
+  font-size: 13px;
+}
+
+.awc-rec-stats {
+  display: flex;
+  gap: 18px;
+  margin: 0;
+}
+
+.awc-rec-stats > div {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.awc-rec-stats dt {
+  color: var(--aw-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.awc-rec-stats dd {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.awc-rec-stats small {
+  color: var(--aw-muted);
+  font-size: 11px;
+}
+
+.awc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 12px;
+  margin-bottom: 8px;
+}
+
+.app-shell .airwaves.aw .awc-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.awc-head p {
+  margin: 0;
+  color: var(--aw-muted);
+  font-size: 12px;
+}
+
+.awc-plot {
+  width: 100%;
+  min-width: 0;
+}
+
+.awc-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+
+.awc-net {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--aw-inset);
+  border: 1px solid var(--aw-line);
+  border-radius: 12px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.awc-net.on {
+  border-color: var(--net);
+}
+
+.awc-net.dim {
+  opacity: 0.55;
+}
+
+.awc-net-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.awc-net-row i {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.awc-net-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.awc-net-row b {
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.awc-meter {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--aw-line);
+  overflow: hidden;
+}
+
+.awc-meter span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.awc-net-meta {
+  color: var(--aw-muted);
+  font-size: 12px;
+}
+
+@media (min-width: 900px) {
+  /* Wide screens: the buttons on the left and the recommendation to their right on the same row. */
+  .awc-rec {
+    flex: 1 1 560px;
+    max-width: 760px;
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .awc-rec {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .awc-rec-stats {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(79, 209, 181, 0.25);
+  }
+
+  .awc-rec-main b {
+    font-size: 18px;
+  }
+
+  .awc-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -417,6 +417,17 @@ export default function KpiPage() {
   // "" means every sensor together. A sensor id that no longer exists falls back to that.
   const picked_monitor = params.get("sensor") ?? "";
   const monitorId = monitors.some((item) => item.id === picked_monitor) ? picked_monitor : "";
+  // The picker holds a choice until Display is pressed. It starts on the sensor being shown.
+  const shown = monitorId || (monitors.length === 1 ? monitors[0].id : "");
+  const [draft, setDraft] = useState<string | null>(null);
+  const sensorValue = draft ?? shown;
+  function showSensor() {
+    const next: Record<string, string> = { period };
+    if (day) next.date = day;
+    if (sensorValue && monitors.length > 1) next.sensor = sensorValue;
+    setParams(next, { replace: true });
+    setDraft(null);
+  }
   const query = useQuery({
     queryKey: ["kpi", period, day, monitorId],
     queryFn: () => api.kpi(period, day ?? undefined, monitorId || undefined) as Promise<Report>,
@@ -504,19 +515,9 @@ export default function KpiPage() {
             {range}, {new Date(lastMoment).getUTCFullYear()} · {periodText} · times in UTC
           </p>
         </div>
-        <div className="kpi-tools">
-          {monitors.length > 0 ? (
-            <SelectMenu
-              className="kpi-select"
-              aria-label="Remote sensor"
-              value={monitorId}
-              onChange={(event) => {
-                const next: Record<string, string> = { period };
-                if (day) next.date = day;
-                if (event.target.value) next.sensor = event.target.value;
-                setParams(next, { replace: true });
-              }}
-            >
+        {monitors.length > 0 ? (
+          <div className="kpi-sensor">
+            <SelectMenu className="kpi-select" aria-label="Remote sensor" value={sensorValue} onChange={(event) => setDraft(event.target.value)}>
               {monitors.length > 1 ? <option value="">All sensors</option> : null}
               {monitors.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -524,7 +525,12 @@ export default function KpiPage() {
                 </option>
               ))}
             </SelectMenu>
-          ) : null}
+            <button type="button" className="kpi-display" disabled={sensorValue === shown} onClick={showSensor}>
+              Display
+            </button>
+          </div>
+        ) : null}
+        <div className="kpi-tools">
           <div className="kpi-seg" role="group" aria-label="Reporting period">
             {PERIODS.map((item) => (
               <button key={item.key} type="button" className={item.key === period ? "active" : ""} aria-pressed={item.key === period} onClick={() => go({ period: item.key })}>

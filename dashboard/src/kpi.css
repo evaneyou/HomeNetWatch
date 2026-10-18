@@ -549,6 +549,7 @@
   }
 
   .kpi-tools,
+  .kpi-sensor,
   .kpi-live {
     display: none;
   }
@@ -963,8 +964,8 @@
 }
 
 /* Remote sensor picker, the same look as the one on Network Test. */
-.kpi .kpi-tools .select-menu { display: block; min-width: 200px; }
-.kpi .kpi-tools .select-menu-trigger {
+.kpi .kpi-sensor .select-menu { display: block; min-width: 200px; }
+.kpi .kpi-sensor .select-menu-trigger {
   width: 100%;
   min-height: 44px;
   height: 44px;
@@ -980,5 +981,45 @@
 }
 
 @media (max-width: 640px) {
-  .kpi .kpi-tools .select-menu { width: 100%; }
+  .kpi .kpi-sensor .select-menu { width: 100%; }
+}
+
+.kpi-sensor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.kpi-tools {
+  flex: 1 1 100%;
+}
+
+.kpi-display {
+  height: 44px;
+  padding: 0 20px;
+  background: #2a3556;
+  border: 0;
+  border-radius: 12px;
+  color: var(--k-text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.kpi-display:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+@media (max-width: 640px) {
+  .kpi-sensor {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .kpi-sensor .select-menu {
+    flex: 1;
+  }
 }

@@ -127,8 +127,9 @@ function MenuIcon({ name }: { name: "airwaves" | "issues" | "settings" | "path" 
       ) : null}
       {name === "kpi" ? (
         <>
-          <path d="M5 19V9M12 19V5M19 19v-7" />
-          <path d="M3.5 19.5h17" />
+          <rect x="3.5" y="13" width="4.5" height="7.5" rx="1.2" fill="currentColor" stroke="none" />
+          <rect x="9.75" y="4" width="4.5" height="16.5" rx="1.2" fill="currentColor" stroke="none" />
+          <rect x="16" y="9" width="4.5" height="11.5" rx="1.2" fill="currentColor" stroke="none" />
         </>
       ) : null}
       {name === "path" ? (

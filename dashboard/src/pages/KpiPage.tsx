@@ -335,11 +335,11 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
             </div>
             <div className="kpi-heat-main">
               <div className="kpi-heat-days" aria-hidden="true">
-                <span>Mon</span>
+                <span>M</span>
                 <span />
-                <span>Wed</span>
+                <span>W</span>
                 <span />
-                <span>Fri</span>
+                <span>F</span>
                 <span />
                 <span />
               </div>

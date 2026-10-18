@@ -318,7 +318,7 @@ export default function SpeedTestPage() {
           <p>Measures the most your connection can download and upload, live. It runs for 30 seconds.</p>
         </div>
         <div className="st-controls">
-          {monitors.length > 1 ? (
+          {monitors.length > 0 ? (
             <SelectMenu className="st-select" aria-label="Remote agent" value={agent.id} disabled={running} onChange={(event) => { setAgentId(event.target.value); setTestId(null); }}>
               {monitors.map((item) => (
                 <option key={item.id} value={item.id}>

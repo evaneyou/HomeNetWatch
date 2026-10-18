@@ -517,3 +517,24 @@
     font-size: 46px;
   }
 }
+
+/* Remote sensor picker, the same look as the one on Network Test. */
+.st .st-controls .select-menu { display: block; min-width: 200px; }
+.st .st-controls .select-menu-trigger {
+  width: 100%;
+  min-height: 44px;
+  height: 44px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  background: var(--s-card);
+  border: 1px solid var(--s-line);
+  border-radius: 12px;
+  color: var(--s-text, #e8ecf8);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .st .st-controls .select-menu { width: 100%; }
+}

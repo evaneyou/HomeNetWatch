@@ -214,10 +214,10 @@ export const api = {
   telegramDetect: (token: string | undefined, csrf: string) =>
     request("/api/v1/settings/telegram/detect", { method: "POST", headers: csrfHeaders(csrf), body: JSON.stringify({ token }) }),
   telegramDisconnect: (csrf: string) => request("/api/v1/settings/telegram", { method: "DELETE", headers: csrfHeaders(csrf) }),
-  kpi: (period: string, day?: string) =>
-    request(`/api/v1/kpi?period=${encodeURIComponent(period)}${day ? `&day=${encodeURIComponent(day)}` : ""}`),
-  kpiDaily: (first: string, last: string) =>
-    request(`/api/v1/kpi/daily?from=${encodeURIComponent(first)}&to=${encodeURIComponent(last)}&limit=1000`),
+  kpi: (period: string, day?: string, monitorId?: string) =>
+    request(`/api/v1/kpi?period=${encodeURIComponent(period)}${day ? `&day=${encodeURIComponent(day)}` : ""}${monitorId ? `&monitor_id=${encodeURIComponent(monitorId)}` : ""}`),
+  kpiDaily: (first: string, last: string, monitorId?: string) =>
+    request(`/api/v1/kpi/daily?from=${encodeURIComponent(first)}&to=${encodeURIComponent(last)}&limit=1000${monitorId ? `&monitor_id=${encodeURIComponent(monitorId)}` : ""}`),
   speedtestStart: (body: { monitor_id: string; link: string }, csrf: string) =>
     request("/api/v1/speedtest", { method: "POST", headers: csrfHeaders(csrf), body: JSON.stringify(body) }),
   speedtestRead: (id: string, since: number) => request(`/api/v1/speedtest/${id}?since=${since}`),

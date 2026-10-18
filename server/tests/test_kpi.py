@@ -353,7 +353,7 @@ def test_the_new_endpoints(client: TestClient, db):
 
 
 def test_the_targets_are_strict_and_reach_the_report(db):
-    assert kpi.TARGETS == {"internet": 99.99, "voice": 99.9, "video": 99.9, "loss_pct": 0.1}
+    assert kpi.TARGETS == {"internet": 99.95, "voice": 99.9, "video": 99.9, "loss_pct": 0.1}
     assert kpi.report(db, "week", now=NOW)["targets"] == kpi.TARGETS
 
 

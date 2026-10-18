@@ -773,7 +773,7 @@ export default function KpiPage() {
                 <li key={`${item.start}-${item.links}`}>
                   <i aria-hidden="true" />
                   <span>
-                    No results for 
+                    {"No results for "}
                     <b>{minutes(item.minutes)}</b>
                     {item.ongoing ? " so far" : ""}
                     {item.links === "both" ? "" : ` on ${LINKS[item.links]}`}

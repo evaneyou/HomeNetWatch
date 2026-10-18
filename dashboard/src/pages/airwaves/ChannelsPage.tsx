@@ -40,7 +40,13 @@ function ChannelView({ snapshot, ctx }: { snapshot: RfChannelSnapshot; ctx: AirC
   const reason = advice?.reason ?? snapshot.reason;
   // "Your 2.4 GHz band is crowded. Channel 1 would be quieter than channel 6." restates the title and the
   // Busiest channel tile below it, so the line is only shown when it says something else.
-  const extra = /crowded/i.test(reason) ? "" : reason;
+  const extra = /crowded/i.test(reason)
+    ? ""
+    : /is clear on/i.test(reason)
+      ? "No other network overlaps it."
+      : /quietest/i.test(reason)
+        ? "The quietest choice here, though nearby networks still reach it."
+        : reason;
   const strongest = shown[0];
   const busiest = advice?.busiest_channel;
   const onBusiest = busiest == null ? 0 : snapshot.series.filter((series) => series.channel === busiest).length;

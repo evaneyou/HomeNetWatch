@@ -214,9 +214,11 @@ function missed(row: DailyRow, targets: Report["targets"]): string[] {
 type Cell = { day: string; row: DailyRow | null; pad?: boolean };
 
 /** One coloured square per day. Hover (or focus) a square for that day's numbers, click it to open the day. */
-function DailyHistory({ selected, onPick, targets }: { selected: string | null; onPick: (day: string) => void; targets: Report["targets"] }) {
+function DailyHistory({ selected, onPick, targets, since }: { selected: string | null; onPick: (day: string) => void; targets: Report["targets"]; since: string | null }) {
+  // Start no earlier than the first day with data, so the grid is not mostly empty.
+  const clamp = (day: string) => (since && day < since ? since : day);
   const [last, setLast] = useState(isoToday());
-  const [first, setFirst] = useState(shiftDay(isoToday(), -89));
+  const [first, setFirst] = useState(() => clamp(shiftDay(isoToday(), -89)));
   const [tip, setTip] = useState<{ cell: Cell; x: number; y: number } | null>(null);
   const valid = ISO_DAY.test(first) && ISO_DAY.test(last) && first <= last && first >= shiftDay(last, -400);
   const rows = useQuery({
@@ -298,7 +300,7 @@ function DailyHistory({ selected, onPick, targets }: { selected: string | null; 
               type="button"
               onClick={() => {
                 setLast(isoToday());
-                setFirst(shiftDay(isoToday(), -Number(days)));
+                setFirst(clamp(shiftDay(isoToday(), -Number(days))));
               }}
             >
               {label}
@@ -742,6 +744,7 @@ export default function KpiPage() {
 
       <DailyHistory
         targets={targets}
+        since={report.data_since ? report.data_since.slice(0, 10) : null}
         selected={day}
         onPick={(picked) => {
           go({ period: "day", date: picked });

@@ -328,7 +328,7 @@ function hillPath(channel: number, mhz: number, dbm: number, xOf: (channel: numb
   for (let step = 0; step <= steps; step += 1) {
     const t = step / steps;
     const shape = 0.5 - 0.5 * Math.cos(2 * Math.PI * t);
-    const level = -100 + (dbm + 100) * Math.pow(shape, 0.8);
+    const level = -100 + (Math.min(dbm, -22) + 100) * Math.pow(shape, 0.8); // keep very strong signals inside the plot
     path += ` L${xOf(channel - half + 2 * half * t).toFixed(1)} ${yOf(level).toFixed(1)}`;
   }
   return `${path} Z`;

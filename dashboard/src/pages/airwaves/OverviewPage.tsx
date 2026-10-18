@@ -30,32 +30,36 @@ function clock(iso: string): string {
 }
 
 function Alerts({ alerts }: { alerts: RfOverview["alerts"] }) {
+  const activeCount = alerts.filter((a) => a.severity === "critical" || a.severity === "warning").length;
   return (
     <section className="aw-card aw-alerts" aria-label="Recent alerts">
       <header>
         <h2>Recent alerts</h2>
-        <span className="aw-badge">{alerts.length}</span>
+        <span className={`aw-badge${activeCount === 0 ? " info" : ""}`}>{alerts.length}</span>
       </header>
       <div className="aw-alerts-list" tabIndex={0} role="region" aria-label="Recent alerts list, scrollable">
         {alerts.length === 0 ? <p className="aw-empty">No alerts in this range.</p> : null}
-        {alerts.map((alert, index) => (
-          <div className="aw-alert" key={`${alert.observed_at}-${index}`}>
-            <i aria-hidden="true" />
-            <div>
-              <b>{alert.alert_type}</b>
-              <small>
-                {alert.bssid ? (
-                  <>
-                    <span className={isAnonymized(alert.bssid) ? "anon-mark" : undefined}>{alert.bssid}</span>
-                    {" · "}
-                  </>
-                ) : null}
-                <span className={isAnonymized(alert.text) ? "anon-mark" : undefined}>{alert.text}</span>
-              </small>
+        {alerts.map((alert, index) => {
+          const sev = alert.severity ?? "info";
+          return (
+            <div className={`aw-alert sev-${sev}`} key={`${alert.observed_at}-${index}`}>
+              <i aria-hidden="true" />
+              <div>
+                <b>{alert.alert_type}</b>
+                <small>
+                  {alert.bssid ? (
+                    <>
+                      <span className={isAnonymized(alert.bssid) ? "anon-mark" : undefined}>{alert.bssid}</span>
+                      {" · "}
+                    </>
+                  ) : null}
+                  <span className={isAnonymized(alert.text) ? "anon-mark" : undefined}>{alert.text}</span>
+                </small>
+              </div>
+              <time dateTime={alert.observed_at}>{clock(alert.observed_at)}</time>
             </div>
-            <time dateTime={alert.observed_at}>{clock(alert.observed_at)}</time>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

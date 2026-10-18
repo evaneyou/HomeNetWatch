@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Select, and_, desc, func, literal, or_, select, union_all
 from sqlalchemy.orm import Session, joinedload
 
+from app.api.rf_routes import rf_alert_severity
 from app.auth import get_current_user
 from app.db import get_db
 from app.internet_tests import (
@@ -23,10 +24,12 @@ from app.internet_tests import (
 )
 from app.models import (
     Issue,
+    IssueSeverity,
     IssueStatus,
     Monitor,
     Network,
     ResultStatus,
+    RfAlert,
     SyntheticProfile,
     SyntheticRun,
     SyntheticSample,
@@ -265,7 +268,7 @@ def summary(
 
     open_issues = db.scalars(
         select(Issue)
-        .where(Issue.status == IssueStatus.open)
+        .where(Issue.status == IssueStatus.open, Issue.severity != IssueSeverity.info)
         .order_by(desc(Issue.opened_at))
         .limit(20)
     ).all()
@@ -479,6 +482,54 @@ def _synthetic_page(db: Session, monitor: Monitor, slug: str, offset: int, limit
     )
 
 
+def _rf_alert_out(alert: RfAlert, monitor: Monitor) -> ResultOut:
+    sev = rf_alert_severity(alert.alert_type)
+    if sev == "critical":
+        status = "fail"
+    elif sev == "warning":
+        status = "degraded"
+    else:
+        status = "info"
+    label = f"Airwave {alert.alert_type}" + (f" ({alert.bssid})" if alert.bssid else "")
+    return ResultOut(
+        id=alert.id,
+        external_id=alert.dedupe_key,
+        test_id=monitor.id,
+        test_slug=f"airwave:{alert.alert_type.lower()}",
+        test_name=label,
+        test_kind="airwave",
+        monitor_id=monitor.id,
+        monitor_slug=monitor.slug,
+        network_id=monitor.id,
+        network_slug="wifi",
+        network_name="Wi-Fi",
+        started_at=alert.observed_at,
+        finished_at=alert.observed_at,
+        status=status,
+        stages=[],
+        metrics={},
+        message=alert.text,
+        status_reason=alert.text,
+    )
+
+
+def _airwave_page(db: Session, monitor: Monitor, offset: int, limit: int) -> ResultPage:
+    total = db.scalar(select(func.count(RfAlert.id)).where(RfAlert.monitor_id == monitor.id)) or 0
+    rows = db.scalars(
+        select(RfAlert)
+        .where(RfAlert.monitor_id == monitor.id)
+        .order_by(desc(RfAlert.observed_at), desc(RfAlert.id))
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return ResultPage(
+        total=total,
+        offset=offset,
+        limit=limit,
+        items=[_rf_alert_out(row, monitor) for row in rows],
+    )
+
+
 def _merged_page(db: Session, monitor: Monitor, offset: int, limit: int) -> ResultPage:
     tests = (
         select(
@@ -503,7 +554,15 @@ def _merged_page(db: Session, monitor: Monitor, offset: int, limit: int) -> Resu
             ~SyntheticSample.sample_key.startswith("day:"),
         )
     )
-    merged = union_all(tests, samples).subquery()
+    airwaves = (
+        select(
+            RfAlert.observed_at.label("at"),
+            RfAlert.id.label("row_id"),
+            literal("airwave").label("src"),
+        )
+        .where(RfAlert.monitor_id == monitor.id)
+    )
+    merged = union_all(tests, samples, airwaves).subquery()
     total = db.scalar(select(func.count()).select_from(merged)) or 0
     picked = db.execute(
         select(merged.c.row_id, merged.c.src)
@@ -513,6 +572,7 @@ def _merged_page(db: Session, monitor: Monitor, offset: int, limit: int) -> Resu
     ).all()
     test_ids = [row_id for row_id, src in picked if src == "test"]
     sample_ids = [row_id for row_id, src in picked if src == "sample"]
+    airwave_ids = [row_id for row_id, src in picked if src == "airwave"]
     test_rows = {}
     if test_ids:
         test_rows = {
@@ -536,6 +596,14 @@ def _merged_page(db: Session, monitor: Monitor, offset: int, limit: int) -> Resu
                 .options(joinedload(SyntheticSample.run))
             ).unique().all()
         }
+    airwave_rows = {}
+    if airwave_ids:
+        airwave_rows = {
+            row.id: row
+            for row in db.scalars(
+                select(RfAlert).where(RfAlert.id.in_(airwave_ids))
+            ).all()
+        }
     names = _profile_names(db, {row.run.profile_slug for row in sample_rows.values()})
     items = []
     for row_id, src in picked:
@@ -543,6 +611,8 @@ def _merged_page(db: Session, monitor: Monitor, offset: int, limit: int) -> Resu
             items.append(_result_to_out(test_rows[row_id]))
         elif src == "sample" and row_id in sample_rows:
             items.append(_synthetic_out(sample_rows[row_id], monitor, names))
+        elif src == "airwave" and row_id in airwave_rows:
+            items.append(_rf_alert_out(airwave_rows[row_id], monitor))
     return ResultPage(total=total, offset=offset, limit=limit, items=items)
 
 
@@ -558,6 +628,8 @@ def monitor_log(
     monitor = db.get(Monitor, monitor_id)
     if monitor is None:
         raise HTTPException(status_code=404, detail="Remote agent not found")
+    if probe == "airwave":
+        return _airwave_page(db, monitor, offset, limit)
     try:
         synthetic = _synthetic_slug(probe)
     except ValueError as exc:

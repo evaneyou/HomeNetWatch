@@ -305,6 +305,7 @@ def _body(captured: datetime) -> dict:
         "alerts": [
             {"type": "DEAUTHFLOOD", "bssid": AP, "text": "Deauth flood on Home", "ts": 1_700_000_200},
             {"type": "DEAUTHFLOOD", "bssid": "aa:bb:cc:dd:ee:99", "text": "ignored", "ts": 1_700_000_200},
+            {"type": "NOCLIENTMFP", "bssid": AP, "text": "Client does not support management frame protection", "ts": 1_700_000_201},
         ],
     }
 
@@ -341,11 +342,12 @@ def test_rf_capture_is_idempotent_and_keeps_trusted_clients(client, db, monitor_
     obs = db.scalar(select(WifiObservation).where(WifiObservation.monitor_id == monitor_id, WifiObservation.bssid == AP.lower()))
     assert obs is not None
     assert obs.client_count == 2
-    assert db.scalar(select(func.count()).select_from(RfAlert).where(RfAlert.monitor_id == monitor_id)) == 2
+    assert db.scalar(select(func.count()).select_from(RfAlert).where(RfAlert.monitor_id == monitor_id)) == 3
     issues = db.scalars(select(Issue).where(Issue.monitor_id == monitor_id, Issue.status == IssueStatus.open)).all()
     assert len(issues) == 1
     assert issues[0].root_cause_stage == "airwave"
     assert issues[0].severity.value == "critical"
+    assert "DEAUTHFLOOD" in issues[0].title
     later = captured.replace(minute=5)
     third = client.post("/api/v1/monitors/rf-capture", headers=_headers(monitor_token), json=_body(later))
     assert third.status_code == 200, third.text

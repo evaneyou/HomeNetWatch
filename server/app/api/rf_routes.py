@@ -54,7 +54,34 @@ from app.schemas import (
     WifiScanIn,
 )
 
-_CRITICAL_ALERTS = {"DEAUTHFLOOD", "APSPOOF", "EVILTWIN", "BSSIDSPOOF", "BSSTIMESTAMP"}
+_CRITICAL_ALERTS = {
+    "DEAUTHFLOOD",
+    "DISCONFLOOD",
+    "AUTHFLOOD",
+    "APSPOOF",
+    "EVILTWIN",
+    "BSSIDSPOOF",
+    "BSSTIMESTAMP",
+    "CRYPTODROP",
+    "KARMA",
+    "AIRJACK",
+    "WPSBRUTE",
+}
+_WARNING_ALERTS = {
+    "WPA3DOWNGRADE",
+    "DHCPCONFLICT",
+    "DHCPROGUE",
+    "ARPSPOOF",
+}
+
+
+def rf_alert_severity(alert_type: str) -> str:
+    kind = (alert_type or "").strip().upper()
+    if kind in _CRITICAL_ALERTS:
+        return "critical"
+    if kind in _WARNING_ALERTS:
+        return "warning"
+    return "info"
 
 router = APIRouter(prefix="/api/v1")
 
@@ -189,6 +216,9 @@ def _trusted_set(db: Session, monitor_id: UUID) -> set[str]:
 
 
 def _open_airwave_issue(db: Session, monitor: Monitor, alert_type: str, bssid: str, text: str, when: datetime) -> None:
+    sev = rf_alert_severity(alert_type)
+    if sev == "info":
+        return
     if not bssid or bssid.lower() not in _trusted_set(db, monitor.id):
         return
     title = f"Airwave {alert_type} on {bssid.lower()}"[:255]
@@ -208,7 +238,7 @@ def _open_airwave_issue(db: Session, monitor: Monitor, alert_type: str, bssid: s
             monitor_id=monitor.id,
             title=title,
             summary=(text or title)[:4000],
-            severity=IssueSeverity.critical if alert_type.upper() in _CRITICAL_ALERTS else IssueSeverity.warning,
+            severity=IssueSeverity.critical if sev == "critical" else IssueSeverity.warning,
             status=IssueStatus.open,
             root_cause_stage="airwave",
             opened_at=when,
@@ -618,7 +648,13 @@ def _recent_alerts(db: Session, monitor_id: UUID, start: datetime, limit: int = 
         .limit(limit)
     ).all()
     return [
-        RfAlertOut(alert_type=row.alert_type, bssid=row.bssid, text=row.text, observed_at=row.observed_at)
+        RfAlertOut(
+            alert_type=row.alert_type,
+            bssid=row.bssid,
+            text=row.text,
+            observed_at=row.observed_at,
+            severity=rf_alert_severity(row.alert_type),
+        )
         for row in rows
     ]
 

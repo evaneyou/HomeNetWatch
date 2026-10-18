@@ -65,6 +65,10 @@ function probeGroups(tests: MonitorDetail["tests"], probes: { slug: string; name
       ],
     });
   }
+  groups.push({
+    label: "Airwaves",
+    options: [{ value: "airwave", label: "All Airwave notifications & alerts" }],
+  });
   return groups;
 }
 
@@ -184,14 +188,24 @@ export default function MonitorLogPage() {
 function LogRow({ row }: { row: Result }) {
   const metrics = row.metrics ?? {};
   const href =
-    row.test_kind === "rtnp"
-      ? `/monitors/${row.monitor_id}?detail=isp&link=${row.network_slug === "wifi" ? "wireless" : "wired"}&check=rtnp:${row.test_slug}`
-      : `/tests/${row.test_id}`;
+    row.test_kind === "airwave"
+      ? `/airwaves?agent=${row.monitor_id}`
+      : row.test_kind === "rtnp"
+        ? `/monitors/${row.monitor_id}?detail=isp&link=${row.network_slug === "wifi" ? "wireless" : "wired"}&check=rtnp:${row.test_slug}`
+        : `/tests/${row.test_id}`;
+  const isNotice = row.status === "info";
   return (
-    <tr>
+    <tr className={isNotice ? "muted" : undefined}>
       <td className="mono">{new Date(row.started_at).toLocaleString()}</td>
       <td>
-        <Link to={href}>{checkLabel({ slug: row.test_slug, name: row.test_name })}</Link>
+        <Link to={href} className={isNotice ? "muted" : undefined}>
+          {checkLabel({ slug: row.test_slug, name: row.test_name })}
+        </Link>
+        {row.test_kind === "airwave" && row.message ? (
+          <div className="muted" style={{ fontSize: "0.78rem" }}>
+            {row.message}
+          </div>
+        ) : null}
       </td>
       <td>{networkLabel({ slug: row.network_slug, name: row.network_name })}</td>
       <td>

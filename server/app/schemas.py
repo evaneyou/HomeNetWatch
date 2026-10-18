@@ -535,6 +535,7 @@ class RfAlertOut(BaseModel):
     bssid: str
     text: str
     observed_at: datetime
+    severity: str = "info"
 
 
 class RfClientPoint(BaseModel):

@@ -29,6 +29,7 @@ export default function MonitorTabs({
   activeTab,
   onWired,
   onWireless,
+  onApps = false,
   onConnection,
   link,
   onSelect,
@@ -38,6 +39,7 @@ export default function MonitorTabs({
   activeTab: string | null;
   onWired: boolean;
   onWireless: boolean;
+  onApps?: boolean;
   onConnection: boolean;
   link: string | null;
   onSelect: (params: TabParams) => void;
@@ -54,12 +56,24 @@ export default function MonitorTabs({
           <button
             key={network.id}
             type="button"
-            className={`tab ${!onWired && !onWireless && !onConnection && activeTab === network.id ? "active" : ""}`}
+            className={`tab ${!onWired && !onWireless && !onApps && !onConnection && activeTab === network.id ? "active" : ""}`}
             onClick={() => onSelect({ network: network.id })}
           >
             {networkLabel(network)}
           </button>,
         ];
+        if (network.slug === "wan") {
+          buttons.push(
+            <button
+              key="apps"
+              type="button"
+              className={`tab ${onApps ? "active" : ""}`}
+              onClick={() => onSelect({ detail: "apps" })}
+            >
+              Apps
+            </button>,
+          );
+        }
         if (network.slug === "wan" && wiredId) {
           buttons.push(
             <button

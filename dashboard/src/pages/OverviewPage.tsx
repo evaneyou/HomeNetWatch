@@ -95,8 +95,7 @@ function checkHref(monitorId: string, key: string, networkId: string | null): st
   }
   if (key === "apps") {
     const params = new URLSearchParams({
-      network: networkId,
-      link: "wireless",
+      detail: "apps",
     });
     return `/monitors/${monitorId}?${params}`;
   }

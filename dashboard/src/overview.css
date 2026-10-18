@@ -146,6 +146,7 @@
   background: color-mix(in srgb, var(--mint) 16%, transparent);
 }
 .kpi-icon:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+.kpi-icon.kpi-icon-next { right: 76px; }
 .kpi-icon-tip {
   display: none;
   position: absolute;

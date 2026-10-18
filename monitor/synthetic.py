@@ -657,6 +657,7 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
     run_id, link = item
     base = str(config.get("server_url") or "").rstrip("/")
     assert proc.stdout is not None
+    missing_rx = 0
     for line in proc.stdout:
         payload = _json_line(line)
         if payload is None or payload.get("type") not in {None, "interval"}:
@@ -668,6 +669,14 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
             continue
         if "flows" not in payload:
             continue
+        flow0 = (payload.get("flows") or [{}])[0]
+        if flow0.get("rx") is None and flow0.get("loss_pct") is None:
+            missing_rx += 1
+            if mode_of(item) == "continuous" and missing_rx >= 3:
+                proc.terminate()
+                break
+        else:
+            missing_rx = 0
         if mode_of(item) != "stress" and _charge(payload):
             proc.terminate()
             _finish(config, run_id, link, "failed", "Traffic cap reached")

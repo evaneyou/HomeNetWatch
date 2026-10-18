@@ -25,8 +25,49 @@ from app.models import KpiDaily, KpiHourly, Network, ResultStatus, SyntheticRun,
 
 log = logging.getLogger(__name__)
 
-TARGETS = {"internet": 99.99, "voice": 99.9, "video": 99.9, "loss_pct": 0.1}
+TARGETS = {"internet": 99.95, "voice": 99.9, "video": 99.9, "loss_pct": 0.1}
 KINDS = ("internet", "voice", "video", "apps", "speed")
+
+# The daily health score: how much each service counts, and where a result is worth 0 points.
+# At or better than its target a service scores 100; at its zero point or worse, 0; in between, in proportion.
+SCORE_WEIGHTS = {"internet": 60, "voice": 20, "video": 10, "loss": 10}
+SCORE_ZERO = {"internet": 99.0, "voice": 98.0, "video": 98.0}  # availability (%) that scores 0
+SCORE_ZERO_LOSS = 1.0  # packet drop (%) that scores 0
+SCORE_GREEN = 95.0
+SCORE_AMBER = 80.0
+
+
+def _scaled(value: Optional[float], good: float, zero: float) -> Optional[float]:
+    """0 to 100: 100 at `good` or better, 0 at `zero` or worse. Works whichever way round the two are."""
+    if value is None:
+        return None
+    if (good >= zero and value >= good) or (good < zero and value <= good):
+        return 100.0
+    if (good >= zero and value <= zero) or (good < zero and value >= zero):
+        return 0.0
+    return 100.0 * (value - zero) / (good - zero)
+
+
+def health_score(internet: Optional[float], voice: Optional[float], video: Optional[float], loss: Optional[float], targets: Optional[dict[str, float]] = None) -> dict[str, Any]:
+    """One 0 to 100 score for a day: internet 60, voice 20, video 10, packet drop 10.
+
+    A service with no data that day is left out and the others share its weight. With no internet figure
+    there is no score, because internet is most of it.
+    """
+    goals = targets or TARGETS
+    parts = {
+        "internet": _scaled(internet, goals["internet"], SCORE_ZERO["internet"]),
+        "voice": _scaled(voice, goals["voice"], SCORE_ZERO["voice"]),
+        "video": _scaled(video, goals["video"], SCORE_ZERO["video"]),
+        "loss": _scaled(loss, goals["loss_pct"], SCORE_ZERO_LOSS),
+    }
+    if parts["internet"] is None:
+        return {"score": None, "tone": "none", "parts": {}}
+    used = {name: value for name, value in parts.items() if value is not None}
+    weight = sum(SCORE_WEIGHTS[name] for name in used)
+    score = sum(SCORE_WEIGHTS[name] * value for name, value in used.items()) / weight
+    tone = "good" if score >= SCORE_GREEN else "warn" if score >= SCORE_AMBER else "bad"
+    return {"score": round(score, 1), "tone": tone, "parts": {name: round(value) for name, value in used.items()}}
 KEEP_YEARS = 5
 PERIODS = {
     # name: (bucket unit, number of buckets)
@@ -73,6 +114,8 @@ class Acc:
     down_n: int = 0
     up_sum: float = 0.0
     up_n: int = 0
+    gap_min: float = 0.0
+    gaps: int = 0
 
     def add_metrics(self, rtt: Optional[float], jitter: Optional[float], loss: Optional[float]) -> None:
         if rtt is not None:
@@ -104,14 +147,17 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
     }
     if path_tests:
         previous_failed: dict[UUID, bool] = {}
+        previous_at: dict[UUID, datetime] = {}
         for test_id in path_tests:
-            last = db.scalar(
-                select(TestResult.status)
+            last = db.execute(
+                select(TestResult.status, TestResult.started_at)
                 .where(TestResult.test_id == test_id, TestResult.started_at < start, ~TestResult.external_id.startswith("rollup-"))
                 .order_by(TestResult.started_at.desc())
                 .limit(1)
-            )
-            previous_failed[test_id] = last is not None and last.value == "fail"
+            ).first()
+            previous_failed[test_id] = last is not None and last[0].value == "fail"
+            if last is not None:
+                previous_at[test_id] = last[1]
         rows = db.execute(
             select(TestResult.test_id, TestResult.started_at, TestResult.status, TestResult.metrics)
             .where(
@@ -126,6 +172,12 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
             monitor_id, link = path_tests[test_id]
             acc = out[(hour_of(started), monitor_id, link, "internet")]
             acc.n += 1
+            before = previous_at.get(test_id)
+            if before is not None and started - before > OUTAGE_GAP:
+                # No result for a while: the Pi was off, or the server was not there to take them.
+                acc.gaps += 1
+                acc.gap_min += (started - before).total_seconds() / 60 - 1
+            previous_at[test_id] = started
             down = status.value == "fail"
             if down:
                 acc.failed += 1
@@ -196,6 +248,8 @@ _SUM_FIELDS = (
     "down_n",
     "up_sum",
     "up_n",
+    "gap_min",
+    "gaps",
     "outage_min",
 )
 
@@ -370,6 +424,8 @@ _FIELDS = (
     "down_n",
     "up_sum",
     "up_n",
+    "gap_min",
+    "gaps",
 )
 
 
@@ -414,7 +470,9 @@ def _sum(rows: list[dict[str, Any]]) -> dict[str, float]:
 
 
 def _summary(rows: list[dict[str, Any]], kind: str) -> dict[str, Any]:
-    t = _sum([row for row in rows if row["kind"] == kind])
+    mine = [row for row in rows if row["kind"] == kind]
+    t = _sum(mine)
+    links = len({row["link"] for row in mine}) or 1
     return {
         "samples": int(t["n"]),
         "failed": int(t["failed"]),
@@ -427,6 +485,8 @@ def _summary(rows: list[dict[str, Any]], kind: str) -> dict[str, Any]:
         "up_mbps": _mean(t["up_sum"], int(t["up_n"])),
         "incidents": int(t["incidents"]),
         "outage_minutes": round(t["outage_min"], 1),
+        "gap_minutes": round(t["gap_min"] / links, 1),
+        "gaps": int(round(t["gaps"] / links)),
     }
 
 
@@ -466,6 +526,56 @@ def incidents(db: Session, start: datetime, end: datetime, monitor_id: Optional[
         }
         for item in runs[:limit]
     ]
+
+
+def gap_log(db: Session, start: datetime, end: datetime, monitor_id: Optional[UUID], limit: int = 10) -> list[dict[str, Any]]:
+    """Stretches with no ping result on a link, newest first. Gaps on both links at once are one entry.
+
+    Reads the detailed records, so it covers the last 31 days of the period at most.
+    """
+    begin = max(start, end - timedelta(days=31))
+    prev = func.lag(TestResult.started_at).over(partition_by=TestResult.test_id, order_by=TestResult.started_at).label("prev")
+    inner = (
+        select(TestResult.started_at.label("at"), prev, Network.kind.label("kind"))
+        .join(Test, TestResult.test_id == Test.id)
+        .join(Network, Test.network_id == Network.id)
+        .where(Test.slug == "icmp-path", TestResult.started_at >= begin - timedelta(days=1), TestResult.started_at < end, ~TestResult.external_id.startswith("rollup-"))
+    )
+    if monitor_id is not None:
+        inner = inner.where(Test.monitor_id == monitor_id)
+    inner = inner.subquery()
+    found = db.execute(
+        select(inner.c.prev, inner.c.at, inner.c.kind).where(inner.c.prev.is_not(None), inner.c.at >= begin, inner.c.at - inner.c.prev > OUTAGE_GAP).order_by(inner.c.prev)
+    ).all()
+    merged: list[dict[str, Any]] = []
+    for before, at, kind in found:
+        link = _link(kind.value)
+        if merged and before <= merged[-1]["end"]:
+            merged[-1]["end"] = max(merged[-1]["end"], at)
+            merged[-1]["links"].add(link)
+        else:
+            merged.append({"start": before, "end": at, "links": {link}})
+    merged.sort(key=lambda item: item["start"], reverse=True)
+    return [
+        {
+            "start": item["start"],
+            "minutes": max(1, round((item["end"] - item["start"]).total_seconds() / 60 - 1)),
+            "links": "both" if len(item["links"]) > 1 else next(iter(item["links"])),
+            "ongoing": False,
+        }
+        for item in merged[:limit]
+    ]
+
+
+def ongoing_gap(db: Session, now: datetime, monitor_id: Optional[UUID]) -> Optional[dict[str, Any]]:
+    """No result for several minutes right now. It is added to the report before the next result closes it."""
+    query = select(func.max(TestResult.started_at)).join(Test, TestResult.test_id == Test.id).where(Test.slug == "icmp-path", ~TestResult.external_id.startswith("rollup-"))
+    if monitor_id is not None:
+        query = query.where(Test.monitor_id == monitor_id)
+    last = db.scalar(query)
+    if last is None or now - last <= OUTAGE_GAP:
+        return None
+    return {"start": last, "minutes": max(1, round((now - last).total_seconds() / 60 - 1)), "links": "both", "ongoing": True}
 
 
 def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id: Optional[UUID] = None, day: Optional[date] = None) -> dict[str, Any]:
@@ -512,6 +622,7 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
                 "down_mbps": speed["down_mbps"],
                 "up_mbps": speed["up_mbps"],
                 "outage_minutes": internet["outage_minutes"],
+                "gap_minutes": internet["gap_minutes"],
             }
         )
         cursor = _add(cursor, unit, 1)
@@ -522,6 +633,12 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
     before = {kind: _summary(previous, kind) for kind in ("internet", "voice", "video", "apps", "speed")}
     internet = summary["internet"]
     internet["mttr_minutes"] = round(internet["outage_minutes"] / internet["incidents"], 1) if internet["incidents"] else None
+    gaps = gap_log(db, start, min(end, now), monitor_id)
+    live_gap = ongoing_gap(db, now, monitor_id) if start <= now < end else None
+    if live_gap is not None:
+        internet["gap_minutes"] = round(internet["gap_minutes"] + live_gap["minutes"], 1)
+        internet["gaps"] += 1
+        gaps.insert(0, live_gap)
     loss_parts = [(summary[k]["loss_avg"], summary[k]["samples"]) for k in ("voice", "video") if summary[k]["loss_avg"] is not None]
     weight = sum(count for _value, count in loss_parts)
     app_loss = sum(value * count for value, count in loss_parts) / weight if weight else None
@@ -540,6 +657,7 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
         "links": {kind: _by_link(current, kind) for kind in ("internet", "voice", "video")},
         "series": series,
         "incidents": incidents(db, start, min(end, now), monitor_id),
+        "gaps": gaps,
     }
 
 
@@ -566,6 +684,8 @@ def daily_history(db: Session, first: date, last: date, monitor_id: Optional[UUI
         video = _summary(rows, "video")
         parts = [(item["loss_avg"], item["samples"]) for item in (voice, video) if item["loss_avg"] is not None]
         weight = sum(count for _value, count in parts)
+        loss = sum(value * count for value, count in parts) / weight if weight else None
+        health = health_score(internet["availability"], voice["availability"], video["availability"], loss)
         out.append(
             {
                 "day": day,
@@ -574,8 +694,12 @@ def daily_history(db: Session, first: date, last: date, monitor_id: Optional[UUI
                 "internet_wireless": _summary([r for r in rows if r["link"] == "wireless"], "internet")["availability"],
                 "voice": voice["availability"],
                 "video": video["availability"],
-                "loss": sum(value * count for value, count in parts) / weight if weight else None,
+                "loss": loss,
+                "score": health["score"],
+                "tone": health["tone"],
+                "score_parts": health["parts"],
                 "offline_minutes": internet["outage_minutes"],
+                "gap_minutes": internet["gap_minutes"],
                 "outages": internet["incidents"],
                 "rtt_ms": internet["rtt_ms"],
             }

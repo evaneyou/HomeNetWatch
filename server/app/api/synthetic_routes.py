@@ -412,6 +412,16 @@ def post_sample(
         )
     if run.status == "pending":
         run.status = "running"
+    if (
+        run.mode == "continuous"
+        and extracted["loss_pct"] is None
+        and body.interval_index >= 3
+        and not ((body.metrics.get("flows") or [{}])[0].get("rx"))
+    ):
+        # If rtnp-recv restarted on the server, a long-running rtnp-send on the Pi
+        # loses its TCP control channel and reports rx=None until restarted.
+        if monitor.restart_requested_at is None:
+            monitor.restart_requested_at = _now()
     db.commit()
     return {"status": "ok"}
 

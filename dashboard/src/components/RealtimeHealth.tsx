@@ -41,12 +41,14 @@ export default function RealtimeHealth({
   link,
   range,
   slug,
+  title,
   onOpen,
 }: {
   monitorId: string;
   link: "wired" | "wireless";
   range: Range;
   slug?: string | null;
+  title?: string;
   onOpen?: (slug: string) => void;
 }) {
   const healthQ = useQuery({
@@ -70,7 +72,7 @@ export default function RealtimeHealth({
 
   return (
     <div className="health-stack">
-      <h2>Real-Time Application Health</h2>
+      <h2>{title ?? "Real-Time Application Health"}</h2>
       {healthQ.isLoading ? <div className="muted">Loading real-time application health…</div> : null}
       {healthQ.isError ? <div className="muted">Could not load real-time application health.</div> : null}
       {!healthQ.isLoading && types.length === 0 ? (

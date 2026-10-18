@@ -13,6 +13,7 @@ import InternetPath, {
 } from "../components/InternetPath";
 import MonitorStatusDialog from "../components/MonitorStatusDialog";
 import MonitorTabs, { monitorNetworks } from "../components/MonitorTabs";
+import RealtimeHealth from "../components/RealtimeHealth";
 import WifiScans from "../components/WifiScans";
 import type { MonitorDetail } from "../types";
 
@@ -66,16 +67,19 @@ export default function MonitorPage() {
 
   const requested = searchParams.get("network");
   const link = searchParams.get("link");
-  const openLink = (link === "wired" || link === "wireless") && Boolean(searchParams.get("detail"));
+  const detailParam = searchParams.get("detail");
+  const checkParam = searchParams.get("check");
+  const onApps = detailParam === "apps";
+  const openLink = (link === "wired" || link === "wireless") && Boolean(detailParam) && !onApps;
   const wanId = networks.find((network) => network.slug === "wan")?.id ?? null;
   const testsSoFar = monitorQ.data?.tests ?? [];
   const wiredId = testsSoFar.find((test) => test.network_slug === "wired")?.network_id ?? null;
   const wirelessId = testsSoFar.find((test) => test.network_slug === "wifi")?.network_id ?? null;
-  const onConnection = searchParams.get("detail") === "connection";
-  const onWired = link === "wired" && !onConnection;
-  const onWireless = link === "wireless" && !onConnection;
+  const onConnection = detailParam === "connection";
+  const onWired = link === "wired" && !onConnection && !onApps;
+  const onWireless = link === "wireless" && !onConnection && !onApps;
   const activeTab =
-    openLink && wanId
+    (openLink || onApps) && wanId
       ? wanId
       : requested && networks.some((n) => n.id === requested)
         ? requested
@@ -127,13 +131,14 @@ export default function MonitorPage() {
           activeTab={activeTab}
           onWired={onWired}
           onWireless={onWireless}
+          onApps={onApps}
           onConnection={onConnection}
           link={link}
           onSelect={setSearchParams}
         />
-          {activeNetwork?.slug === "wan" && !searchParams.get("detail") && !link && wiredId && wirelessId ? (
+          {activeNetwork?.slug === "wan" && !detailParam && !link && wiredId && wirelessId ? (
             <StripRangeTabs range={stripRange} onChange={setStripRange} />
-          ) : onConnection || ((onWired || onWireless) && (searchParams.get("check") || searchParams.get("detail"))) ? (
+          ) : onApps || onConnection || ((onWired || onWireless) && (checkParam || detailParam)) ? (
             <RangeTabs range={chartRange} onChange={setChartRange} />
           ) : null}
         </div>
@@ -142,7 +147,21 @@ export default function MonitorPage() {
       {activeNetwork?.slug === "wan" || statusOpen ? null : <DevicePanel monitorId={monitor.id} />}
 
       {activeNetwork?.slug === "wifi-main" ? <WifiScans monitorId={monitor.id} /> : null}
-      {activeNetwork?.slug === "wan" ? (
+      {onApps ? (
+        <AppsDashboard
+          monitorId={monitor.id}
+          range={chartRange}
+          link={link === "wired" ? "wired" : link === "wireless" ? "wireless" : null}
+          slug={checkParam?.startsWith("rtnp:") ? checkParam.slice(5) : null}
+          onOpen={(selectedLink, slug) => {
+            const next = new URLSearchParams(searchParams);
+            next.set("detail", "apps");
+            next.set("link", selectedLink);
+            next.set("check", `rtnp:${slug}`);
+            setSearchParams(next);
+          }}
+        />
+      ) : activeNetwork?.slug === "wan" ? (
         <InternetPath
           tests={tests}
           isp={monitor.isp}
@@ -162,6 +181,46 @@ export default function MonitorPage() {
         </Link>
       </div>
     </div>
+  );
+}
+
+function AppsDashboard({
+  monitorId,
+  range,
+  link,
+  slug,
+  onOpen,
+}: {
+  monitorId: string;
+  range: ChartRange;
+  link: "wired" | "wireless" | null;
+  slug: string | null;
+  onOpen: (link: "wired" | "wireless", slug: string) => void;
+}) {
+  if (slug && link) {
+    return <RealtimeHealth monitorId={monitorId} link={link} range={range} slug={slug} />;
+  }
+  return (
+    <>
+      <section className="panel network-health">
+        <RealtimeHealth
+          monitorId={monitorId}
+          link="wireless"
+          range={range}
+          title="Wi-Fi · Real-Time Application Health"
+          onOpen={(s) => onOpen("wireless", s)}
+        />
+      </section>
+      <section className="panel network-health">
+        <RealtimeHealth
+          monitorId={monitorId}
+          link="wired"
+          range={range}
+          title="Wired · Real-Time Application Health"
+          onOpen={(s) => onOpen("wired", s)}
+        />
+      </section>
+    </>
   );
 }
 

@@ -29,6 +29,19 @@ const MOOD_LABEL: Record<Mood, string> = {
   down: "Something is down",
 };
 
+const MOOD_COLOR_NAME: Record<Mood, string> = {
+  happy: "Mint Green · Happy",
+  curious: "Lavender & Mint · Waiting on Tests",
+  slow: "Amber · Running Slow",
+  down: "Coral Red · Attention Needed",
+};
+
+const CHECK_WHAT: Record<string, string> = {
+  wifi: "ISP & tunnel path over Wi-Fi",
+  wired: "ISP & tunnel path over Ethernet",
+  web: "DNS & 8 major websites quorum",
+  apps: "Live voice & video UDP flows",
+};
 const MOOD_RANK: Record<Mood, number> = { down: 0, slow: 1, curious: 2, happy: 3 };
 const STATE_RANK: Record<CheckState, number> = { unknown: -1, ok: 0, slow: 1, down: 2 };
 
@@ -95,8 +108,7 @@ function checkHref(monitorId: string, key: string, networkId: string | null): st
   }
   if (key === "apps") {
     const params = new URLSearchParams({
-      network: networkId,
-      link: "wireless",
+      detail: "apps",
     });
     return `/monitors/${monitorId}?${params}`;
   }
@@ -170,21 +182,28 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
       .map((check) => check.label);
     let mood: Mood = "happy";
     let blurb = "Everything here is happy and humming.";
+    let reason =
+      "The remote probe is online and all active checks (Wi-Fi, Wired, Web, and Apps) are passing within their latency, jitter, and packet-loss thresholds.";
     if (monitor.status === "offline") {
       mood = "down";
       blurb = "Remote probe is offline and has stopped checking in.";
+      reason =
+        "The face is coral red with a frown because the remote Raspberry Pi probe has stopped checking in for over 5 minutes, so live network health cannot be verified.";
     } else if (down.length > 0) {
       mood = "down";
       blurb = `${join(down)} ${down.length === 1 ? "is" : "are"} down.`;
+      reason = `The face is coral red with a frown because ${join(down)} ${down.length === 1 ? "has" : "have"} sustained failures across recent test windows.`;
     } else if (slow.length > 0) {
       mood = "slow";
       blurb = `${join(slow)} ${slow.length === 1 ? "is" : "are"} running slow.`;
+      reason = `The face is amber yellow with a flat expression because ${join(slow)} ${slow.length === 1 ? "is" : "are"} experiencing elevated latency, jitter, or packet loss.`;
     } else if (unknown.length > 0) {
       const ok = labels("ok");
       mood = "curious";
       blurb =
         (ok.length > 0 ? `${join(ok)} ${ok.length === 1 ? "is" : "are"} fine. ` : "") +
         `${join(unknown)} ${unknown.length === 1 ? "hasn't" : "haven't"} been tested yet.`;
+      reason = `The face is lavender and mint because ${join(unknown)} ${unknown.length === 1 ? "has" : "have"} not completed a full test window yet.`;
     }
     const place = joinAnon(
       [monitor.location_label, monitor.region ?? regionById.get(monitor.id)]
@@ -198,7 +217,10 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
       checks,
       mood,
       moodLabel: MOOD_LABEL[mood],
+      colorTitle: MOOD_COLOR_NAME[mood],
       blurb,
+      reason,
+      probeOnline: monitor.status !== "offline",
     };
   });
   locations.sort((a, b) => MOOD_RANK[a.mood] - MOOD_RANK[b.mood] || a.name.localeCompare(b.name));
@@ -250,13 +272,37 @@ export default function OverviewPage() {
         {view.locations.map((location, index) => (
           <section className="probe" key={location.id} aria-labelledby={`loc-${index + 1}`}>
             <div className="probe-top">
-              <Link className={`orb mood-${location.mood}`} to={`/monitors/${location.id}`} aria-label={location.moodLabel}>
-                <Face mood={location.mood} />
-              </Link>
+              <div className="orb-wrap" tabIndex={0} aria-label={`${location.colorTitle}. ${location.reason}`}>
+                <div className={`orb mood-${location.mood}`} role="img" aria-hidden="true">
+                  <Face mood={location.mood} />
+                </div>
+                <div className="orb-popover" role="tooltip">
+                  <div className="orb-popover-head">
+                    <span className={`dot ${location.mood === "happy" ? "ok" : location.mood === "curious" ? "unknown" : location.mood}`} />
+                    <strong>{location.colorTitle}</strong>
+                  </div>
+                  <p className="orb-popover-why">{location.reason}</p>
+                  <ul className="orb-popover-list">
+                    <li>
+                      <span className={`dot ${location.probeOnline ? "ok" : "down"}`} />
+                      <span>
+                        <strong>Remote Probe:</strong> {location.probeOnline ? "Online & checking in" : "Offline (>5 min)"}
+                      </span>
+                    </li>
+                    {location.checks.map((check) => (
+                      <li key={check.key}>
+                        <span className={`dot ${check.state}`} />
+                        <span>
+                          <strong>{check.label}:</strong> {check.detail}{" "}
+                          <em className="orb-popover-meta">({CHECK_WHAT[check.key]})</em>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
               <div className="probe-text">
-                <h2 id={`loc-${index + 1}`}>
-                  <Link to={`/monitors/${location.id}`}>{location.name}</Link>
-                </h2>
+                <h2 id={`loc-${index + 1}`}>{location.name}</h2>
                 <p>{location.blurb}</p>
                 {location.place ? <p className="probe-id">{location.place}</p> : null}
               </div>

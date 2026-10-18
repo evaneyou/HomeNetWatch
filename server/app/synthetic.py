@@ -407,6 +407,11 @@ def metrics_from_interval(payload: dict[str, Any]) -> dict[str, Any]:
     rx = flow.get("rx") or {}
     rtt = flow.get("rtt") or {}
     verdict = flow.get("verdict") or {}
+    rtt_ms = _number(rtt.get("avg_ms"))
+    if rtt_ms is None and not rx.get("delay_relative"):
+        delay = _number(rx.get("delay_avg_ms"))
+        if delay is not None and delay >= 0:
+            rtt_ms = delay
     jitter = rtt.get("jitter_ms")
     if jitter is None:
         jitter = rx.get("jitter_rfc3550_ms", rx.get("jitter_ms"))
@@ -419,8 +424,10 @@ def metrics_from_interval(payload: dict[str, Any]) -> dict[str, Any]:
         label = "pass"
     elif passed is False:
         label = "fail"
+    if rtt_ms is None and jitter is None and loss is None:
+        label = None
     return {
-        "rtt_ms": _number(rtt.get("avg_ms")),
+        "rtt_ms": rtt_ms,
         "jitter_ms": _number(jitter),
         "loss_pct": _number(loss),
         "verdict": label,

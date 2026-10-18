@@ -15,7 +15,7 @@ fi
 
 docker build -q -t home-sensor-server-test ./server >/dev/null
 docker run --rm --network "$network" \
-  -v "$PWD/server:/src" -w /src \
+  -v "$PWD/server:/src" -v "$PWD/monitor:/monitor:ro" -w /src \
   -e PYTHONPATH=/src \
   -e DATABASE_URL="postgresql+psycopg://$user:$password@db:5432/hns_test" \
   -e SECRET_KEY=test-secret \

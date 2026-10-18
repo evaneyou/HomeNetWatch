@@ -25,7 +25,7 @@ from app.models import KpiDaily, KpiHourly, Network, ResultStatus, SyntheticRun,
 
 log = logging.getLogger(__name__)
 
-TARGETS = {"internet": 99.9, "voice": 99.5, "video": 99.5, "loss_pct": 1.0}
+TARGETS = {"internet": 99.99, "voice": 99.9, "video": 99.9, "loss_pct": 0.1}
 KINDS = ("internet", "voice", "video", "apps", "speed")
 KEEP_YEARS = 5
 PERIODS = {

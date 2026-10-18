@@ -350,3 +350,8 @@ def test_the_new_endpoints(client: TestClient, db):
     assert guest.get("/api/v1/kpi?period=day&day=2026-10-13").json()["day"] == "2026-10-13"
     assert guest.get("/api/v1/kpi?period=day&day=not-a-date").status_code == 422
     assert guest.get("/api/v1/kpi/daily?limit=5000").status_code == 422
+
+
+def test_the_targets_are_strict_and_reach_the_report(db):
+    assert kpi.TARGETS == {"internet": 99.99, "voice": 99.9, "video": 99.9, "loss_pct": 0.1}
+    assert kpi.report(db, "week", now=NOW)["targets"] == kpi.TARGETS

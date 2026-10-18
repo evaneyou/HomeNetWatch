@@ -194,12 +194,14 @@ export default function SpeedTestPage() {
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.me() as Promise<User> });
   const monitorsQ = useQuery({ queryKey: ["monitors"], queryFn: () => api.monitors() as Promise<MonitorAdmin[]> });
   const [agentId, setAgentId] = useState("");
+  const [draft, setDraft] = useState<string | null>(null); // the picker's choice, applied by Display
   const [link, setLink] = useState<Link>("wired");
   const [testId, setTestId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const monitors = monitorsQ.data ?? [];
   const agent = monitors.find((item) => item.id === agentId) ?? monitors[0];
+  const sensorValue = draft ?? agent?.id ?? "";
 
   const activeQ = useQuery({
     queryKey: ["speedtest-active", agent?.id],
@@ -317,16 +319,30 @@ export default function SpeedTestPage() {
           <h1>Speed Test</h1>
           <p>Measures the most your connection can download and upload, live. It runs for 30 seconds.</p>
         </div>
-        <div className="st-controls">
-          {monitors.length > 0 ? (
-            <SelectMenu className="st-select" aria-label="Remote agent" value={agent.id} disabled={running} onChange={(event) => { setAgentId(event.target.value); setTestId(null); }}>
+        {monitors.length > 0 ? (
+          <div className="st-sensor">
+            <SelectMenu className="st-select" aria-label="Remote sensor" value={sensorValue} disabled={running} onChange={(event) => setDraft(event.target.value)}>
               {monitors.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
                 </option>
               ))}
             </SelectMenu>
-          ) : null}
+            <button
+              type="button"
+              className="st-display"
+              disabled={running || sensorValue === agent.id}
+              onClick={() => {
+                setAgentId(sensorValue);
+                setTestId(null);
+                setDraft(null);
+              }}
+            >
+              Display
+            </button>
+          </div>
+        ) : null}
+        <div className="st-controls">
           <div className="st-seg" role="group" aria-label="Connection to test">
             {(["wired", "wireless"] as const).map((item) => (
               <button key={item} type="button" className={link === item ? "active" : ""} aria-pressed={link === item} disabled={running} onClick={() => setLink(item)}>

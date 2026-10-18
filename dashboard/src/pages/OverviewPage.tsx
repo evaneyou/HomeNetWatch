@@ -271,6 +271,14 @@ export default function OverviewPage() {
         {view.locations.length === 0 ? <p className="probe-text">No locations have checked in yet.</p> : null}
         {view.locations.map((location, index) => (
           <section className="probe" key={location.id} aria-labelledby={`loc-${index + 1}`}>
+            <Link className="kpi-icon kpi-icon-next" to="/airwaves" aria-label="Airwaves">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4.5 16a7.5 7.5 0 0 1 15 0" />
+                <path d="M8 16a4 4 0 0 1 8 0" />
+                <circle cx="12" cy="16" r="1.15" fill="currentColor" stroke="none" />
+              </svg>
+              <span className="kpi-icon-tip" role="tooltip">Airwaves</span>
+            </Link>
             <Link className="kpi-icon" to="/kpi" aria-label="KPI Dashboard">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="3.5" y="13" width="4.5" height="7.5" rx="1.2" fill="currentColor" stroke="none" />

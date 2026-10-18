@@ -920,8 +920,9 @@
 @media (min-width: 900px) {
   /* Wide screens: the buttons on the left and the recommendation to their right on the same row. */
   .awc-rec {
-    flex: 1 1 560px;
-    max-width: 760px;
+    flex: 0 0 auto;
+    grid-template-columns: auto auto auto;
+    gap: 4px 20px;
     margin-left: auto;
   }
 }
@@ -946,4 +947,29 @@
   .awc-list {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Band buttons: a rounded track with the chosen band filled, like the Speed Test and Path View switches. */
+.awc .aw-pills {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 5px;
+  background: var(--aw-card);
+  border: 1px solid var(--aw-line);
+  border-radius: 999px;
+}
+
+.awc .aw-pill {
+  height: 40px;
+  padding: 0 22px;
+  background: transparent;
+  border: 0;
+  color: var(--aw-soft);
+  font-size: 15px;
+}
+
+.awc .aw-pill.active {
+  background: var(--aw-mint);
+  color: #06201b;
 }

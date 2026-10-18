@@ -104,11 +104,12 @@ function MenuIcon({ name }: { name: "airwaves" | "issues" | "settings" | "path" 
   return (
     <svg className="menu-icon" viewBox="0 0 24 24" aria-hidden="true">
       {name === "airwaves" ? (
-        <>
+        // the waves are short and wide, so they are drawn larger to match the weight of the other icons
+        <g transform="translate(12 12) scale(1.25) translate(-12 -12.75)" strokeWidth={1.4}>
           <path d="M4.5 16a7.5 7.5 0 0 1 15 0" />
           <path d="M8 16a4 4 0 0 1 8 0" />
           <circle className="menu-icon-dot" cx="12" cy="16" r="1.15" />
-        </>
+        </g>
       ) : null}
       {name === "issues" ? (
         <>
@@ -141,11 +142,11 @@ function MenuIcon({ name }: { name: "airwaves" | "issues" | "settings" | "path" 
         </>
       ) : null}
       {name === "speed" ? (
-        <>
+        <g transform="translate(12 12) scale(1.15) translate(-12 -11.5)" strokeWidth={1.5}>
           <path d="M6 16.5a6 6 0 1 1 12 0" />
           <path d="M12 16.5 16.2 11" />
           <circle className="menu-icon-dot" cx="12" cy="16.5" r="1" />
-        </>
+        </g>
       ) : null}
       {name === "network" ? (
         <>

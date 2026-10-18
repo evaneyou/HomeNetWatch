@@ -335,13 +335,9 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
             </div>
             <div className="kpi-heat-main">
               <div className="kpi-heat-days" aria-hidden="true">
-                <span>M</span>
-                <span />
-                <span>W</span>
-                <span />
-                <span>F</span>
-                <span />
-                <span />
+                {["M", "T", "W", "T", "F", "S", "S"].map((letter, index) => (
+                  <span key={index}>{letter}</span>
+                ))}
               </div>
               <div className="kpi-heat-grid" role="list" aria-label="Daily results">
                 {cells.map((cell) =>

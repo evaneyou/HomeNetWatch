@@ -271,6 +271,14 @@ export default function OverviewPage() {
         {view.locations.length === 0 ? <p className="probe-text">No locations have checked in yet.</p> : null}
         {view.locations.map((location, index) => (
           <section className="probe" key={location.id} aria-labelledby={`loc-${index + 1}`}>
+            <Link className="kpi-icon" to="/kpi" aria-label="KPI Dashboard">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3.5" y="13" width="4.5" height="7.5" rx="1.2" fill="currentColor" stroke="none" />
+                <rect x="9.75" y="4" width="4.5" height="16.5" rx="1.2" fill="currentColor" stroke="none" />
+                <rect x="16" y="9" width="4.5" height="11.5" rx="1.2" fill="currentColor" stroke="none" />
+              </svg>
+              <span className="kpi-icon-tip" role="tooltip">KPI Dashboard</span>
+            </Link>
             <div className="probe-top">
               <div className="orb-wrap" tabIndex={0} aria-label={`${location.colorTitle}. ${location.reason}`}>
                 <div className={`orb mood-${location.mood}`} role="img" aria-hidden="true">

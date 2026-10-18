@@ -83,7 +83,7 @@ export type RfOverview = {
   headline: string;
   sparkline: { t: string; ap_count: number; count_24: number; count_5: number }[];
   airwave_mode: string;
-  alerts: { alert_type: string; bssid: string; text: string; observed_at: string }[];
+  alerts: { alert_type: string; bssid: string; text: string; observed_at: string; severity?: "info" | "warning" | "critical" }[];
 };
 
 export type RfAp = {

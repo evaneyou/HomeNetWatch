@@ -654,6 +654,7 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
 
 
 def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) -> None:
+    global _last_failure
     run_id, link = item
     base = str(config.get("server_url") or "").rstrip("/")
     assert proc.stdout is not None
@@ -673,10 +674,18 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
         if flow0.get("rx") is None and flow0.get("loss_pct") is None:
             missing_rx += 1
             if mode_of(item) == "continuous" and missing_rx >= 3:
+                with _lock:
+                    state = _running.get(item)
+                    if state and state["proc"] is proc:
+                        _running.pop(item, None)
                 proc.terminate()
                 break
         else:
             missing_rx = 0
+            if mode_of(item) == "continuous":
+                with _lock:
+                    if _last_failure.startswith(f"{link}:"):
+                        _last_failure = ""
         if mode_of(item) != "stress" and _charge(payload):
             proc.terminate()
             _finish(config, run_id, link, "failed", "Traffic cap reached")
@@ -738,7 +747,6 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
         # A continuous flow that stops by itself is relaunched on the next sync.
         # Without this it fails in silence: nothing finishes the run, and the
         # sender's own complaint used to go to /dev/null.
-        global _last_failure
         trouble = note or f"rtnp-send exited with code {code}"
         with _lock:
             _last_failure = f"{link}: {trouble}"

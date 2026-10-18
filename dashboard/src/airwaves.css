@@ -330,6 +330,11 @@
   font-weight: 800;
 }
 
+.aw-badge.info {
+  background: rgba(154, 166, 196, 0.16);
+  color: var(--aw-muted);
+}
+
 .aw-alerts-list {
   flex: 1;
   min-height: 0;
@@ -371,7 +376,19 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  background: var(--aw-muted);
+}
+
+.aw-alert.sev-warning i {
   background: var(--aw-amber);
+}
+
+.aw-alert.sev-critical i {
+  background: var(--fail, #ff5d7d);
+}
+
+.aw-alert.sev-info b {
+  color: var(--aw-muted);
 }
 
 .aw-alert > div {

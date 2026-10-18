@@ -319,6 +319,7 @@
 .app-shell.ui-compact .status-mark-ok { --mark: var(--ok); }
 .app-shell.ui-compact .status-mark-degraded { --mark: var(--degraded); }
 .app-shell.ui-compact .status-mark-offline { --mark: var(--fail); }
+.app-shell.ui-compact .status-mark-info { --mark: var(--muted); }
 
 .app-shell.ui-compact .npv {
   --surface: var(--bg-elevated);

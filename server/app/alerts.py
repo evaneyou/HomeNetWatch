@@ -25,6 +25,7 @@ from app import telegram
 from app.models import (
     AlertEvent,
     Issue,
+    IssueSeverity,
     IssueStatus,
     Monitor,
     MonitorHealth,
@@ -172,7 +173,11 @@ def network_conditions(db: Session, now: datetime, offline_ids: set) -> list[Con
     airwave_issues = db.execute(
         select(Issue, Monitor)
         .join(Monitor, Issue.monitor_id == Monitor.id)
-        .where(Issue.status == IssueStatus.open, Issue.root_cause_stage == "airwave")
+        .where(
+            Issue.status == IssueStatus.open,
+            Issue.root_cause_stage == "airwave",
+            Issue.severity != IssueSeverity.info,
+        )
     ).all()
     for issue, monitor in airwave_issues:
         if monitor.id in offline_ids:

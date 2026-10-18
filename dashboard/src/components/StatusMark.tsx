@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 
-type StatusKind = "ok" | "degraded" | "offline" | "unknown";
+type StatusKind = "ok" | "degraded" | "offline" | "info" | "unknown";
 
 const PRESENTATION: Record<string, { kind: StatusKind; label: string }> = {
   ok: { kind: "ok", label: "Ok" },
@@ -9,6 +9,7 @@ const PRESENTATION: Record<string, { kind: StatusKind; label: string }> = {
   degraded: { kind: "degraded", label: "Degraded" },
   fail: { kind: "offline", label: "Offline" },
   offline: { kind: "offline", label: "Offline" },
+  info: { kind: "info", label: "Notice" },
   unknown: { kind: "unknown", label: "Unknown" },
 };
 
@@ -59,6 +60,16 @@ function OfflineIcon() {
   );
 }
 
+function InfoIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" strokeWidth="2" />
+      <circle cx="12" cy="8.2" r="1.15" fill="currentColor" />
+      <path d="M12 11.4v4.9" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function UnknownIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -77,6 +88,7 @@ function MarkIcon({ kind }: { kind: StatusKind }) {
   if (kind === "ok") return <OkIcon />;
   if (kind === "degraded") return <DegradedIcon />;
   if (kind === "offline") return <OfflineIcon />;
+  if (kind === "info") return <InfoIcon />;
   return <UnknownIcon />;
 }
 

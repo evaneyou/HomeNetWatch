@@ -437,3 +437,51 @@ def test_daily_history_carries_the_gap_minutes(db):
     db.commit()
     rows = kpi.daily_history(db, NOW.date(), NOW.date(), monitor.id)
     assert rows and rows[0]["gap_minutes"] == pytest.approx(14.0)
+
+
+def test_the_daily_health_score_weights_internet_most():
+    assert kpi.SCORE_WEIGHTS == {"internet": 60, "voice": 20, "video": 10, "loss": 10}
+    perfect = kpi.health_score(100.0, 100.0, 100.0, 0.0)
+    assert perfect["score"] == 100.0 and perfect["tone"] == "good"
+
+    # Internet down about 30 minutes (97.9%) and everything else perfect: red.
+    down = kpi.health_score(97.9, 100.0, 100.0, 0.0)
+    assert down["score"] == 40.0 and down["tone"] == "bad"
+    # Voice at its worst alone is amber, on the edge. Video alone is further from the edge.
+    assert kpi.health_score(100.0, 98.0, 100.0, 0.0)["score"] == 80.0
+    assert kpi.health_score(100.0, 98.0, 100.0, 0.0)["tone"] == "warn"
+    assert kpi.health_score(100.0, 100.0, 98.0, 0.0)["score"] == 90.0
+
+    # The two real days from the proposal.
+    oct16 = kpi.health_score(100.0, 99.73, 99.40, 0.05)
+    assert oct16["score"] == pytest.approx(95.6, abs=0.1) and oct16["tone"] == "good"
+    oct13 = kpi.health_score(99.85, 99.25, 97.68, 0.60)
+    assert oct13["score"] == pytest.approx(71.3, abs=0.1) and oct13["tone"] == "bad"
+
+
+def test_a_missing_service_shares_its_weight_and_no_internet_means_no_score():
+    # No voice that day: the other three are scored on their own weights (60, 10, 10 out of 80).
+    assert kpi.health_score(100.0, None, 100.0, 0.0)["score"] == 100.0
+    partial = kpi.health_score(100.0, None, 98.0, 0.0)
+    assert partial["score"] == pytest.approx(100 * (60 + 0 + 10) / 80)
+    none = kpi.health_score(None, 100.0, 100.0, 0.0)
+    assert none == {"score": None, "tone": "none", "parts": {}}
+    # The better a target is met, the better the score, in proportion between the two ends.
+    assert kpi.health_score(99.475, 100.0, 100.0, 0.0)["score"] == pytest.approx(100 - 0.6 * 50, abs=0.1)
+
+
+def test_the_daily_history_carries_the_score_and_the_colour(db):
+    monitor = _pi(db)
+    wired = _link(db, monitor, NetworkKind.wired)
+    for minute in range(10):
+        _ping(db, wired, minute, ResultStatus.ok)
+    voice = _run(db, monitor, "voip-g711a")
+    for minute in range(10):
+        _sample(db, voice, minute, "pass", loss=0.0)
+    db.commit()
+    kpi.backfill(db, now=NOW)
+    db.commit()
+    row = kpi.daily_history(db, NOW.date(), NOW.date(), monitor.id)[0]
+    assert row["score"] == 100.0 and row["tone"] == "good" and set(row["score_parts"]) == {"internet", "voice", "loss"}
+    empty = kpi.daily_history(db, date(2020, 1, 1), date(2020, 1, 2), monitor.id)
+    assert empty == []

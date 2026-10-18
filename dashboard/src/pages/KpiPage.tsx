@@ -179,6 +179,9 @@ type DailyRow = {
   loss: number | null;
   offline_minutes: number;
   gap_minutes: number;
+  score: number | null;
+  tone: Tone;
+  score_parts: Record<string, number>;
   outages: number;
   rtt_ms: number | null;
 };
@@ -199,19 +202,11 @@ function niceDay(iso: string): string {
   return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
-const DAY_TONES = { good: "Met every target", warn: "Close to a target", bad: "Missed a target", none: "No data" } as const;
+const DAY_TONES = { good: "Healthy, 95 or more", warn: "Fair, 80 to 94", bad: "Poor, under 80", none: "No data" } as const;
 
-/** The worst result of the day against the targets, as one colour. */
-function dayTone(row: DailyRow | null, targets: Report["targets"]): Tone {
-  if (!row) return "none";
-  const tones = [
-    availabilityTone(row.internet, targets.internet),
-    availabilityTone(row.voice, targets.voice),
-    availabilityTone(row.video, targets.video),
-    lossTone(row.loss, targets.loss_pct),
-  ].filter((tone) => tone !== "none");
-  if (tones.length === 0) return "none";
-  return tones.includes("bad") ? "bad" : tones.includes("warn") ? "warn" : "good";
+/** A day's colour comes from its health score: internet 60%, voice 20%, video 10%, packet drop 10%. */
+function dayTone(row: DailyRow | null): Tone {
+  return row ? row.tone : "none";
 }
 
 function missed(row: DailyRow, targets: Report["targets"]): string[] {
@@ -266,9 +261,9 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
   }, [cells, weeks]);
 
   function download() {
-    const head = ["Date", "Internet %", "Wired %", "Wi-Fi %", "Voice %", "Video %", "Packet drop %", "Offline min", "Outages", "Reporting gap min"];
+    const head = ["Date", "Internet %", "Wired %", "Wi-Fi %", "Voice %", "Video %", "Packet drop %", "Offline min", "Outages", "Reporting gap min", "Health score"];
     const cell = (value: number | null, digits = 2) => (value == null ? "" : value.toFixed(digits));
-    const lines = list.map((row) => [row.day, cell(row.internet), cell(row.internet_wired), cell(row.internet_wireless), cell(row.voice), cell(row.video), cell(row.loss), cell(row.offline_minutes, 1), String(row.outages), cell(row.gap_minutes, 1)].join(","));
+    const lines = list.map((row) => [row.day, cell(row.internet), cell(row.internet_wired), cell(row.internet_wireless), cell(row.voice), cell(row.video), cell(row.loss), cell(row.offline_minutes, 1), String(row.outages), cell(row.gap_minutes, 1), cell(row.score, 1)].join(","));
     const blob = new Blob([[head.join(","), ...lines].join("\n")], { type: "text/csv" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -290,7 +285,7 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
     <section className="kpi-panel kpi-history">
       <header>
         <h3>Daily KPI history</h3>
-        <span>One square per day, coloured against the targets. Hover for the numbers, click to open the day.</span>
+        <span>One square per day, coloured by a health score: internet 60%, voice 20%, video 10%, packet drop 10%. Hover for the numbers, click to open the day.</span>
       </header>
       <div className="kpi-filter">
         <label>
@@ -348,8 +343,8 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
                       key={cell.day}
                       type="button"
                       role="listitem"
-                      className={`kpi-cell tone-${dayTone(cell.row, targets)}${cell.day === selected ? " is-selected" : ""}`}
-                      aria-label={`${niceDay(cell.day)}: ${cell.row ? (missed(cell.row, targets).length ? `missed ${missed(cell.row, targets).join(", ")}` : "met every target") : "no data"}`}
+                      className={`kpi-cell tone-${dayTone(cell.row)}${cell.day === selected ? " is-selected" : ""}`}
+                      aria-label={`${niceDay(cell.day)}: ${cell.row && cell.row.score != null ? `health score ${Math.round(cell.row.score)}` : "no data"}`}
                       onMouseEnter={(event) => show(cell, event.currentTarget)}
                       onFocus={(event) => show(cell, event.currentTarget)}
                       onBlur={() => setTip(null)}
@@ -366,8 +361,9 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
             <b>{niceDay(tip.cell.day)}</b>
             {tip.cell.row ? (
               <>
-                <span className={`kpi-tip-status tone-${dayTone(tip.cell.row, targets)}`}>
-                  {missed(tip.cell.row, targets).length ? `Below target: ${missed(tip.cell.row, targets).join(", ")}` : DAY_TONES.good}
+                <span className={`kpi-tip-status tone-${dayTone(tip.cell.row)}`}>
+                  {tip.cell.row.score == null ? "No health score" : `Health score ${Math.round(tip.cell.row.score)} of 100`}
+                  {missed(tip.cell.row, targets).length ? ` · below target: ${missed(tip.cell.row, targets).join(", ")}` : ""}
                 </span>
                 <dl>
                   <dt>Internet</dt>
@@ -805,7 +801,7 @@ export default function KpiPage() {
           <b>How these are measured.</b> Internet availability is the share of one-minute checks to the HomeNetWatch server, on each link, that
           succeeded. Voice and video availability is the share of their quality checks (every few seconds) that stayed within their limits. Packet
           drop is the average loss those checks reported. Time offline is counted from failed internet checks. A reporting gap is time with no results at all, because the Pi or the server was down; it is shown
-          separately and is not counted as internet downtime. A period with no measurements shows a gap, never 100%. Figures are cut off, not rounded up, at two decimals. Each day is stored as a daily record, and weeks, months and years are added up from those records.
+          separately and is not counted as internet downtime. A period with no measurements shows a gap, never 100%. Each day in the history gets a health score from 0 to 100 (internet 60%, voice 20%, video 10%, packet drop 10%): green is 95 or more, amber 80 to 94, red below 80. Figures are cut off, not rounded up, at two decimals. Each day is stored as a daily record, and weeks, months and years are added up from those records.
         </p>
         <p>{report.data_since ? `Measurements since ${new Date(report.data_since).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}. ` : ""}Home network, report generated {new Date(report.generated_at).toLocaleString()}.</p>
       </footer>

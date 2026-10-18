@@ -27,6 +27,47 @@ log = logging.getLogger(__name__)
 
 TARGETS = {"internet": 99.95, "voice": 99.9, "video": 99.9, "loss_pct": 0.1}
 KINDS = ("internet", "voice", "video", "apps", "speed")
+
+# The daily health score: how much each service counts, and where a result is worth 0 points.
+# At or better than its target a service scores 100; at its zero point or worse, 0; in between, in proportion.
+SCORE_WEIGHTS = {"internet": 60, "voice": 20, "video": 10, "loss": 10}
+SCORE_ZERO = {"internet": 99.0, "voice": 98.0, "video": 98.0}  # availability (%) that scores 0
+SCORE_ZERO_LOSS = 1.0  # packet drop (%) that scores 0
+SCORE_GREEN = 95.0
+SCORE_AMBER = 80.0
+
+
+def _scaled(value: Optional[float], good: float, zero: float) -> Optional[float]:
+    """0 to 100: 100 at `good` or better, 0 at `zero` or worse. Works whichever way round the two are."""
+    if value is None:
+        return None
+    if (good >= zero and value >= good) or (good < zero and value <= good):
+        return 100.0
+    if (good >= zero and value <= zero) or (good < zero and value >= zero):
+        return 0.0
+    return 100.0 * (value - zero) / (good - zero)
+
+
+def health_score(internet: Optional[float], voice: Optional[float], video: Optional[float], loss: Optional[float], targets: Optional[dict[str, float]] = None) -> dict[str, Any]:
+    """One 0 to 100 score for a day: internet 60, voice 20, video 10, packet drop 10.
+
+    A service with no data that day is left out and the others share its weight. With no internet figure
+    there is no score, because internet is most of it.
+    """
+    goals = targets or TARGETS
+    parts = {
+        "internet": _scaled(internet, goals["internet"], SCORE_ZERO["internet"]),
+        "voice": _scaled(voice, goals["voice"], SCORE_ZERO["voice"]),
+        "video": _scaled(video, goals["video"], SCORE_ZERO["video"]),
+        "loss": _scaled(loss, goals["loss_pct"], SCORE_ZERO_LOSS),
+    }
+    if parts["internet"] is None:
+        return {"score": None, "tone": "none", "parts": {}}
+    used = {name: value for name, value in parts.items() if value is not None}
+    weight = sum(SCORE_WEIGHTS[name] for name in used)
+    score = sum(SCORE_WEIGHTS[name] * value for name, value in used.items()) / weight
+    tone = "good" if score >= SCORE_GREEN else "warn" if score >= SCORE_AMBER else "bad"
+    return {"score": round(score, 1), "tone": tone, "parts": {name: round(value) for name, value in used.items()}}
 KEEP_YEARS = 5
 PERIODS = {
     # name: (bucket unit, number of buckets)
@@ -643,6 +684,8 @@ def daily_history(db: Session, first: date, last: date, monitor_id: Optional[UUI
         video = _summary(rows, "video")
         parts = [(item["loss_avg"], item["samples"]) for item in (voice, video) if item["loss_avg"] is not None]
         weight = sum(count for _value, count in parts)
+        loss = sum(value * count for value, count in parts) / weight if weight else None
+        health = health_score(internet["availability"], voice["availability"], video["availability"], loss)
         out.append(
             {
                 "day": day,
@@ -651,7 +694,10 @@ def daily_history(db: Session, first: date, last: date, monitor_id: Optional[UUI
                 "internet_wireless": _summary([r for r in rows if r["link"] == "wireless"], "internet")["availability"],
                 "voice": voice["availability"],
                 "video": video["availability"],
-                "loss": sum(value * count for value, count in parts) / weight if weight else None,
+                "loss": loss,
+                "score": health["score"],
+                "tone": health["tone"],
+                "score_parts": health["parts"],
                 "offline_minutes": internet["outage_minutes"],
                 "gap_minutes": internet["gap_minutes"],
                 "outages": internet["incidents"],

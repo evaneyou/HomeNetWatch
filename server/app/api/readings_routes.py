@@ -8,7 +8,7 @@ from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Select, and_, desc, func, literal, or_, select, union_all
+from sqlalchemy import Select, and_, desc, func, literal, or_, select, text, union_all
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.rf_routes import rf_alert_severity
@@ -33,6 +33,7 @@ from app.models import (
     SyntheticProfile,
     SyntheticRun,
     SyntheticSample,
+    SystemLog,
     Test,
     TestResult,
     User,
@@ -49,6 +50,8 @@ from app.schemas import (
     ResultPage,
     SummaryResponse,
     ThroughputMbps,
+    UnifiedEventOut,
+    UnifiedEventPage,
     WifiObservationOut,
 )
 from app.services.stability import cell_quorum, service_status
@@ -530,6 +533,55 @@ def _airwave_page(db: Session, monitor: Monitor, offset: int, limit: int) -> Res
     )
 
 
+def _system_log_out(row: SystemLog, monitor: Monitor) -> ResultOut:
+    sev = (row.severity or "info").lower()
+    if sev == "critical":
+        status = "fail"
+    elif sev == "warning":
+        status = "degraded"
+    else:
+        status = "info"
+    source_label = "Agent" if row.source == "agent" else "Server"
+    return ResultOut(
+        id=row.id,
+        external_id=f"syslog-{row.id}",
+        test_id=monitor.id,
+        test_slug=f"system:{row.subsystem}",
+        test_name=f"{source_label} {row.subsystem}",
+        test_kind="system",
+        monitor_id=monitor.id,
+        monitor_slug=monitor.slug,
+        network_id=monitor.id,
+        network_slug="wan",
+        network_name=source_label,
+        started_at=row.recorded_at,
+        finished_at=row.recorded_at,
+        status=status,
+        stages=[],
+        metrics={},
+        message=row.message,
+        status_reason=row.message,
+    )
+
+
+def _system_log_page(db: Session, monitor: Monitor, offset: int, limit: int) -> ResultPage:
+    cond = or_(SystemLog.monitor_id == monitor.id, SystemLog.monitor_id.is_(None))
+    total = db.scalar(select(func.count(SystemLog.id)).where(cond)) or 0
+    rows = db.scalars(
+        select(SystemLog)
+        .where(cond)
+        .order_by(desc(SystemLog.recorded_at), desc(SystemLog.id))
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return ResultPage(
+        total=total,
+        offset=offset,
+        limit=limit,
+        items=[_system_log_out(row, monitor) for row in rows],
+    )
+
+
 def _merged_page(db: Session, monitor: Monitor, offset: int, limit: int) -> ResultPage:
     tests = (
         select(
@@ -562,7 +614,15 @@ def _merged_page(db: Session, monitor: Monitor, offset: int, limit: int) -> Resu
         )
         .where(RfAlert.monitor_id == monitor.id)
     )
-    merged = union_all(tests, samples, airwaves).subquery()
+    syslogs = (
+        select(
+            SystemLog.recorded_at.label("at"),
+            SystemLog.id.label("row_id"),
+            literal("syslog").label("src"),
+        )
+        .where(or_(SystemLog.monitor_id == monitor.id, SystemLog.monitor_id.is_(None)))
+    )
+    merged = union_all(tests, samples, airwaves, syslogs).subquery()
     total = db.scalar(select(func.count()).select_from(merged)) or 0
     picked = db.execute(
         select(merged.c.row_id, merged.c.src)
@@ -573,6 +633,7 @@ def _merged_page(db: Session, monitor: Monitor, offset: int, limit: int) -> Resu
     test_ids = [row_id for row_id, src in picked if src == "test"]
     sample_ids = [row_id for row_id, src in picked if src == "sample"]
     airwave_ids = [row_id for row_id, src in picked if src == "airwave"]
+    syslog_ids = [row_id for row_id, src in picked if src == "syslog"]
     test_rows = {}
     if test_ids:
         test_rows = {
@@ -604,6 +665,14 @@ def _merged_page(db: Session, monitor: Monitor, offset: int, limit: int) -> Resu
                 select(RfAlert).where(RfAlert.id.in_(airwave_ids))
             ).all()
         }
+    syslog_rows = {}
+    if syslog_ids:
+        syslog_rows = {
+            row.id: row
+            for row in db.scalars(
+                select(SystemLog).where(SystemLog.id.in_(syslog_ids))
+            ).all()
+        }
     names = _profile_names(db, {row.run.profile_slug for row in sample_rows.values()})
     items = []
     for row_id, src in picked:
@@ -613,6 +682,8 @@ def _merged_page(db: Session, monitor: Monitor, offset: int, limit: int) -> Resu
             items.append(_synthetic_out(sample_rows[row_id], monitor, names))
         elif src == "airwave" and row_id in airwave_rows:
             items.append(_rf_alert_out(airwave_rows[row_id], monitor))
+        elif src == "syslog" and row_id in syslog_rows:
+            items.append(_system_log_out(syslog_rows[row_id], monitor))
     return ResultPage(total=total, offset=offset, limit=limit, items=items)
 
 
@@ -630,6 +701,8 @@ def monitor_log(
         raise HTTPException(status_code=404, detail="Remote agent not found")
     if probe == "airwave":
         return _airwave_page(db, monitor, offset, limit)
+    if probe == "system":
+        return _system_log_page(db, monitor, offset, limit)
     try:
         synthetic = _synthetic_slug(probe)
     except ValueError as exc:
@@ -664,6 +737,60 @@ def monitor_log(
     total = db.scalar(count_stmt) or 0
     rows = db.scalars(rows_stmt.offset(offset).limit(limit)).unique().all()
     return ResultPage(total=total, offset=offset, limit=limit, items=[_result_to_out(r) for r in rows])
+
+
+@router.get("/logs/unified", response_model=UnifiedEventPage)
+def unified_logs(
+    db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(get_current_user)],
+    monitor_id: Optional[UUID] = None,
+    category: Optional[str] = None,
+    severity: Optional[str] = None,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+) -> UnifiedEventPage:
+    """Query the unified timeline view across all telemetry, alerts, issues, and system logs."""
+    clauses: list[str] = []
+    params: dict[str, object] = {"offset": offset, "limit": limit}
+    if monitor_id is not None:
+        clauses.append("(monitor_id = :monitor_id OR monitor_id IS NULL)")
+        params["monitor_id"] = monitor_id
+    if category:
+        clauses.append("category = :category")
+        params["category"] = category
+    if severity:
+        clauses.append("severity = :severity")
+        params["severity"] = severity
+    if since is not None:
+        clauses.append("recorded_at >= :since")
+        params["since"] = since
+    if until is not None:
+        clauses.append("recorded_at <= :until")
+        params["until"] = until
+    where_sql = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    total = int(db.execute(text(f"SELECT count(*) FROM v_unified_events {where_sql}"), params).scalar() or 0)
+    rows = db.execute(
+        text(
+            f"""
+            SELECT recorded_at, event_id, monitor_id, monitor_slug, monitor_name,
+                   category, subsystem, network, severity, title, message,
+                   rtt_ms, jitter_ms, loss_pct, down_mbps, up_mbps, metadata
+            FROM v_unified_events
+            {where_sql}
+            ORDER BY recorded_at DESC, event_id DESC
+            OFFSET :offset LIMIT :limit
+            """
+        ),
+        params,
+    ).mappings().all()
+    return UnifiedEventPage(
+        total=total,
+        offset=offset,
+        limit=limit,
+        items=[UnifiedEventOut(**dict(row)) for row in rows],
+    )
 
 
 def _metric_float(metrics: Optional[dict], key: str) -> Optional[float]:

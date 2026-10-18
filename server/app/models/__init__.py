@@ -756,3 +756,27 @@ class AdhocTrace(Base):
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     hops: Mapped[Optional[list[Any]]] = mapped_column(JSONB)
     error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class SystemLog(Base):
+    """Consolidated server and remote agent operational log entry."""
+
+    __tablename__ = "system_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    source: Mapped[str] = mapped_column(String(16), nullable=False)  # server | agent
+    monitor_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("monitors.id", ondelete="CASCADE"), nullable=True
+    )
+    subsystem: Mapped[str] = mapped_column(String(32), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, default="info")
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+
+    __table_args__ = (
+        Index("ix_system_logs_recorded_at", "recorded_at"),
+        Index("ix_system_logs_monitor_recorded", "monitor_id", "recorded_at"),
+    )

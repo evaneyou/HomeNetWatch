@@ -252,12 +252,20 @@ def report_once(config: dict) -> None:
     import scheduler
     server = config["server_url"].rstrip("/")
     sent = int(config.get("config_version") or 0)
-    body = post_json(
-        f"{server}/api/v1/monitors/health",
-        sample(config),
-        config.get("token"),
-        config.get("name"),
-    )
+    payload = sample(config)
+    pending_logs = state.take_logs()
+    if pending_logs:
+        payload["logs"] = pending_logs
+    try:
+        body = post_json(
+            f"{server}/api/v1/monitors/health",
+            payload,
+            config.get("token"),
+            config.get("name"),
+        )
+    except Exception:
+        state.restore_logs(pending_logs)
+        raise
     radio.remember_trusted(body)
     if apply_config(config, body):
         save_config(config)

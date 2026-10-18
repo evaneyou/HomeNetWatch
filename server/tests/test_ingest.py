@@ -371,3 +371,34 @@ def test_a_long_metric_range_returns_a_bounded_series(client: TestClient, db, mo
     assert len(points) == 3
     assert points[0]["rtt_ms"] == 0
     assert points[-1]["rtt_ms"] == 4
+
+
+def test_agent_logs_and_unified_timeline(client: TestClient, db):
+    login(client)
+    monitor, token = _make_monitor(db, f"Unified {uuid.uuid4().hex[:6]}")
+    payload = {
+        **_health_body(),
+        "last_error": "wireless: rtnp-send exited with code 1",
+        "logs": [
+            {
+                "subsystem": "synthetic",
+                "severity": "info",
+                "message": "wireless flow restarted after 3 missing intervals",
+            }
+        ],
+    }
+    posted = client.post("/api/v1/monitors/health", headers=_token_headers(token), json=payload)
+    assert posted.status_code == 200, posted.text
+
+    syslog_page = client.get(f"/api/v1/monitors/{monitor.id}/log?probe=system")
+    assert syslog_page.status_code == 200, syslog_page.text
+    messages = [item["message"] for item in syslog_page.json()["items"]]
+    assert "wireless flow restarted after 3 missing intervals" in messages
+    assert "wireless: rtnp-send exited with code 1" in messages
+
+    unified = client.get(f"/api/v1/logs/unified?monitor_id={monitor.id}&category=system")
+    assert unified.status_code == 200, unified.text
+    unified_messages = [item["message"] for item in unified.json()["items"]]
+    assert "wireless flow restarted after 3 missing intervals" in unified_messages
+    assert "wireless: rtnp-send exited with code 1" in unified_messages
+

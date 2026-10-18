@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import threading
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -51,6 +52,7 @@ SPOOL_PATH = CONFIG_PATH.with_name("rf-capture.sqlite")
 _restarting = False
 _last_error = ""
 _last_health_at = ""
+_log_buffer: list[dict[str, str]] = []
 _assigned_tests: list[dict] = []
 _next_run: dict[str, float] = {}
 _probes = ThreadPoolExecutor(max_workers=PROBE_WORKERS, thread_name_prefix="probe")
@@ -65,3 +67,38 @@ PUBLIC_CACHE_PATH = CONFIG_PATH.with_name("public-cache.json")
 def ensure_health_loop() -> None:
     """Filled in by the setup page once the other loops can be started."""
     return
+
+
+def note_log(subsystem: str, severity: str, message: str) -> None:
+    """Queue an operational log entry to be shipped on the next health check-in."""
+    msg = (message or "").strip()[:600]
+    if not msg:
+        return
+    with _lock:
+        if _log_buffer and _log_buffer[-1]["message"] == msg and _log_buffer[-1]["subsystem"] == subsystem:
+            return
+        if len(_log_buffer) >= 50:
+            _log_buffer.pop(0)
+        _log_buffer.append(
+            {
+                "subsystem": subsystem[:32],
+                "severity": severity,
+                "message": msg,
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
+
+def take_logs() -> list[dict[str, str]]:
+    with _lock:
+        items = list(_log_buffer)
+        _log_buffer.clear()
+        return items
+
+
+def restore_logs(items: list[dict[str, str]]) -> None:
+    if not items:
+        return
+    with _lock:
+        combined = items + _log_buffer
+        _log_buffer[:] = combined[-50:]

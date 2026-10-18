@@ -103,13 +103,37 @@ def create_app() -> FastAPI:
         # Feeds the "server is returning errors" alert. A crash that never becomes a response counts too.
         from app import alerts
 
+        def _persist_error(status_code: int, exc_text: str = "") -> None:
+            try:
+                from app.db import SessionLocal
+                from app.models import SystemLog
+
+                msg = f"{request.method} {request.url.path} -> {status_code}"
+                if exc_text:
+                    msg = f"{msg} ({exc_text[:300]})"
+                with SessionLocal() as db:
+                    db.add(
+                        SystemLog(
+                            source="server",
+                            subsystem="http",
+                            severity="critical",
+                            message=msg,
+                            detail={"method": request.method, "path": request.url.path, "status_code": status_code},
+                        )
+                    )
+                    db.commit()
+            except Exception:
+                pass
+
         try:
             response = await call_next(request)
-        except Exception:
+        except Exception as exc:
             alerts.note_server_error()
+            await asyncio.to_thread(_persist_error, 500, str(exc))
             raise
         if response.status_code >= 500:
             alerts.note_server_error()
+            await asyncio.to_thread(_persist_error, response.status_code)
         return response
 
     app.add_middleware(

@@ -7,14 +7,14 @@ from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session
 
 from app.api.common import TRACE_WAIT, _resolve_monitor_identity
 from app.db import get_db
 from app.internet_tests import ensure_internet_tests, scheduled_tests
 from app.link_trust import remember_association
-from app.models import AdhocTrace, ApInventory, Monitor, MonitorHealth, MonitorStatus
+from app.models import AdhocTrace, ApInventory, Monitor, MonitorHealth, MonitorStatus, SystemLog
 from app.schemas import (
     DeviceConfigOut,
     DeviceHealthIn,
@@ -114,6 +114,13 @@ def post_device_health(
         monitor.isp = body.isp
     monitor.agent_version = body.agent_version
     monitor.applied_config_version = body.config_version
+    cleaned_error = (body.last_error or "").strip()[:600] or None
+    prev_error = db.scalar(
+        select(MonitorHealth.last_error)
+        .where(MonitorHealth.monitor_id == monitor.id)
+        .order_by(desc(MonitorHealth.reported_at))
+        .limit(1)
+    )
     db.add(
         MonitorHealth(
             monitor_id=monitor.id,
@@ -135,9 +142,39 @@ def post_device_health(
             wired_iface=body.wired_iface,
             wifi_link_iface=body.wifi_link_iface,
             wifi_radio_iface=body.wifi_radio_iface,
-            last_error=(body.last_error or "").strip()[:600] or None,
+            last_error=cleaned_error,
         )
     )
+    logged_messages: set[str] = set()
+    for item in body.logs[:50]:
+        msg = item.message.strip()[:600]
+        if not msg:
+            continue
+        logged_messages.add(msg)
+        sev = item.severity.lower() if item.severity.lower() in {"info", "warning", "critical"} else "info"
+        db.add(
+            SystemLog(
+                recorded_at=item.recorded_at or now,
+                source="agent",
+                monitor_id=monitor.id,
+                subsystem=(item.subsystem or "agent").strip()[:32] or "agent",
+                severity=sev,
+                message=msg,
+                detail={"hostname": body.hostname, "agent_version": body.agent_version},
+            )
+        )
+    if cleaned_error and cleaned_error != prev_error and cleaned_error not in logged_messages:
+        db.add(
+            SystemLog(
+                recorded_at=now,
+                source="agent",
+                monitor_id=monitor.id,
+                subsystem="health",
+                severity="warning",
+                message=cleaned_error,
+                detail={"hostname": body.hostname, "agent_version": body.agent_version},
+            )
+        )
     if "link_ssid" in body.model_fields_set or "link_bssid" in body.model_fields_set:
         remember_association(
             db,

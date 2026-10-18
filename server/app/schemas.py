@@ -138,6 +138,13 @@ class MonitorAdminOut(BaseModel):
     restart_requested_at: Optional[datetime] = None
 
 
+class AgentLogIn(BaseModel):
+    subsystem: str = Field(default="agent", max_length=32)
+    severity: str = Field(default="info", max_length=16)
+    message: str = Field(min_length=1, max_length=600)
+    recorded_at: Optional[datetime] = None
+
+
 class DeviceHealthIn(BaseModel):
     hostname: str = Field(min_length=1, max_length=128)
     agent_version: str = Field(min_length=1, max_length=32)
@@ -160,6 +167,7 @@ class DeviceHealthIn(BaseModel):
     link_ssid: Optional[str] = Field(default=None, max_length=64)
     link_bssid: Optional[str] = Field(default=None, max_length=17)
     last_error: Optional[str] = Field(default=None, max_length=600)
+    logs: list[AgentLogIn] = Field(default_factory=list)
 
     @field_validator("public_ip")
     @classmethod
@@ -389,6 +397,33 @@ class ResultPage(BaseModel):
     offset: int
     limit: int
     items: list[ResultOut]
+
+
+class UnifiedEventOut(BaseModel):
+    recorded_at: datetime
+    event_id: UUID
+    monitor_id: Optional[UUID] = None
+    monitor_slug: Optional[str] = None
+    monitor_name: Optional[str] = None
+    category: str
+    subsystem: str
+    network: str = ""
+    severity: str
+    title: str
+    message: str = ""
+    rtt_ms: Optional[float] = None
+    jitter_ms: Optional[float] = None
+    loss_pct: Optional[float] = None
+    down_mbps: Optional[float] = None
+    up_mbps: Optional[float] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class UnifiedEventPage(BaseModel):
+    total: int
+    offset: int
+    limit: int
+    items: list[UnifiedEventOut]
 
 
 class HopMetric(BaseModel):

@@ -374,3 +374,51 @@ def test_events_list_shows_what_was_announced(client: TestClient, db):
     events = client.get("/api/v1/settings/telegram/events", headers=headers).json()
     mine = [item for item in events if name in item["title"]]
     assert mine and mine[0]["status"] == "open" and mine[0]["notified"] is True and mine[0]["category"] == "pi"
+
+
+def test_degraded_link_and_airwave_security_issues_are_announced(db):
+    from app.models import Issue, IssueSeverity, IssueStatus
+
+    _configure(db)
+    out = Outbox()
+    monitor, _token = _make_monitor(db, f"WiFi Pi {uuid.uuid4().hex[:6]}")
+    start = datetime.now(timezone.utc)
+    monitor.last_seen_at = start
+    network = db.scalar(select(Network).where(Network.group_id == db.info["group_id"], Network.slug == "wifi"))
+    if network is None:
+        network = db.scalar(select(Network).where(Network.group_id == db.info["group_id"]))
+    since = start - timedelta(minutes=10)
+    db.add(
+        Test(
+            monitor_id=monitor.id,
+            network_id=network.id,
+            slug="icmp-path",
+            name="icmp-path",
+            kind=TestKind.ping,
+            target="10.7.1.1",
+            stable_status=ResultStatus.degraded,
+            state_since=since,
+        )
+    )
+    db.add(
+        Issue(
+            group_id=monitor.group_id,
+            monitor_id=monitor.id,
+            title="Possible evil twin HomeWiFi on aa:bb:cc:dd:ee:ff",
+            summary="Possible evil twin HomeWiFi on aa:bb:cc:dd:ee:ff",
+            severity=IssueSeverity.warning,
+            status=IssueStatus.open,
+            root_cause_stage="airwave",
+            opened_at=since,
+        )
+    )
+    db.commit()
+
+    alerts.run_cycle(db, now=start, sender=out)
+    later = start + timedelta(seconds=310)
+    monitor.last_seen_at = later
+    db.commit()
+    alerts.run_cycle(db, now=later, sender=out)
+    text = "\n".join(out.about(monitor.name))
+    assert "link is degraded" in text
+    assert "Wi-Fi security alert" in text

@@ -24,6 +24,8 @@ from sqlalchemy.orm import Session
 from app import telegram
 from app.models import (
     AlertEvent,
+    Issue,
+    IssueStatus,
     Monitor,
     MonitorHealth,
     Network,
@@ -32,6 +34,7 @@ from app.models import (
     SyntheticSample,
     TelegramSetting,
     Test,
+    TestResult,
 )
 
 log = logging.getLogger(__name__)
@@ -129,6 +132,30 @@ def network_conditions(db: Session, now: datetime, offline_ids: set) -> list[Con
                 )
             )
             continue
+        degraded = [test for test in tests.values() if test.stable_status == ResultStatus.degraded]
+        if degraded and not down:
+            since = min((test.state_since for test in degraded if test.state_since), default=None)
+            reason = ""
+            for probe in degraded:
+                latest_reason = db.scalar(
+                    select(TestResult.status_reason)
+                    .where(TestResult.test_id == probe.id)
+                    .order_by(TestResult.started_at.desc())
+                    .limit(1)
+                )
+                if latest_reason:
+                    reason = f" {latest_reason}"
+                    break
+            out.append(
+                Condition(
+                    key=f"net-degraded:{monitor_id}:{kind}",
+                    category="network",
+                    severity="warning",
+                    title=f"ISP / {_link_label(kind)} link is degraded",
+                    detail=f"{name} is seeing sustained high latency, jitter, or packet loss on the {_link_label(kind)} path.{reason}" + (f" Since {_utc(since)}." if since else ""),
+                    debounce_s=300,
+                )
+            )
         services = web.get((monitor_id, kind, name), [])
         failing = [test for test in services if test.stable_status == ResultStatus.fail]
         if len(services) >= 3 and len(failing) * 100 >= len(services) * 40:
@@ -142,6 +169,24 @@ def network_conditions(db: Session, now: datetime, offline_ids: set) -> list[Con
                     debounce_s=120,
                 )
             )
+    airwave_issues = db.execute(
+        select(Issue, Monitor)
+        .join(Monitor, Issue.monitor_id == Monitor.id)
+        .where(Issue.status == IssueStatus.open, Issue.root_cause_stage == "airwave")
+    ).all()
+    for issue, monitor in airwave_issues:
+        if monitor.id in offline_ids:
+            continue
+        out.append(
+            Condition(
+                key=f"airwave:{issue.id}",
+                category="network",
+                severity="critical" if issue.severity.value == "critical" else "warning",
+                title=f"Wi-Fi security alert on {monitor.name}: {issue.title}",
+                detail=(issue.summary or issue.title)[:240],
+                debounce_s=60,
+            )
+        )
     return out
 
 

@@ -307,6 +307,11 @@ def is_web_check(slug: str) -> bool:
     return kind in {"http", "icmp"} and bool(key) and key != "path"
 
 
+def is_path_check(slug: str) -> bool:
+    """HTTP or ICMP check on the path to the HomeNetWatch server."""
+    return slug in ("http-path", "icmp-path")
+
+
 def service_variance(settings: dict[str, WebServiceSetting], slug: str) -> tuple[int, int | None] | None:
     """Primary variance and, for ICMP, the jitter variance when that check is on."""
     kind, _, key = slug.partition("-")

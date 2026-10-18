@@ -85,10 +85,10 @@ The project follows [Semantic Versioning](https://semver.org/). The version live
 [`VERSION`](./VERSION). Maintainers cut a release with:
 
 ```bash
-./scripts/bump-version.sh 0.2.0     # updates VERSION, server/pyproject.toml, dashboard/package.json
+./scripts/bump-version.sh 0.3       # updates VERSION, server/pyproject.toml, dashboard/package.json
 # move the Unreleased entries in CHANGELOG.md under the new version heading
-git commit -am "chore: release v0.2.0"
-git tag v0.2.0
+git commit -am "chore: release v0.3"
+git tag v0.3
 ```
 
 The Pi agent in `monitor/` carries its own `AGENT_VERSION` in `monitor/agent_state.py`. Bump it when

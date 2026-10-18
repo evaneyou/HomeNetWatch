@@ -129,6 +129,59 @@ def _fill_web_quorum(tests, latest_by_test, cell_map, cfg) -> None:
         cell.quorum = {"bad": bad, "total": total}
 
 
+def _fill_app_cells(db: Session, monitors: list[Monitor], networks: list[Network], cell_map: dict) -> None:
+    """Real-time application health (voice, video, etc.) per link over recent samples."""
+    runs = db.scalars(
+        select(SyntheticRun).where(SyntheticRun.mode == "continuous", SyntheticRun.status == "running")
+    ).all()
+    if not runs:
+        return
+    net_by_slug = {(n.group_id, n.slug): n for n in networks}
+    mon_by_id = {m.id: m for m in monitors}
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=15)
+    rank = {"ok": 0, "degraded": 1, "fail": 2, "unknown": -1}
+
+    for run in runs:
+        monitor = mon_by_id.get(run.monitor_id)
+        if monitor is None:
+            continue
+        for link in run.links or []:
+            net_slug = "wifi" if link == "wireless" else "wired"
+            network = net_by_slug.get((monitor.group_id, net_slug))
+            if network is None:
+                continue
+            cell = cell_map.get((monitor.id, network.id, "apps"))
+            if cell is None:
+                continue
+            rows = db.scalars(
+                select(SyntheticSample)
+                .where(
+                    SyntheticSample.run_id == run.id,
+                    SyntheticSample.link == link,
+                    ~SyntheticSample.sample_key.startswith("hour:"),
+                    ~SyntheticSample.sample_key.startswith("day:"),
+                )
+                .order_by(desc(SyntheticSample.recorded_at))
+                .limit(3)
+            ).all()
+            if not rows or rows[0].recorded_at < cutoff:
+                continue
+            if cell.last_test_at is None or rows[0].recorded_at > cell.last_test_at:
+                cell.last_test_at = rows[0].recorded_at
+            fails = sum(1 for row in rows if row.verdict == "fail")
+            if len(rows) >= 3 and fails == 3:
+                flow_status = "fail"
+            elif fails >= 2 or rows[0].verdict == "fail":
+                flow_status = "degraded"
+            else:
+                flow_status = "ok"
+            if rank[flow_status] > rank[cell.status]:
+                cell.status = flow_status
+            if flow_status in ("fail", "degraded"):
+                cell.failing_tests += 1
+
+
 @router.get("/summary", response_model=SummaryResponse)
 def summary(
     db: Annotated[Session, Depends(get_db)],
@@ -163,7 +216,7 @@ def summary(
     cell_map: dict[tuple[UUID, UUID, str], HealthCell] = {}
     for monitor in monitors:
         for network in networks:
-            columns = ["internet", "web"] if network.slug in {"wan", "wired", "wifi"} else [network.slug]
+            columns = ["internet", "web", "apps"] if network.slug in {"wan", "wired", "wifi"} else [network.slug]
             for column in columns:
                 cell_map[(monitor.id, network.id, column)] = HealthCell(
                     monitor_id=monitor.id,
@@ -191,7 +244,11 @@ def summary(
         result = latest_by_test.get(test.id)
         if result is None:
             continue
-        status_val = result.status.value
+        status_val = (
+            test.stable_status.value
+            if test.slug in ("http-path", "icmp-path") and test.stable_status is not None
+            else result.status.value
+        )
         if cell.last_test_at is None or result.started_at > cell.last_test_at:
             cell.last_test_at = result.started_at
         if test.slug == "mtr-path":
@@ -204,6 +261,7 @@ def summary(
             cell.failing_tests += 1
 
     _fill_web_quorum(tests, latest_by_test, cell_map, stability_config(load_web_stability(db)))
+    _fill_app_cells(db, monitors, networks, cell_map)
 
     open_issues = db.scalars(
         select(Issue)
@@ -239,8 +297,9 @@ def summary(
             )
         )
 
+    now_utc = datetime.now(timezone.utc)
     return SummaryResponse(
-        generated_at=datetime.now(timezone.utc),
+        generated_at=now_utc,
         matrix=list(cell_map.values()),
         open_issues=issue_summaries,
         monitors=[
@@ -248,7 +307,17 @@ def summary(
                 "id": str(s.id),
                 "slug": s.slug,
                 "name": s.name,
-                "status": s.status.value,
+                "status": (
+                    "offline"
+                    if s.last_seen_at is not None
+                    and now_utc - (
+                        s.last_seen_at
+                        if s.last_seen_at.tzinfo
+                        else s.last_seen_at.replace(tzinfo=timezone.utc)
+                    )
+                    > timedelta(seconds=max(300, 3 * int(s.health_interval_seconds or 60)))
+                    else s.status.value
+                ),
                 "location_label": s.location_label,
                 "region": s.region,
                 "last_seen_at": s.last_seen_at.isoformat() if s.last_seen_at else None,

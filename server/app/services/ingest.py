@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.internet_tests import (
     classify_transfer,
     classify_web_service,
+    is_path_check,
     is_web_check,
     load_internet_service,
     load_web_services,
@@ -95,7 +96,7 @@ def ingest_results(
         db.add(row)
         accepted += 1
         ids.append(item.id)
-        if is_web_check(test.slug):
+        if is_web_check(test.slug) or is_path_check(test.slug):
             touched.append(test)
 
     db.flush()

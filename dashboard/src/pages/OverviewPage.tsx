@@ -8,16 +8,18 @@ import "../overview.css";
 type CheckState = "ok" | "slow" | "down" | "unknown";
 type Mood = "happy" | "curious" | "slow" | "down";
 
-const CHECKS: { key: "wired" | "wifi" | "web"; label: string; icon: string; column: string }[] = [
-  { key: "web", label: "Web", icon: "cloud", column: "web" },
-  { key: "wired", label: "Wired", icon: "plug", column: "lan" },
+const CHECKS: { key: "wired" | "wifi" | "web" | "apps"; label: string; icon: string; column: string }[] = [
   { key: "wifi", label: "Wi-Fi", icon: "wifi", column: "wifi-main" },
+  { key: "wired", label: "Wired", icon: "plug", column: "lan" },
+  { key: "web", label: "Web", icon: "cloud", column: "web" },
+  { key: "apps", label: "Apps", icon: "pulse", column: "apps" },
 ];
 
 const DEFAULT_DETAIL: Record<string, Record<CheckState, string>> = {
-  wired: { ok: "Rock solid", slow: "Running slow", down: "Not connected", unknown: "Not tested yet" },
   wifi: { ok: "Strong signal", slow: "Weak signal", down: "Not connected", unknown: "Not tested yet" },
+  wired: { ok: "Rock solid", slow: "Running slow", down: "Not connected", unknown: "Not tested yet" },
   web: { ok: "Loading quickly", slow: "Loading slowly", down: "Not loading", unknown: "Not tested yet" },
+  apps: { ok: "Calls clear", slow: "Jitter / loss", down: "Failing", unknown: "Not running" },
 };
 
 const MOOD_LABEL: Record<Mood, string> = {
@@ -55,6 +57,9 @@ function checkCells(cells: HealthCell[], monitorId: string, key: string, column:
   if (key === "wifi") {
     return mine.filter((cell) => (cell.network_slug === "wifi" && cell.column === "internet") || cell.network_slug === "wifi-main");
   }
+  if (key === "apps") {
+    return mine.filter((cell) => cell.column === "apps");
+  }
   const matches = mine.filter((cell) => cell.column === column);
   // Once a wired or wireless link is reporting, the old Internet-network copy is no longer refreshed.
   const linkLive = matches.some((cell) => (cell.network_slug === "wired" || cell.network_slug === "wifi") && hasResult(cell));
@@ -88,6 +93,13 @@ function checkHref(monitorId: string, key: string, networkId: string | null): st
     });
     return `/monitors/${monitorId}?${params}`;
   }
+  if (key === "apps") {
+    const params = new URLSearchParams({
+      network: networkId,
+      link: "wireless",
+    });
+    return `/monitors/${monitorId}?${params}`;
+  }
   return `/monitors/${monitorId}?network=${networkId}`;
 }
 
@@ -105,6 +117,13 @@ function Icon({ name }: { name: string }) {
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0" />
         <circle className="solid" cx="12" cy="19.5" r="1" />
+      </svg>
+    );
+  }
+  if (name === "pulse") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 12h4l2.5-6 5 12 2.5-6H21" />
       </svg>
     );
   }
@@ -133,7 +152,7 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
       const state = columnState(data.matrix, monitor.id, check.key, check.column);
       const wifiId = slugNetworkId(data.matrix, monitor.id, "wifi");
       const networkId =
-        check.key === "wifi"
+        check.key === "wifi" || check.key === "apps"
           ? (wifiId ?? checkNetworkId(data.matrix, monitor.id, check.key, check.column))
           : checkNetworkId(data.matrix, monitor.id, check.key, check.column);
       return {
@@ -146,10 +165,15 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
     const labels = (state: CheckState) => checks.filter((check) => check.state === state).map((check) => check.label);
     const down = labels("down");
     const slow = labels("slow");
-    const unknown = labels("unknown");
+    const unknown = checks
+      .filter((check) => check.key !== "apps" && check.state === "unknown")
+      .map((check) => check.label);
     let mood: Mood = "happy";
     let blurb = "Everything here is happy and humming.";
-    if (down.length > 0) {
+    if (monitor.status === "offline") {
+      mood = "down";
+      blurb = "Remote probe is offline and has stopped checking in.";
+    } else if (down.length > 0) {
       mood = "down";
       blurb = `${join(down)} ${down.length === 1 ? "is" : "are"} down.`;
     } else if (slow.length > 0) {

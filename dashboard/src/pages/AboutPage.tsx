@@ -4,7 +4,7 @@ export default function AboutPage() {
   return (
     <div>
       <h1 className="page-title">About</h1>
-      <p className="page-sub">HomeNetWatch 0.2.0</p>
+      <p className="page-sub">HomeNetWatch 0.3</p>
 
       <section className="panel">
         <h2>Overview</h2>
@@ -25,9 +25,10 @@ export default function AboutPage() {
       <section className="panel">
         <h2>Version history</h2>
         <p>
-          The current release is <span className="mono">0.2.0</span>, dated 14 October 2026. The
-          first release, 0.1.0, came out the day before. HomeNetWatch follows semantic versioning
-          and is still pre-1.0.
+          The current release is <span className="mono">0.3</span>, dated 18 October 2026. The
+          initial nine-day alpha build concluded with release <span className="mono">0.2</span> on
+          14 October 2026, following the first release, <span className="mono">0.1</span>, the day
+          before. HomeNetWatch follows semantic versioning and is still pre-1.0.
         </p>
         <Link to="/about/history">Open version history</Link>
       </section>
@@ -53,12 +54,35 @@ export function VersionHistoryPage() {
     <div>
       <h1 className="page-title">Version history</h1>
       <p className="page-sub">
-        Notable changes to HomeNetWatch. The current version is <span className="mono">0.2.0</span>.
+        Notable changes to HomeNetWatch. The current version is <span className="mono">0.3</span>.
       </p>
 
       <section className="panel">
         <h2>
-          0.2.0 <span className="muted">14 October 2026</span>
+          0.3 <span className="muted">18 October 2026</span>
+        </h2>
+
+        <h3 className="wifi-heading">Added</h3>
+        <ul className="about-list">
+          <li>Home overview: an Apps chip for real-time application flows (voice, video), with Wi-Fi shown first, debounced path health, and offline probe detection on the face orb.</li>
+          <li>Speed Test: a live 30-second speed test on the Pi over Wired or Wi-Fi, with an animated path diagram and real-time download and upload bar graphs.</li>
+          <li>KPI Dashboard and daily history: executive reporting of availability, voice/video quality, packet drop, latency, and speed across day, week, month, and year views, with CSV export.</li>
+          <li>Telegram alerts: real-time push notifications for network outages, ISP link degradation, Wi-Fi security alerts, Pi health, server issues, and application checks, with recovery notices.</li>
+          <li>Network Test (stress run): multi-session synthetic load testing (voice, video, remote desktop, market data, round-trip probe, throughput flood) with live per-link charts.</li>
+          <li>Airwaves redesign: compact phone-first layout, one-line band stats, channel graph, and Kismet memory caps with daily restarts.</li>
+          <li>Guest visits dashboard: 7-day to 1-year visitor analytics with GeoIP country and city breakdown.</li>
+        </ul>
+
+        <h3 className="wifi-heading">Changed</h3>
+        <ul className="about-list">
+          <li>Guest sessions mask each character of identifying fields with <code>#</code> while keeping measurements visible.</li>
+          <li>Hardened sign-in rate limiting, server-side DNS validation for traces, CSRF coverage, and Pi agent policy routing and Wi-Fi power management.</li>
+        </ul>
+      </section>
+
+      <section className="panel">
+        <h2>
+          0.2 <span className="muted">14 October 2026</span>
         </h2>
 
         <h3 className="wifi-heading">Added</h3>
@@ -84,7 +108,7 @@ export function VersionHistoryPage() {
 
       <section className="panel">
         <h2>
-          0.1.0 <span className="muted">13 October 2026</span>
+          0.1 <span className="muted">13 October 2026</span>
         </h2>
         <p>First release.</p>
 

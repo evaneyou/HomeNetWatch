@@ -4,11 +4,30 @@ import { useOutletContext, useSearchParams } from "react-router-dom";
 import { api } from "../../api";
 import { isAnonymized, stableId } from "../../anonymized";
 import type { RfChannelSnapshot } from "../../types";
+import { useElementWidth, useNarrow } from "../../useNarrow";
 import { type AirContext } from "./shared";
 
 const COLORS = ["#5eead4", "#7cb7ff", "#b79cff", "#ff8f85", "#f3dcb0", "#ffc457"];
-const PLOT_LEFT = 62;
-const PLOT_RIGHT = 880;
+const HEIGHT = 390;
+
+/** The 2.4 and 5 GHz buttons. They sit at the top of the page, in every state. */
+function BandPills({ band }: { band: "2.4" | "5" }) {
+  const [params, setParams] = useSearchParams();
+  function choose(next: "2.4" | "5") {
+    const query = new URLSearchParams(params);
+    query.set("band", next);
+    setParams(query);
+  }
+  return (
+    <div className="aw-pills" role="group" aria-label="Band">
+      {(["2.4", "5"] as const).map((item) => (
+        <button key={item} className={band === item ? "aw-pill active" : "aw-pill"} type="button" aria-pressed={band === item} onClick={() => choose(item)}>
+          {item} GHz
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function AirwavesChannels() {
   const ctx = useOutletContext<AirContext>();
@@ -20,26 +39,34 @@ export default function AirwavesChannels() {
     refetchInterval: ctx.refresh ? 15_000 : false,
   });
 
-  if (!ctx.overviewLoading && !ctx.overview?.last_scan_at) {
-    return <Empty title="No scans yet" body={`${ctx.agent.name} has not uploaded a scan.`} />;
-  }
-  if (snapshotQ.isLoading) return <Empty title="Channel graph" body="Loading the latest scan…" />;
-  if (snapshotQ.isError) return <Empty title="Channel graph" body="Could not load the channel graph." />;
+  const bare = (title: string, body: string) => (
+    <div className="awc">
+      <div className="awc-top">
+        <BandPills band={band} />
+      </div>
+      <Empty title={title} body={body} />
+    </div>
+  );
+  if (!ctx.overviewLoading && !ctx.overview?.last_scan_at) return bare("No scans yet", `${ctx.agent.name} has not uploaded a scan.`);
+  if (snapshotQ.isLoading) return bare("Channel graph", "Loading the latest scan…");
+  if (snapshotQ.isError) return bare("Channel graph", "Could not load the channel graph.");
   if (!snapshotQ.data || (snapshotQ.data.series.length === 0 && snapshotQ.data.channels.length === 0)) {
-    return <Empty title={`${band} GHz`} body={`No ${band} GHz networks on the latest scan.`} />;
+    return bare(`${band} GHz`, `No ${band} GHz networks on the latest scan.`);
   }
-  return <ChannelView snapshot={snapshotQ.data} ctx={ctx} />;
+  return <ChannelView snapshot={snapshotQ.data} ctx={ctx} band={band} />;
 }
 
-function ChannelView({ snapshot, ctx }: { snapshot: RfChannelSnapshot; ctx: AirContext }) {
+function ChannelView({ snapshot, ctx, band }: { snapshot: RfChannelSnapshot; ctx: AirContext; band: "2.4" | "5" }) {
   const [hover, setHover] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [plotRef, plotWidth] = useElementWidth<HTMLDivElement>();
+  const narrow = useNarrow("(max-width: 640px)");
   const shown = snapshot.series.slice(0, 12);
   const advice = ctx.overview?.bands.find((item) => item.band === snapshot.band);
   const recommended = advice?.recommended_channel ?? snapshot.recommended_channel;
   const reason = advice?.reason ?? snapshot.reason;
   // "Your 2.4 GHz band is crowded. Channel 1 would be quieter than channel 6." restates the title and the
-  // Busiest channel tile below it, so the line is only shown when it says something else.
+  // Busiest tile, so the line is only shown when it says something else.
   const extra = /crowded/i.test(reason)
     ? ""
     : /is clear on/i.test(reason)
@@ -55,73 +82,108 @@ function ChannelView({ snapshot, ctx }: { snapshot: RfChannelSnapshot; ctx: AirC
     [...shown.map((series) => series.channel), ...snapshot.channels.map((row) => row.channel)],
     recommended,
   );
+
+  // The graph is drawn at the width it is given, so text stays the size it is written at, on a phone too.
+  const width = Math.max(plotWidth, 300);
+  const small = width < 560;
+  const left = small ? 44 : 62;
+  const right = width - 14;
   const xOf = (channel: number) => {
-    if (snapshot.band === "2.4") return PLOT_LEFT + (channel + 1) * 51.125;
+    if (snapshot.band === "2.4") return left + ((channel + 1) / 16) * (right - left);
     const span = Math.max(axis.hi - axis.lo, 1);
-    return PLOT_LEFT + ((channel - axis.lo) / span) * (PLOT_RIGHT - PLOT_LEFT);
+    return left + ((channel - axis.lo) / span) * (right - left);
   };
-  const shadeLeft = Math.max(PLOT_LEFT, xOf(recommended - 2));
-  const shadeRight = Math.min(PLOT_RIGHT, xOf(recommended + 2));
+  const shadeLeft = Math.max(left, xOf(recommended - 2));
+  const shadeRight = Math.min(right, xOf(recommended + 2));
   const hills = shown.map((series, index) => ({
     ...series,
     color: COLORS[index % COLORS.length],
     d: hillPath(series.channel, series.channel_width, series.rssi_dbm, xOf),
   }));
+  // Channel numbers closer together than this would run into each other.
+  const labels: number[] = [];
+  let lastX = -999;
+  for (const channel of axis.labels) {
+    const x = xOf(channel);
+    if (x - lastX < (small ? 26 : 34) && channel !== recommended) continue;
+    labels.push(channel);
+    lastX = x;
+  }
+  const pillWidth = Math.max(Math.min(shadeRight - shadeLeft - 8, 150), 96);
+  const pillX = Math.min(Math.max((shadeLeft + shadeRight) / 2 - pillWidth / 2, left), right - pillWidth);
+  const visible = showAll ? hills : hills.slice(0, narrow ? 3 : 6);
 
   return (
-    <div className="aw-channels">
-      <section className="aw-card air-rec aw-rec">
-        <div className="air-rec-copy">
-          <div className="air-rec-icon" aria-hidden="true">
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#0d1220" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <div className="awc">
+      <div className="awc-top">
+        <BandPills band={band} />
+        <section className="awc-rec" aria-label={`Recommended channel for ${snapshot.band} GHz`}>
+          <span className="awc-rec-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0d1220" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 12.55a11 11 0 0 1 14.08 0" />
               <path d="M1.42 9a16 16 0 0 1 21.16 0" />
               <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
               <path d="M12 20h.01" />
             </svg>
+          </span>
+          <div className="awc-rec-main">
+            <small>Recommended for {snapshot.band} GHz</small>
+            <b>Try channel {recommended}</b>
+            {extra ? <span>{extra}</span> : null}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div className="air-kicker">Recommended for {snapshot.band} GHz</div>
-            <h2>Try channel {recommended}</h2>
-            {extra ? <p className="air-reason">{extra}</p> : null}
-          </div>
-        </div>
-        <div className="npv-stats">
-          <Stat label="Networks nearby" value={String(advice?.ap_count ?? snapshot.series.length)} note={`on ${snapshot.band} GHz`} />
-          <Stat label="Busiest channel" value={busiest == null ? "—" : `Ch ${busiest}`} note={busiest == null ? "No neighbors" : `${onBusiest} networks`} />
-          <Stat label="Strongest signal" value={strongest ? dbmText(strongest.rssi_dbm) : "—"} note={strongest ? strongest.ssid : "No networks"} />
-        </div>
-      </section>
+          <dl className="awc-rec-stats">
+            <div>
+              <dt>Networks</dt>
+              <dd>{advice?.ap_count ?? snapshot.series.length}</dd>
+            </div>
+            <div>
+              <dt>Busiest</dt>
+              <dd>{busiest == null ? "—" : `Ch ${busiest}`}</dd>
+              {busiest != null ? <small>{onBusiest} networks</small> : null}
+            </div>
+            <div>
+              <dt>Strongest</dt>
+              <dd>{strongest ? dbmText(strongest.rssi_dbm) : "—"}</dd>
+            </div>
+          </dl>
+        </section>
+      </div>
 
-      <section className="aw-card aw-graph">
-        <div className="npv-card-head">
+      <section className="aw-card awc-graph">
+        <div className="awc-head">
           <h2>Channel graph</h2>
-          <p className="npv-hint">
-            {snapshot.series.length > shown.length ? "Showing the 12 strongest networks · " : ""}
-            hover a network below to spotlight it
+          <p>
+            {snapshot.series.length > shown.length ? "The 12 strongest networks · " : ""}
+            Tap or hover a network below to spotlight it
           </p>
         </div>
-        <div className="air-plot">
-          <svg viewBox="0 0 900 390" role="img" aria-label={`Signal strength by channel for the ${shown.length} strongest ${snapshot.band} GHz networks. A recommended zone is shaded around channel ${recommended}.`}>
+        <div className="awc-plot" ref={plotRef}>
+          <svg
+            viewBox={`0 0 ${width} ${HEIGHT}`}
+            width="100%"
+            style={{ height: "auto", display: "block" }}
+            role="img"
+            aria-label={`Signal strength by channel for the ${shown.length} strongest ${snapshot.band} GHz networks. The quietest zone is shaded around channel ${recommended}.`}
+          >
             <rect x={shadeLeft} y={20} width={Math.max(shadeRight - shadeLeft, 8)} height={290} fill="rgba(94,234,212,0.12)" />
             {[20, 92.5, 165, 237.5].map((y) => (
-              <line key={y} x1={PLOT_LEFT} y1={y} x2={PLOT_RIGHT} y2={y} stroke="rgba(255,255,255,0.08)" />
+              <line key={y} x1={left} y1={y} x2={right} y2={y} stroke="rgba(255,255,255,0.08)" />
             ))}
-            <line x1={PLOT_LEFT} y1={310} x2={PLOT_RIGHT} y2={310} stroke="rgba(255,255,255,0.18)" />
-            <AxisLabel x={54} y={25} text="−20" />
-            <AxisLabel x={54} y={97} text="−40" />
-            <AxisLabel x={54} y={170} text="−60" />
-            <AxisLabel x={54} y={242} text="−80" />
-            <AxisLabel x={54} y={315} text="−100" />
-            <text x={54} y={9} fill="#9aa6c0" fontSize={12} fontWeight={800} textAnchor="end">
+            <line x1={left} y1={310} x2={right} y2={310} stroke="rgba(255,255,255,0.18)" />
+            <AxisLabel x={left - 8} y={25} text="−20" />
+            <AxisLabel x={left - 8} y={97} text="−40" />
+            <AxisLabel x={left - 8} y={170} text="−60" />
+            <AxisLabel x={left - 8} y={242} text="−80" />
+            <AxisLabel x={left - 8} y={315} text="−100" />
+            <text x={left - 8} y={9} fill="#9aa6c0" fontSize={12} fontWeight={800} textAnchor="end">
               dBm
             </text>
-            <rect x={shadeLeft + 12} y={30} width={Math.max(shadeRight - shadeLeft - 24, 120)} height={28} rx={14} fill="rgba(94,234,212,0.22)" />
-            <text x={(shadeLeft + shadeRight) / 2} y={49} fill="#5eead4" fontSize={14} fontWeight={800} textAnchor="middle">
+            <rect x={pillX} y={30} width={pillWidth} height={28} rx={14} fill="rgba(94,234,212,0.22)" />
+            <text x={pillX + pillWidth / 2} y={49} fill="#5eead4" fontSize={13} fontWeight={800} textAnchor="middle">
               Quietest zone
             </text>
-            {axis.labels.map((channel) => {
-              const load = channelLoad(snapshot, channel);
+            {labels.map((channel) => {
+              const load = small ? null : channelLoad(snapshot, channel);
               return (
                 <g key={channel}>
                   <text x={xOf(channel)} y={336} fill="#c5cee3" fontSize={14} fontWeight={800} textAnchor="middle">
@@ -135,11 +197,11 @@ function ChannelView({ snapshot, ctx }: { snapshot: RfChannelSnapshot; ctx: AirC
                 </g>
               );
             })}
-            <text x={471} y={376} fill="#9aa6c0" fontSize={12} fontWeight={800} textAnchor="middle">
+            <text x={(left + right) / 2} y={380} fill="#9aa6c0" fontSize={12} fontWeight={800} textAnchor="middle">
               Wi-Fi channel
             </text>
-            <clipPath id="air-plotclip">
-              <rect x={PLOT_LEFT} y={14} width={PLOT_RIGHT - PLOT_LEFT} height={297} />
+            <clipPath id="awc-plotclip">
+              <rect x={left} y={14} width={Math.max(right - left, 1)} height={297} />
             </clipPath>
             {hills.map((hill, index) => {
               const on = hover === index;
@@ -148,7 +210,7 @@ function ChannelView({ snapshot, ctx }: { snapshot: RfChannelSnapshot; ctx: AirC
                 <path
                   key={stableId(hill, hill.bssid)}
                   d={hill.d}
-                  clipPath="url(#air-plotclip)"
+                  clipPath="url(#awc-plotclip)"
                   fill={hill.color}
                   fillOpacity={on ? 0.55 : dim ? 0.05 : 0.2}
                   stroke={hill.color}
@@ -162,53 +224,49 @@ function ChannelView({ snapshot, ctx }: { snapshot: RfChannelSnapshot; ctx: AirC
         </div>
       </section>
 
-      <section className="aw-card aw-nets-card">
-        <h2>Networks in range</h2>
-        <div className="air-nets">
-          {(showAll ? hills : hills.slice(0, 4)).map((hill, index) => {
+      <section className="aw-card awc-nets">
+        <div className="awc-head">
+          <h2>Networks in range</h2>
+          <p>{hills.length} on {snapshot.band} GHz</p>
+        </div>
+        <div className="awc-list">
+          {visible.map((hill, index) => {
             const on = hover === index;
             const dim = hover !== null && !on;
             return (
-              <div
+              <button
+                type="button"
                 key={stableId(hill, `${hill.bssid}-${index}`)}
-                className={on ? "air-net on" : dim ? "air-net dim" : "air-net"}
+                className={on ? "awc-net on" : dim ? "awc-net dim" : "awc-net"}
                 style={{ ["--net" as string]: hill.color }}
+                aria-pressed={on}
                 onMouseEnter={() => setHover(index)}
                 onMouseLeave={() => setHover(null)}
+                onClick={() => setHover(on ? null : index)}
               >
-                <div className="air-net-row">
-                  <span style={{ width: 14, height: 14, borderRadius: "50%", background: hill.color, flex: "none" }} />
-                  <span className={isAnonymized(hill.ssid) ? "air-net-name anon-mark" : "air-net-name"}>{hill.ssid}</span>
-                  <span className="air-net-dbm">{dbmText(hill.rssi_dbm)}</span>
-                </div>
-                <div className="air-meter">
+                <span className="awc-net-row">
+                  <i style={{ background: hill.color }} aria-hidden="true" />
+                  <span className={isAnonymized(hill.ssid) ? "awc-net-name anon-mark" : "awc-net-name"}>{hill.ssid}</span>
+                  <b>{dbmText(hill.rssi_dbm)}</b>
+                </span>
+                <span className="awc-meter">
                   <span style={{ width: meter(hill.rssi_dbm), background: hill.color }} />
-                </div>
-                <div className="air-net-meta">
+                </span>
+                <span className="awc-net-meta">
                   Channel {hill.channel} · {hill.channel_width} MHz
                   {busyText(snapshot, hill.channel)}
                   {hill.trusted ? " · Trusted" : ""}
-                </div>
-              </div>
+                </span>
+              </button>
             );
           })}
         </div>
-        {hills.length > 4 ? (
+        {hills.length > visible.length || showAll ? (
           <button className="air-text-btn aw-see-all" type="button" onClick={() => setShowAll((value) => !value)}>
             {showAll ? "Show fewer" : `See all ${hills.length}`}
           </button>
         ) : null}
       </section>
-    </div>
-  );
-}
-
-function Stat({ label, value, note }: { label: string; value: string; note: string }) {
-  return (
-    <div className="npv-stat">
-      <div className="k">{label}</div>
-      <div className="v">{value}</div>
-      <div className="s">{note}</div>
     </div>
   );
 }

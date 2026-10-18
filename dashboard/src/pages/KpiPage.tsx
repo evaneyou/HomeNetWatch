@@ -585,7 +585,7 @@ export default function KpiPage() {
           <span className="kpi-split">
             Voice {pct(voice.loss_avg)} · Video {pct(video.loss_avg)}
           </span>
-          <span className="kpi-split">Worst interval {appLossPeak ? `${appLossPeak.toFixed(1)}%` : "—"}</span>
+          <span className="kpi-split">Worst interval {appLossPeak ? pct(appLossPeak, 1) : "—"}</span>
         </Card>
         <Card label="Time offline" value={internet.samples ? minutes(internet.outage_minutes) : "—"} tone={internet.samples === 0 ? "none" : internet.incidents === 0 ? "good" : "warn"}>
           <span className="kpi-split">

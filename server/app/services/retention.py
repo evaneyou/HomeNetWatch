@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app import guest_visits
 from app.db import SessionLocal
-from app.models import GuestVisit, ResultStatus, RfAlert, RfChannelStat, RfClient, TestResult, WifiObservation
+from app.models import GuestVisit, ResultStatus, RfAlert, RfChannelStat, RfClient, SystemLog, TestResult, WifiObservation
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +65,7 @@ def apply_retention(db: Session, now: datetime) -> dict[str, int]:
     ).rowcount
     deleted_clients = db.execute(delete(RfClient).where(RfClient.observed_at < delete_before)).rowcount
     deleted_alerts = db.execute(delete(RfAlert).where(RfAlert.observed_at < delete_before)).rowcount
+    deleted_system_logs = db.execute(delete(SystemLog).where(SystemLog.recorded_at < delete_before)).rowcount
     from app import kpi as kpi_module
 
     deleted_kpi = kpi_module.prune(db, now)
@@ -95,6 +96,7 @@ def apply_retention(db: Session, now: datetime) -> dict[str, int]:
         "deleted_channels": deleted_channels or 0,
         "deleted_clients": deleted_clients or 0,
         "deleted_alerts": deleted_alerts or 0,
+        "deleted_system_logs": deleted_system_logs or 0,
         "deleted_guest_visits": deleted_visits or 0,
         "deleted_kpi_hours": deleted_kpi,
         "daily_results": daily_results,

@@ -678,6 +678,11 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
                     state = _running.get(item)
                     if state and state["proc"] is proc:
                         _running.pop(item, None)
+                try:
+                    import agent_state
+                    agent_state.note_log("synthetic", "info", f"{link} flow restarted after 3 missing intervals")
+                except Exception:
+                    pass
                 proc.terminate()
                 break
         else:
@@ -750,6 +755,11 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
         trouble = note or f"rtnp-send exited with code {code}"
         with _lock:
             _last_failure = f"{link}: {trouble}"
+        try:
+            import agent_state
+            agent_state.note_log("synthetic", "warning", f"{link} flow stopped: {trouble}")
+        except Exception:
+            pass
         print(f"synthetic: {link} flow stopped: {trouble}", file=sys.stderr, flush=True)
 
 

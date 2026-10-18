@@ -69,6 +69,10 @@ function probeGroups(tests: MonitorDetail["tests"], probes: { slug: string; name
     label: "Airwaves",
     options: [{ value: "airwave", label: "All Airwave notifications & alerts" }],
   });
+  groups.push({
+    label: "System & Agent",
+    options: [{ value: "system", label: "All System & Agent logs" }],
+  });
   return groups;
 }
 

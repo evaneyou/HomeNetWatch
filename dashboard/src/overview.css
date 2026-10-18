@@ -93,6 +93,28 @@
   background: var(--card); color: var(--muted);
   font-size: 14px; font-weight: 600;
 }
+.kpi-link {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--mint) 40%, transparent);
+  background: color-mix(in srgb, var(--mint) 10%, var(--card));
+  color: var(--ink);
+  font-size: 14px; font-weight: 700; text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.kpi-link svg {
+  width: 16px; height: 16px; fill: none; stroke: var(--mint);
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.kpi-link .kpi-link-arrow { width: 14px; height: 14px; opacity: 0.7; transition: transform 0.15s; }
+.kpi-link:hover,
+.kpi-link:focus-visible {
+  background: color-mix(in srgb, var(--mint) 20%, var(--card));
+  border-color: var(--mint);
+}
+.kpi-link:hover .kpi-link-arrow,
+.kpi-link:focus-visible .kpi-link-arrow { transform: translateX(3px); }
+.kpi-link:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--mint); }
 .dot.slow { background: var(--sun); }
 .dot.down { background: var(--coral); }

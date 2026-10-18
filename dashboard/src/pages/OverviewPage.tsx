@@ -266,6 +266,16 @@ export default function OverviewPage() {
           <li><span className="dot down" />Down</li>
           <li><span className="dot unknown" />Not tested yet</li>
         </ul>
+        <Link className="kpi-link" to="/kpi" aria-label="Open the KPI Dashboard service report">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 19V9M12 19V5M19 19v-7" />
+            <path d="M3.5 19.5h17" />
+          </svg>
+          <span>KPI Dashboard</span>
+          <svg className="kpi-link-arrow" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m9 6 6 6-6 6" />
+          </svg>
+        </Link>
       </header>
       <main className="probe-grid">
         {view.locations.length === 0 ? <p className="probe-text">No locations have checked in yet.</p> : null}

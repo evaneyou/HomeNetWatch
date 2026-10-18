@@ -77,12 +77,19 @@ def delete_monitor(
         raise HTTPException(status_code=404, detail="Remote agent not found")
     db.add(AuditEvent(username=admin.username, action="delete", monitor_id=monitor.id, detail=monitor.name))
     test_ids = list(db.scalars(select(Test.id).where(Test.monitor_id == monitor.id)))
+    now_utc = datetime.now(timezone.utc)
     if test_ids:
         db.execute(delete(TestResult).where(TestResult.test_id.in_(test_ids)))
         for issue in db.scalars(select(Issue).where(Issue.test_id.in_(test_ids))):
             issue.test_id = None
+            if issue.status == IssueStatus.open:
+                issue.status = IssueStatus.resolved
+                issue.resolved_at = now_utc
     for issue in db.scalars(select(Issue).where(Issue.monitor_id == monitor.id)):
         issue.monitor_id = None
+        if issue.status == IssueStatus.open:
+            issue.status = IssueStatus.resolved
+            issue.resolved_at = now_utc
     db.flush()
     if test_ids:
         db.execute(delete(Test).where(Test.monitor_id == monitor.id))
@@ -245,21 +252,19 @@ def get_monitor(
     test_ids = [t.id for t in tests]
     latest: dict = {}
     if test_ids:
-        latest_subq = (
-            select(TestResult.test_id, func.max(TestResult.started_at).label("max_started"))
-            .where(TestResult.test_id.in_(test_ids))
-            .group_by(TestResult.test_id)
-            .subquery()
+        latest_id_subq = (
+            select(TestResult.id)
+            .where(TestResult.test_id == Test.id)
+            .order_by(TestResult.started_at.desc())
+            .limit(1)
+            .correlate(Test)
+            .scalar_subquery()
         )
         latest = {
             r.test_id: r
             for r in db.scalars(
-                select(TestResult).join(
-                    latest_subq,
-                    and_(
-                        TestResult.test_id == latest_subq.c.test_id,
-                        TestResult.started_at == latest_subq.c.max_started,
-                    ),
+                select(TestResult).where(
+                    TestResult.id.in_(select(latest_id_subq).where(Test.id.in_(test_ids)))
                 )
             ).all()
         }

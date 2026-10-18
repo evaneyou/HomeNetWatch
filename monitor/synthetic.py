@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -42,6 +43,8 @@ DAILY_BYTES = 20 * 1024 * 1024 * 1024
 _lock = threading.Lock()
 _running: dict[tuple[str, str], dict[str, Any]] = {}
 _last_failure = ""
+_budget_mem: dict[str, Any] = {}
+_budget_saved_at: float = 0.0
 
 
 def is_tunnel_target(host: str) -> bool:
@@ -350,17 +353,30 @@ def _write_srtp(hex_key: str) -> None:
 
 
 def _budget() -> dict[str, Any]:
+    global _budget_mem
     today = datetime.now(timezone.utc).date().isoformat()
+    with _lock:
+        if _budget_mem.get("day") == today:
+            return dict(_budget_mem)
     try:
         stored = json.loads(BUDGET_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         stored = {}
     if stored.get("day") != today:
         stored = {"day": today, "bytes": 0, "run": 0}
+    with _lock:
+        _budget_mem = dict(stored)
     return stored
 
 
-def _save_budget(state: dict[str, Any]) -> None:
+def _save_budget(state: dict[str, Any], *, force: bool = False) -> None:
+    global _budget_mem, _budget_saved_at
+    now = time.monotonic()
+    with _lock:
+        _budget_mem = dict(state)
+        if not force and _budget_saved_at > 0 and now - _budget_saved_at < 300:
+            return
+        _budget_saved_at = now
     try:
         BUDGET_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = BUDGET_PATH.with_name(f"{BUDGET_PATH.name}.{os.getpid()}.tmp")
@@ -385,10 +401,13 @@ def _charge(payload: dict[str, Any]) -> bool:
     state = _budget()
     state["bytes"] = int(state.get("bytes") or 0) + octets
     state["run"] = int(state.get("run") or 0) + octets
-    _save_budget(state)
-    if interval > 0 and sent / interval > MAX_PPS:
-        return True
-    return int(state["bytes"]) >= DAILY_BYTES or int(state["run"]) >= MAX_RUN_BYTES
+    over = (
+        (interval > 0 and sent / interval > MAX_PPS)
+        or int(state["bytes"]) >= DAILY_BYTES
+        or int(state["run"]) >= MAX_RUN_BYTES
+    )
+    _save_budget(state, force=over)
+    return over
 
 
 def _write_key(key: str) -> None:
@@ -501,13 +520,13 @@ def _reap_strays() -> None:
 _routing_pinned: set[tuple[str, str, str]] = set()
 
 
-def _ensure_link_routing(link: str, interface: Optional[str], source: Optional[str]) -> None:
+def _ensure_link_routing(link: str, interface: Optional[str], source: Optional[str], *, force: bool = False) -> None:
     """Ensure policy routing table and WireGuard fwmark exist for this physical link."""
     if not interface or not source or not Path("/proc").is_dir():
         return
     key = (link, interface, source)
     with _lock:
-        if key in _routing_pinned:
+        if not force and key in _routing_pinned:
             return
     fwmark, table, wg_iface = (51821, 101, "wg1") if link == "wireless" else (51820, 100, "wg0")
     source_priority = table + 1000
@@ -586,6 +605,9 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
             raise ValueError("Wi-Fi traffic needs the interface binding")
         _ensure_link_routing(link, interface, source)
         route = _route_text(target, source)
+        if route and not route_is_physical(route, plan["interface"]):
+            _ensure_link_routing(link, interface, source, force=True)
+            route = _route_text(target, source)
         if route and not route_is_physical(route, plan["interface"]):
             device = route_device(route) or ""
             if device.startswith("wg"):
@@ -714,7 +736,7 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
                 config.get("token"),
                 config.get("name"),
             )
-        except (OSError, ValueError, KeyError):
+        except Exception:
             continue
     try:
         code = proc.wait(timeout=5)

@@ -45,10 +45,10 @@ start_interface
 iptables -C FORWARD -i wg0 -o wg0 -j DROP 2>/dev/null \
   || iptables -A FORWARD -i wg0 -o wg0 -j DROP \
   || echo "Could not add the rule that blocks peer-to-peer traffic"
-socat TCP-LISTEN:8847,bind=10.7.0.1,fork,reuseaddr TCP:${SERVER_PROXY:-server:8847} &
-socat TCP-LISTEN:8847,bind=10.7.1.1,fork,reuseaddr TCP:${SERVER_PROXY:-server:8847} &
-socat TCP-LISTEN:8080,bind=10.7.0.1,fork,reuseaddr TCP:${LIBRESPEED_PROXY:-librespeed:8080} &
-socat TCP-LISTEN:8080,bind=10.7.1.1,fork,reuseaddr TCP:${LIBRESPEED_PROXY:-librespeed:8080} &
+(while true; do socat TCP-LISTEN:8847,bind=10.7.0.1,fork,reuseaddr TCP:${SERVER_PROXY:-server:8847} || true; sleep 1; done) &
+(while true; do socat TCP-LISTEN:8847,bind=10.7.1.1,fork,reuseaddr TCP:${SERVER_PROXY:-server:8847} || true; sleep 1; done) &
+(while true; do socat TCP-LISTEN:8080,bind=10.7.0.1,fork,reuseaddr TCP:${LIBRESPEED_PROXY:-librespeed:8080} || true; sleep 1; done) &
+(while true; do socat TCP-LISTEN:8080,bind=10.7.1.1,fork,reuseaddr TCP:${LIBRESPEED_PROXY:-librespeed:8080} || true; sleep 1; done) &
 
 stamp=""
 while true; do

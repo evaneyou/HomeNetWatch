@@ -203,3 +203,10 @@ def test_pending_auto_rows_trust_a_mesh_oui_once_the_link_is_known(client, db, m
     title = f"Possible evil twin GenZen-WiFi on {TWIN}"
     issue = db.scalar(select(Issue).where(Issue.monitor_id == monitor.id, Issue.title == title))
     assert issue is not None
+    assert issue.status.value == "open"
+
+    trusted_twin = client.post(f"/api/v1/rf/aps/{TWIN}/trust", params={"agent_id": str(monitor.id)}, headers=admin)
+    assert trusted_twin.status_code == 200, trusted_twin.text
+    db.expire_all()
+    assert issue.status.value == "resolved"
+    assert issue.resolved_at is not None

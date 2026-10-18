@@ -178,7 +178,7 @@ def test_loop() -> None:
                 snapshot = dict(config)
                 poll_restart(snapshot)
                 run_due_tests(snapshot)
-            except (OSError, urllib.error.URLError, TimeoutError, ValueError, KeyError) as exc:
+            except Exception as exc:
                 state._last_error = str(exc)
         state._stop.wait(_idle_seconds())
 
@@ -190,7 +190,7 @@ def synthetic_loop() -> None:
         if config.get("token") and config.get("name") and config.get("server_url"):
             try:
                 fast = bool(synthetic.sync(dict(config), get_json, post_json))
-            except (OSError, urllib.error.URLError, TimeoutError, ValueError, KeyError) as exc:
+            except Exception as exc:
                 state._last_error = str(exc)
         # While a stress test is open, look for added and removed sessions every 2 seconds.
         state._stop.wait(2 if fast else 15)

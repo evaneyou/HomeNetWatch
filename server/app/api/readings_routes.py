@@ -199,23 +199,24 @@ def summary(
         select(Test).options(joinedload(Test.monitor), joinedload(Test.network))
     ).all()
 
-    # Latest result per test
-    latest_subq = (
-        select(TestResult.test_id, func.max(TestResult.started_at).label("max_started"))
-        .group_by(TestResult.test_id)
-        .subquery()
-    )
-    latest_results = db.scalars(
-        select(TestResult)
-        .join(
-            latest_subq,
-            and_(
-                TestResult.test_id == latest_subq.c.test_id,
-                TestResult.started_at == latest_subq.c.max_started,
-            ),
+    # Latest result per test via correlated index lookup (avoids full test_results scan)
+    test_ids = [t.id for t in tests]
+    latest_by_test: dict[UUID, TestResult] = {}
+    if test_ids:
+        latest_id_subq = (
+            select(TestResult.id)
+            .where(TestResult.test_id == Test.id)
+            .order_by(TestResult.started_at.desc())
+            .limit(1)
+            .correlate(Test)
+            .scalar_subquery()
         )
-    ).all()
-    latest_by_test = {r.test_id: r for r in latest_results}
+        latest_results = db.scalars(
+            select(TestResult).where(
+                TestResult.id.in_(select(latest_id_subq).where(Test.id.in_(test_ids)))
+            )
+        ).all()
+        latest_by_test = {r.test_id: r for r in latest_results}
 
     # Build matrix cells keyed by monitor × network × column.
     # The Internet network splits into Internet Service and Web Services.

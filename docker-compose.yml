@@ -1,6 +1,13 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-hns}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hns-dev-password}
@@ -18,6 +25,7 @@ services:
   server:
     build:
       context: ./server
+    logging: *default-logging
     env_file:
       - .env
     environment:
@@ -25,6 +33,7 @@ services:
       WIREGUARD_ENDPOINT: ${WIREGUARD_ENDPOINT:-10.0.0.123:51820}
       WIREGUARD_STATE_DIR: /var/lib/hns-wireguard
       RTNP_STATE_DIR: /var/lib/hns-rtnp
+      RUN_BACKGROUND_TASKS: "1"
     ports:
       - "8847:8847"
     volumes:
@@ -42,6 +51,7 @@ services:
   agent-api:
     build:
       context: ./server
+    logging: *default-logging
     env_file:
       - .env
     environment:
@@ -49,6 +59,7 @@ services:
       WIREGUARD_ENDPOINT: ${WIREGUARD_ENDPOINT:-10.0.0.123:51820}
       WIREGUARD_STATE_DIR: /var/lib/hns-wireguard
       TLS_DIR: /var/lib/hns-tls
+      RUN_BACKGROUND_TASKS: "0"
     ports:
       - "8848:8848"
     volumes:
@@ -65,12 +76,14 @@ services:
   librespeed:
     build:
       context: ./librespeed
+    logging: *default-logging
     restart: unless-stopped
 
   wireguard:
     build:
       context: .
       dockerfile: wireguard/Dockerfile
+    logging: *default-logging
     cap_add:
       - NET_ADMIN
     devices:
@@ -92,6 +105,7 @@ services:
     build:
       context: .
       dockerfile: deploy/rtnp.Dockerfile
+    logging: *default-logging
     network_mode: service:wireguard
     user: "65532:65532"
     read_only: true
@@ -114,6 +128,7 @@ services:
       context: ./dashboard
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://127.0.0.1:8847}
+    logging: *default-logging
     ports:
       - "3847:3847"
     depends_on:

@@ -68,18 +68,38 @@ async def _lifespan(_app: FastAPI):
 
         await asyncio.sleep(90)  # let the Pis check in after a restart before judging them
         while True:
-            await asyncio.to_thread(alerts.run_once)
+            try:
+                await asyncio.to_thread(alerts.run_once)
+            except Exception:
+                log.exception("alert loop failed")
             await asyncio.sleep(60)
 
     async def _kpi_loop() -> None:
         from app import kpi
 
-        await asyncio.to_thread(kpi.run_backfill)
+        try:
+            await asyncio.to_thread(kpi.run_backfill)
+        except Exception:
+            log.exception("kpi backfill failed")
         while True:
             await asyncio.sleep(60)
-            await asyncio.to_thread(kpi.run_once)
+            try:
+                await asyncio.to_thread(kpi.run_once)
+            except Exception:
+                log.exception("kpi loop failed")
 
-    tasks = [asyncio.create_task(_loop()), asyncio.create_task(_alert_loop()), asyncio.create_task(_kpi_loop())]
+    # Only run background loops in the primary server container, not in the enrollment-only agent-api container.
+    run_bg = os.environ.get("RUN_BACKGROUND_TASKS")
+    if run_bg is None:
+        should_run_bg = not bool(os.environ.get("TLS_DIR"))
+    else:
+        should_run_bg = run_bg.strip().lower() not in {"0", "false", "no"}
+
+    tasks = (
+        [asyncio.create_task(_loop()), asyncio.create_task(_alert_loop()), asyncio.create_task(_kpi_loop())]
+        if should_run_bg
+        else []
+    )
     try:
         yield
     finally:

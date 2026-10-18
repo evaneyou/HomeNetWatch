@@ -9,6 +9,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+if [ "$#" -gt 0 ] && printf '%s\n' "$@" | grep -qx server && ! printf '%s\n' "$@" | grep -qx agent-api; then
+  set -- "$@" agent-api
+fi
+
 docker compose up --build -d "$@"
 
 if [ "$#" -eq 0 ] || printf '%s\n' "$@" | grep -qx wireguard; then

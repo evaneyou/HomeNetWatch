@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app import telegram
 from app.models import (
     AlertEvent,
+    ApInventory,
     Issue,
     IssueSeverity,
     IssueStatus,
@@ -31,11 +32,13 @@ from app.models import (
     MonitorHealth,
     Network,
     ResultStatus,
+    RfAlert,
     SyntheticRun,
     SyntheticSample,
     TelegramSetting,
     Test,
     TestResult,
+    WifiObservation,
 )
 
 log = logging.getLogger(__name__)
@@ -346,7 +349,80 @@ def app_conditions(db: Session, now: datetime, offline_ids: set) -> list[Conditi
     return out
 
 
+def _resolve_stale_issues(db: Session, now: datetime) -> None:
+    """Auto-resolve open issues whose monitor/test cleared or whose RF event aged out."""
+    open_issues = db.scalars(select(Issue).where(Issue.status == IssueStatus.open)).all()
+    if not open_issues:
+        return
+    changed = False
+    for issue in open_issues:
+        opened = issue.opened_at if issue.opened_at.tzinfo else issue.opened_at.replace(tzinfo=timezone.utc)
+        if issue.monitor_id is None or issue.severity == IssueSeverity.info:
+            issue.status = IssueStatus.resolved
+            issue.resolved_at = now
+            changed = True
+            continue
+        if issue.test_id is not None:
+            test = db.get(Test, issue.test_id)
+            if test is None or test.stable_status == ResultStatus.ok:
+                issue.status = IssueStatus.resolved
+                issue.resolved_at = now
+                changed = True
+                continue
+        if issue.root_cause_stage == "airwave":
+            bssid = issue.title.rsplit(" on ", 1)[-1].strip().lower() if " on " in issue.title else ""
+            if issue.title.startswith("Possible evil twin ") and bssid:
+                trusted = db.scalar(
+                    select(ApInventory.trusted).where(
+                        ApInventory.monitor_id == issue.monitor_id,
+                        ApInventory.bssid == bssid,
+                    )
+                )
+                if trusted:
+                    issue.status = IssueStatus.resolved
+                    issue.resolved_at = now
+                    changed = True
+                    continue
+                if now - opened >= timedelta(hours=6):
+                    recent_obs = db.scalar(
+                        select(WifiObservation.id)
+                        .where(
+                            WifiObservation.monitor_id == issue.monitor_id,
+                            WifiObservation.bssid == bssid,
+                            WifiObservation.scanned_at >= now - timedelta(hours=6),
+                        )
+                        .limit(1)
+                    )
+                    if recent_obs is None:
+                        issue.status = IssueStatus.resolved
+                        issue.resolved_at = now
+                        changed = True
+                        continue
+            elif issue.title.startswith("Airwave ") and now - opened >= timedelta(hours=1):
+                recent_alert = db.scalar(
+                    select(RfAlert.id)
+                    .where(
+                        RfAlert.monitor_id == issue.monitor_id,
+                        RfAlert.bssid == bssid,
+                        RfAlert.observed_at >= now - timedelta(hours=1),
+                    )
+                    .limit(1)
+                )
+                if recent_alert is None:
+                    issue.status = IssueStatus.resolved
+                    issue.resolved_at = now
+                    changed = True
+                    continue
+        elif issue.test_id is None and now - opened >= timedelta(hours=24):
+            issue.status = IssueStatus.resolved
+            issue.resolved_at = now
+            changed = True
+    if changed:
+        db.flush()
+
+
 def evaluate(db: Session, now: datetime) -> list[Condition]:
+    _resolve_stale_issues(db, now)
     pi, offline = pi_conditions(db, now)
     return [*network_conditions(db, now, offline), *pi, *server_conditions(now), *app_conditions(db, now, offline)]
 
@@ -393,10 +469,12 @@ Sender = Callable[[str, str, str], None]
 def run_cycle(db: Session, now: Optional[datetime] = None, sender: Optional[Sender] = None) -> dict[str, int]:
     """One pass. Returns counts, for logging and tests."""
     now = now or datetime.now(timezone.utc)
+    _resolve_stale_issues(db, now)
     send = sender or telegram.send
     row = get_settings_row(db)
     counts = {"opened": 0, "resolved": 0, "sent": 0, "failed": 0, "limited": 0}
     if not configured(row):
+        db.commit()
         return counts
     token = telegram.decrypt(row.bot_token_enc)
     if not token:

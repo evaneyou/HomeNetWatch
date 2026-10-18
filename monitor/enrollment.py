@@ -485,7 +485,7 @@ def enrollment_loop() -> None:
         if config.get("enrollment_url") and config.get("tls_pins") and config.get("installer_code"):
             try:
                 enroll_once(dict(config))
-            except (OSError, urllib.error.URLError, TimeoutError, ValueError, ssl.SSLError, RuntimeError, KeyError) as exc:
+            except Exception as exc:
                 message = str(exc)
                 secret = str(config.get("installer_code") or "")
                 if secret and secret in message:

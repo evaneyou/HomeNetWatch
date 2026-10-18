@@ -248,7 +248,7 @@ def kismet_loop() -> None:
         if config.get("token") and config.get("name") and config.get("server_url"):
             try:
                 kismet_once(dict(config))
-            except (OSError, urllib.error.URLError, TimeoutError, ValueError, KeyError) as exc:
+            except Exception as exc:
                 state._last_error = str(exc)
         state._stop.wait(60)
 
@@ -259,7 +259,7 @@ def scan_loop() -> None:
         if config.get("token") and config.get("name") and config.get("server_url"):
             try:
                 upload_wifi_scan(dict(config))
-            except (OSError, urllib.error.URLError, TimeoutError, ValueError, KeyError) as exc:
+            except Exception as exc:
                 state._last_error = str(exc)
         with state._lock:
             interval = int(load_config().get("scan_interval_seconds") or 300)

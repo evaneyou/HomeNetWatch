@@ -961,3 +961,24 @@
 .kpi-gaps i {
   background: var(--k-warn);
 }
+
+/* Remote sensor picker, the same look as the one on Network Test. */
+.kpi .kpi-tools .select-menu { display: block; min-width: 200px; }
+.kpi .kpi-tools .select-menu-trigger {
+  width: 100%;
+  min-height: 44px;
+  height: 44px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  background: #161d2f;
+  border: 1px solid #232d49;
+  border-radius: 12px;
+  color: #e8ecf8;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .kpi .kpi-tools .select-menu { width: 100%; }
+}

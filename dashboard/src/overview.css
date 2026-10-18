@@ -129,6 +129,12 @@
 .probe-text p { margin: 0; font-size: 17px; line-height: 1.4; color: var(--muted); }
 .probe-text p.probe-id { margin-top: 8px; font-size: 14px; color: var(--lav-soft); opacity: 0.8; }
 
+.orb-wrap {
+  position: relative;
+  flex: none;
+  outline: none;
+}
+
 .orb {
   --orb-a: #C8F7E2;
   --orb-b: #6FD9AB;
@@ -138,6 +144,7 @@
   border-radius: 58% 42% 55% 45% / 50% 55% 45% 50%;
   background: radial-gradient(circle at 35% 30%, var(--orb-a), var(--orb-b) 85%);
   animation: breathe 4s ease-in-out infinite;
+  cursor: help;
 }
 .probe:nth-child(even) .orb { border-radius: 45% 55% 40% 60% / 55% 45% 55% 45%; }
 .orb.mood-curious { --orb-a: #D9D0FF; --orb-b: #9BE3C6; }
@@ -145,6 +152,80 @@
 .orb.mood-down    { --orb-a: #FFD0C8; --orb-b: #FF8A7A; animation-duration: 7s; }
 .orb svg { width: 64px; height: 44px; fill: none; stroke: var(--bg); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
 .orb svg .eye { fill: var(--bg); stroke: none; }
+
+.orb-popover {
+  position: absolute;
+  top: calc(100% + 14px);
+  left: 0;
+  z-index: 30;
+  width: min(380px, calc(100vw - 64px));
+  padding: 18px 20px;
+  border-radius: 22px;
+  background: #221d33;
+  border: 1px solid rgba(217, 208, 255, 0.18);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.55);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+  pointer-events: none;
+}
+
+.orb-wrap:hover .orb-popover,
+.orb-wrap:focus-visible .orb-popover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.orb-popover-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-family: var(--display);
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.orb-popover-why {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.orb-popover-list {
+  margin: 0;
+  padding: 10px 0 0;
+  border-top: 1px solid rgba(217, 208, 255, 0.12);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13px;
+}
+
+.orb-popover-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.orb-popover-list .dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  transform: translateY(-1px);
+}
+
+.orb-popover-meta {
+  font-style: normal;
+  color: var(--muted);
+  opacity: 0.85;
+}
 
 .checks {
   display: grid;

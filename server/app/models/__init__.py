@@ -529,6 +529,9 @@ class KpiHourly(Base):
     up_n: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Minutes without internet: failed checks scaled to the hour. Kept so a day can be added up exactly.
     outage_min: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    # Minutes the monitoring had no result, and how many separate stretches. Not the same as being offline.
+    gap_min: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    gaps: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     __table_args__ = (Index("ix_kpi_hourly_monitor_bucket", "monitor_id", "bucket_start"),)
 
@@ -558,6 +561,9 @@ class KpiDaily(Base):
     up_sum: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     up_n: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     outage_min: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    # Minutes the monitoring had no result, and how many separate stretches. Not the same as being offline.
+    gap_min: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    gaps: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     __table_args__ = (Index("ix_kpi_daily_monitor_day", "monitor_id", "day"),)
 

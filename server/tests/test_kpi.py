@@ -353,5 +353,135 @@ def test_the_new_endpoints(client: TestClient, db):
 
 
 def test_the_targets_are_strict_and_reach_the_report(db):
-    assert kpi.TARGETS == {"internet": 99.99, "voice": 99.9, "video": 99.9, "loss_pct": 0.1}
+    assert kpi.TARGETS == {"internet": 99.95, "voice": 99.9, "video": 99.9, "loss_pct": 0.1}
     assert kpi.report(db, "week", now=NOW)["targets"] == kpi.TARGETS
+
+
+def _two_links(db, monitor):
+    return _link(db, monitor, NetworkKind.wired), _link(db, monitor, NetworkKind.wifi)
+
+
+def test_reporting_gaps_are_counted_once_even_when_both_links_stop(db):
+    monitor = _pi(db)
+    wired, wifi = _two_links(db, monitor)
+    for minute in (*range(0, 6), *range(20, 26)):
+        _ping(db, wired, minute, ResultStatus.ok)
+    for minute in (*range(0, 6), *range(21, 27)):
+        _ping(db, wifi, minute, ResultStatus.ok)
+    db.commit()
+    kpi.rebuild(db, HOUR, HOUR + timedelta(hours=1))
+    kpi.rebuild_days(db, HOUR.date(), HOUR.date())
+    db.commit()
+
+    rows = {row.link: row for row in db.scalars(select(KpiHourly).where(KpiHourly.monitor_id == monitor.id, KpiHourly.kind == "internet")).all()}
+    assert (rows["wired"].gaps, round(rows["wired"].gap_min, 1)) == (1, 14.0)
+    assert (rows["wireless"].gaps, round(rows["wireless"].gap_min, 1)) == (1, 15.0)
+    day = db.scalar(select(KpiDaily).where(KpiDaily.monitor_id == monitor.id, KpiDaily.kind == "internet", KpiDaily.link == "wired"))
+    assert (day.gaps, round(day.gap_min, 1)) == (1, 14.0)
+
+    soon = HOUR + timedelta(minutes=28)  # two minutes after the last result, so nothing is still open
+    internet = kpi.report(db, "day", now=soon, monitor_id=monitor.id)["summary"]["internet"]
+    # The same stop seen on both links is one stretch of about 14.5 minutes, not 29.
+    assert internet["gaps"] == 1 and internet["gap_minutes"] == pytest.approx(14.5)
+    assert internet["availability"] == pytest.approx(100.0), "a gap is not downtime"
+    week = kpi.report(db, "week", now=soon, monitor_id=monitor.id)["summary"]["internet"]
+    assert week["gap_minutes"] == pytest.approx(14.5)
+
+
+def test_a_short_pause_is_not_a_gap_and_one_across_the_hour_counts_where_it_ends(db):
+    monitor = _pi(db)
+    wired = _link(db, monitor, NetworkKind.wired)
+    for minute in (0, 1, 2, 4, 6):  # two minute waits are normal jitter
+        _ping(db, wired, minute, ResultStatus.ok)
+    _ping(db, wired, 55, ResultStatus.ok, when=HOUR - timedelta(hours=1))  # 11:55
+    db.commit()
+    kpi.rebuild(db, HOUR, HOUR + timedelta(hours=1))  # only the later hour is rebuilt
+    db.commit()
+    row = db.scalar(select(KpiHourly).where(KpiHourly.monitor_id == monitor.id, KpiHourly.kind == "internet"))
+    assert row.gaps == 1 and round(row.gap_min, 1) == 4.0, "11:55 to 12:00 is a five minute wait, so four minutes missing"
+
+
+def test_the_gap_log_merges_both_links_and_shows_a_stretch_that_is_still_open(db):
+    monitor = _pi(db)
+    wired, wifi = _two_links(db, monitor)
+    for minute in (*range(0, 6), *range(20, 26)):
+        _ping(db, wired, minute, ResultStatus.ok)
+    for minute in (*range(0, 6), *range(21, 27)):
+        _ping(db, wifi, minute, ResultStatus.ok)
+    for minute in range(28, 32):  # Wi-Fi alone stops later, at 12:31 until the end of the hour
+        _ping(db, wired, minute, ResultStatus.ok)
+    for minute in (28,):
+        _ping(db, wifi, minute, ResultStatus.ok)
+    _ping(db, wifi, 40, ResultStatus.ok)
+    db.commit()
+    log = kpi.gap_log(db, HOUR, HOUR + timedelta(hours=1), monitor.id)
+    assert [(item["links"], item["minutes"]) for item in log] == [("wireless", 11), ("both", 15)]
+    assert log[0]["start"] > log[1]["start"], "newest first"
+
+    # The last result was at 12:40 and it is now 13:30: that stretch has not ended yet.
+    later = HOUR + timedelta(minutes=90)
+    report = kpi.report(db, "day", now=later, monitor_id=monitor.id)
+    assert report["gaps"][0]["ongoing"] is True and report["gaps"][0]["minutes"] == 49
+    assert report["summary"]["internet"]["gaps"] >= 1
+    past = kpi.report(db, "day", now=later, monitor_id=monitor.id, day=date(2026, 10, 15))
+    assert all(not item["ongoing"] for item in past["gaps"]), "a past day has no stretch still open"
+
+
+def test_daily_history_carries_the_gap_minutes(db):
+    monitor = _pi(db)
+    wired = _link(db, monitor, NetworkKind.wired)
+    for minute in (*range(0, 6), *range(20, 26)):
+        _ping(db, wired, minute, ResultStatus.ok)
+    db.commit()
+    kpi.backfill(db, now=NOW)
+    db.commit()
+    rows = kpi.daily_history(db, NOW.date(), NOW.date(), monitor.id)
+    assert rows and rows[0]["gap_minutes"] == pytest.approx(14.0)
+
+
+def test_the_daily_health_score_weights_internet_most():
+    assert kpi.SCORE_WEIGHTS == {"internet": 60, "voice": 20, "video": 10, "loss": 10}
+    perfect = kpi.health_score(100.0, 100.0, 100.0, 0.0)
+    assert perfect["score"] == 100.0 and perfect["tone"] == "good"
+
+    # Internet down about 30 minutes (97.9%) and everything else perfect: red.
+    down = kpi.health_score(97.9, 100.0, 100.0, 0.0)
+    assert down["score"] == 40.0 and down["tone"] == "bad"
+    # Voice at its worst alone is amber, on the edge. Video alone is further from the edge.
+    assert kpi.health_score(100.0, 98.0, 100.0, 0.0)["score"] == 80.0
+    assert kpi.health_score(100.0, 98.0, 100.0, 0.0)["tone"] == "warn"
+    assert kpi.health_score(100.0, 100.0, 98.0, 0.0)["score"] == 90.0
+
+    # The two real days from the proposal.
+    oct16 = kpi.health_score(100.0, 99.73, 99.40, 0.05)
+    assert oct16["score"] == pytest.approx(95.6, abs=0.1) and oct16["tone"] == "good"
+    oct13 = kpi.health_score(99.85, 99.25, 97.68, 0.60)
+    assert oct13["score"] == pytest.approx(71.3, abs=0.1) and oct13["tone"] == "bad"
+
+
+def test_a_missing_service_shares_its_weight_and_no_internet_means_no_score():
+    # No voice that day: the other three are scored on their own weights (60, 10, 10 out of 80).
+    assert kpi.health_score(100.0, None, 100.0, 0.0)["score"] == 100.0
+    partial = kpi.health_score(100.0, None, 98.0, 0.0)
+    assert partial["score"] == pytest.approx(100 * (60 + 0 + 10) / 80)
+    none = kpi.health_score(None, 100.0, 100.0, 0.0)
+    assert none == {"score": None, "tone": "none", "parts": {}}
+    # The better a target is met, the better the score, in proportion between the two ends.
+    assert kpi.health_score(99.475, 100.0, 100.0, 0.0)["score"] == pytest.approx(100 - 0.6 * 50, abs=0.1)
+
+
+def test_the_daily_history_carries_the_score_and_the_colour(db):
+    monitor = _pi(db)
+    wired = _link(db, monitor, NetworkKind.wired)
+    for minute in range(10):
+        _ping(db, wired, minute, ResultStatus.ok)
+    voice = _run(db, monitor, "voip-g711a")
+    for minute in range(10):
+        _sample(db, voice, minute, "pass", loss=0.0)
+    db.commit()
+    kpi.backfill(db, now=NOW)
+    db.commit()
+    row = kpi.daily_history(db, NOW.date(), NOW.date(), monitor.id)[0]
+    assert row["score"] == 100.0 and row["tone"] == "good" and set(row["score_parts"]) == {"internet", "voice", "loss"}
+    empty = kpi.daily_history(db, date(2020, 1, 1), date(2020, 1, 2), monitor.id)
+    assert empty == []

@@ -21,7 +21,7 @@ import { api } from "../api";
 import "../kpi.css";
 
 type Period = "day" | "week" | "month" | "year";
-type Kind = { samples: number; failed: number; availability: number | null; loss_avg: number | null; loss_max: number | null; rtt_ms: number | null; jitter_ms: number | null; down_mbps: number | null; up_mbps: number | null; incidents: number; outage_minutes: number; mttr_minutes?: number | null };
+type Kind = { samples: number; failed: number; availability: number | null; loss_avg: number | null; loss_max: number | null; rtt_ms: number | null; jitter_ms: number | null; down_mbps: number | null; up_mbps: number | null; incidents: number; outage_minutes: number; gap_minutes: number; gaps: number; mttr_minutes?: number | null };
 type Point = {
   t: string;
   internet: number | null;
@@ -37,6 +37,7 @@ type Point = {
   down_mbps: number | null;
   up_mbps: number | null;
   outage_minutes: number;
+  gap_minutes: number;
 };
 type Report = {
   period: Period;
@@ -52,6 +53,7 @@ type Report = {
   links: Record<"internet" | "voice" | "video", Record<string, Kind>>;
   series: Point[];
   incidents: { start: string; link: string; minutes: number; checks: number }[];
+  gaps: { start: string; minutes: number; links: "wired" | "wireless" | "both"; ongoing: boolean }[];
 };
 
 const PERIODS: { key: Period; label: string; text: string }[] = [
@@ -63,6 +65,15 @@ const PERIODS: { key: Period; label: string; text: string }[] = [
 
 const C = { good: "#4fd1b5", warn: "#ffc24d", bad: "#ff8a7a", blue: "#6aa8ff", violet: "#a78bfa", grid: "#232d49", axis: "#9aa6c4" };
 const LINKS = { wired: "Wired", wireless: "Wi-Fi" } as const;
+/** An availability chart never starts lower than this, so the small differences stay readable. */
+const AXIS_MIN = 95;
+
+/** The real figure behind a plotted point, for the tooltip. */
+function rawOf(item: unknown): number | null {
+  const entry = item as { dataKey?: unknown; payload?: Record<string, number | null> } | undefined;
+  const key = String(entry?.dataKey ?? "").replace("_plot", "");
+  return entry?.payload?.[key] ?? null;
+}
 
 /** Two decimals, never rounded up to 100: 99.996 reads 99.99%. A whole 100 or 0 has no decimals. */
 function pct(value: number | null | undefined, digits = 2): string {
@@ -167,6 +178,10 @@ type DailyRow = {
   video: number | null;
   loss: number | null;
   offline_minutes: number;
+  gap_minutes: number;
+  score: number | null;
+  tone: Tone;
+  score_parts: Record<string, number>;
   outages: number;
   rtt_ms: number | null;
 };
@@ -187,19 +202,11 @@ function niceDay(iso: string): string {
   return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
-const DAY_TONES = { good: "Met every target", warn: "Close to a target", bad: "Missed a target", none: "No data" } as const;
+const DAY_TONES = { good: "Healthy, 95 or more", warn: "Fair, 80 to 94", bad: "Poor, under 80", none: "No data" } as const;
 
-/** The worst result of the day against the targets, as one colour. */
-function dayTone(row: DailyRow | null, targets: Report["targets"]): Tone {
-  if (!row) return "none";
-  const tones = [
-    availabilityTone(row.internet, targets.internet),
-    availabilityTone(row.voice, targets.voice),
-    availabilityTone(row.video, targets.video),
-    lossTone(row.loss, targets.loss_pct),
-  ].filter((tone) => tone !== "none");
-  if (tones.length === 0) return "none";
-  return tones.includes("bad") ? "bad" : tones.includes("warn") ? "warn" : "good";
+/** A day's colour comes from its health score: internet 60%, voice 20%, video 10%, packet drop 10%. */
+function dayTone(row: DailyRow | null): Tone {
+  return row ? row.tone : "none";
 }
 
 function missed(row: DailyRow, targets: Report["targets"]): string[] {
@@ -254,9 +261,9 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
   }, [cells, weeks]);
 
   function download() {
-    const head = ["Date", "Internet %", "Wired %", "Wi-Fi %", "Voice %", "Video %", "Packet drop %", "Offline min", "Outages"];
+    const head = ["Date", "Internet %", "Wired %", "Wi-Fi %", "Voice %", "Video %", "Packet drop %", "Offline min", "Outages", "Reporting gap min", "Health score"];
     const cell = (value: number | null, digits = 2) => (value == null ? "" : value.toFixed(digits));
-    const lines = list.map((row) => [row.day, cell(row.internet), cell(row.internet_wired), cell(row.internet_wireless), cell(row.voice), cell(row.video), cell(row.loss), cell(row.offline_minutes, 1), String(row.outages)].join(","));
+    const lines = list.map((row) => [row.day, cell(row.internet), cell(row.internet_wired), cell(row.internet_wireless), cell(row.voice), cell(row.video), cell(row.loss), cell(row.offline_minutes, 1), String(row.outages), cell(row.gap_minutes, 1), cell(row.score, 1)].join(","));
     const blob = new Blob([[head.join(","), ...lines].join("\n")], { type: "text/csv" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -278,7 +285,7 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
     <section className="kpi-panel kpi-history">
       <header>
         <h3>Daily KPI history</h3>
-        <span>One square per day, coloured against the targets. Hover for the numbers, click to open the day.</span>
+        <span>One square per day, coloured by a health score: internet 60%, voice 20%, video 10%, packet drop 10%. Hover for the numbers, click to open the day.</span>
       </header>
       <div className="kpi-filter">
         <label>
@@ -323,13 +330,9 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
             </div>
             <div className="kpi-heat-main">
               <div className="kpi-heat-days" aria-hidden="true">
-                <span>Mon</span>
-                <span />
-                <span>Wed</span>
-                <span />
-                <span>Fri</span>
-                <span />
-                <span />
+                {["M", "T", "W", "T", "F", "S", "S"].map((letter, index) => (
+                  <span key={index}>{letter}</span>
+                ))}
               </div>
               <div className="kpi-heat-grid" role="list" aria-label="Daily results">
                 {cells.map((cell) =>
@@ -340,8 +343,8 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
                       key={cell.day}
                       type="button"
                       role="listitem"
-                      className={`kpi-cell tone-${dayTone(cell.row, targets)}${cell.day === selected ? " is-selected" : ""}`}
-                      aria-label={`${niceDay(cell.day)}: ${cell.row ? (missed(cell.row, targets).length ? `missed ${missed(cell.row, targets).join(", ")}` : "met every target") : "no data"}`}
+                      className={`kpi-cell tone-${dayTone(cell.row)}${cell.day === selected ? " is-selected" : ""}`}
+                      aria-label={`${niceDay(cell.day)}: ${cell.row && cell.row.score != null ? `health score ${Math.round(cell.row.score)}` : "no data"}`}
                       onMouseEnter={(event) => show(cell, event.currentTarget)}
                       onFocus={(event) => show(cell, event.currentTarget)}
                       onBlur={() => setTip(null)}
@@ -358,8 +361,9 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
             <b>{niceDay(tip.cell.day)}</b>
             {tip.cell.row ? (
               <>
-                <span className={`kpi-tip-status tone-${dayTone(tip.cell.row, targets)}`}>
-                  {missed(tip.cell.row, targets).length ? `Below target: ${missed(tip.cell.row, targets).join(", ")}` : DAY_TONES.good}
+                <span className={`kpi-tip-status tone-${dayTone(tip.cell.row)}`}>
+                  {tip.cell.row.score == null ? "No health score" : `Health score ${Math.round(tip.cell.row.score)} of 100`}
+                  {missed(tip.cell.row, targets).length ? ` · below target: ${missed(tip.cell.row, targets).join(", ")}` : ""}
                 </span>
                 <dl>
                   <dt>Internet</dt>
@@ -377,6 +381,8 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
                     {tip.cell.row.offline_minutes > 0 ? minutes(tip.cell.row.offline_minutes) : "none"}
                     {tip.cell.row.outages ? ` · ${tip.cell.row.outages} outage${tip.cell.row.outages === 1 ? "" : "s"}` : ""}
                   </dd>
+                  <dt>Reporting gaps</dt>
+                  <dd>{tip.cell.row.gap_minutes > 0 ? minutes(tip.cell.row.gap_minutes) : "none"}</dd>
                   <dt>Latency</dt>
                   <dd>{tip.cell.row.rtt_ms == null ? "—" : `${num(tip.cell.row.rtt_ms)} ms`}</dd>
                 </dl>
@@ -423,7 +429,19 @@ export default function KpiPage() {
 
   const report = query.data;
   const { summary, previous, targets, series, bucket } = report;
-  const data = series.map((point) => ({ ...point, label: stamp(point.t, bucket), full: stamp(point.t, bucket, true) }));
+  const plot = (value: number | null) => (value == null ? null : Math.max(value, AXIS_MIN));
+  const data = series.map((point) => ({
+    ...point,
+    internet_wired_plot: plot(point.internet_wired),
+    internet_wireless_plot: plot(point.internet_wireless),
+    voice_plot: plot(point.voice),
+    video_plot: plot(point.video),
+    label: stamp(point.t, bucket),
+    full: stamp(point.t, bucket, true),
+  }));
+  const under = (...values: (number | null)[]) => values.some((value) => value != null && value < AXIS_MIN);
+  const internetClipped = series.some((point) => under(point.internet_wired, point.internet_wireless));
+  const appClipped = series.some((point) => under(point.voice, point.video));
   const internet = summary.internet;
   const voice = summary.voice;
   const video = summary.video;
@@ -451,10 +469,10 @@ export default function KpiPage() {
   const minFloor = (values: (number | null)[], target: number) => {
     const real = values.filter((value): value is number => value != null);
     const low = real.length ? Math.min(...real, target) : target;
-    return Math.max(0, Math.floor(low - 0.3));
+    return Math.max(AXIS_MIN, Math.floor(low - 0.3));
   };
-  const availFloor = minFloor(data.flatMap((point) => [point.internet_wired, point.internet_wireless]), targets.internet);
-  const appFloor = minFloor(data.flatMap((point) => [point.voice, point.video]), Math.min(targets.voice, targets.video));
+  const availFloor = minFloor(data.flatMap((point) => [point.internet_wired_plot, point.internet_wireless_plot]), targets.internet);
+  const appFloor = minFloor(data.flatMap((point) => [point.voice_plot, point.video_plot]), Math.min(targets.voice, targets.video));
   const axis = { stroke: C.axis, tick: { fontSize: 11 }, tickLine: false } as const;
   // `to` is the end of the last day, so step back a moment to name the last day itself.
   const lastMoment = new Date(new Date(report.to).getTime() - 1).toISOString();
@@ -514,7 +532,7 @@ export default function KpiPage() {
           ) : (
             <span className="kpi-live" title="This page refreshes every 30 seconds">
               <i aria-hidden="true" />
-              Live · updated {new Date(query.dataUpdatedAt || report.generated_at).toLocaleTimeString()}
+              Live · updated {new Date(query.dataUpdatedAt || report.generated_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}
             </span>
           )}
           <button type="button" className="kpi-print" onClick={() => window.print()}>
@@ -596,41 +614,47 @@ export default function KpiPage() {
           </span>
           <span className="kpi-split">Counted from failed internet checks</span>
         </Card>
+        <Card label="Reporting gaps" value={internet.samples ? (internet.gap_minutes > 0 ? minutes(internet.gap_minutes) : "None") : "—"} tone={internet.samples === 0 ? "none" : internet.gaps === 0 ? "good" : "warn"}>
+          <span className="kpi-split">
+            {internet.samples ? (internet.gaps === 0 ? "Monitoring ran without a break" : `${internet.gaps} stretch${internet.gaps === 1 ? "" : "es"} with no data`) : "No data yet"}
+          </span>
+          <span className="kpi-split">The Pi or the server was down. Not counted as internet downtime.</span>
+        </Card>
         <Card label="Latency to the server" value={internet.rtt_ms == null ? "—" : `${num(internet.rtt_ms)} ms`} tone="none" spark={<Spark data={series} field="rtt_ms" color={C.good} />}>
           <span className="kpi-split">Jitter {internet.jitter_ms == null ? "—" : `${num(internet.jitter_ms)} ms`}</span>
-          <span className="kpi-split">
-            Speed ↓ {speed.down_mbps == null ? "—" : num(speed.down_mbps, 0)} / ↑ {speed.up_mbps == null ? "—" : num(speed.up_mbps, 0)} Mbit/s
-          </span>
+        </Card>
+        <Card label="Internet speed" value={speed.down_mbps == null && speed.up_mbps == null ? "—" : `${speed.down_mbps == null ? "—" : num(speed.down_mbps, 0)} / ${speed.up_mbps == null ? "—" : num(speed.up_mbps, 0)}`} tone="none" spark={<Spark data={series} field="down_mbps" color={C.blue} />}>
+          <span className="kpi-split">Download / upload, Mbit/s</span>
         </Card>
       </section>
 
       <div className="kpi-grid">
-        <Panel title="Internet availability" note={`Dashed line is the ${targets.internet}% target`}>
+        <Panel title="Internet availability" note={`Dashed line is the ${targets.internet}% target${internetClipped ? `. Anything under ${AXIS_MIN}% sits on the bottom edge.` : ""}`}>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid stroke={C.grid} vertical={false} />
               <XAxis dataKey="label" {...axis} minTickGap={20} />
               <YAxis {...axis} domain={[availFloor, 100]} width={58} tickFormatter={(value: number) => `${value}%`} axisLine={false} />
-              <Tooltip contentStyle={tooltipStyle} labelFormatter={(_label, rows) => String(rows?.[0]?.payload?.full ?? "")} formatter={(value) => [pct(typeof value === "number" ? value : null), ""]} />
+              <Tooltip contentStyle={tooltipStyle} labelFormatter={(_label, rows) => String(rows?.[0]?.payload?.full ?? "")} formatter={(_value, name, item) => [pct(rawOf(item)), name]} />
               <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} />
               <ReferenceLine y={targets.internet} stroke={C.warn} strokeDasharray="5 4" />
-              <Line name="Wired" type="monotone" dataKey="internet_wired" stroke={C.good} strokeWidth={2.2} dot={false} isAnimationActive={false} />
-              <Line name="Wi-Fi" type="monotone" dataKey="internet_wireless" stroke={C.blue} strokeWidth={2.2} dot={false} isAnimationActive={false} />
+              <Line name="Wired" type="monotone" dataKey="internet_wired_plot" stroke={C.good} strokeWidth={2.2} dot={false} isAnimationActive={false} />
+              <Line name="Wi-Fi" type="monotone" dataKey="internet_wireless_plot" stroke={C.blue} strokeWidth={2.2} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </Panel>
 
-        <Panel title="Voice and video availability" note={`Dashed line is the ${targets.voice}% target`}>
+        <Panel title="Voice and video availability" note={`Dashed line is the ${targets.voice}% target${appClipped ? `. Anything under ${AXIS_MIN}% sits on the bottom edge.` : ""}`}>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid stroke={C.grid} vertical={false} />
               <XAxis dataKey="label" {...axis} minTickGap={20} />
               <YAxis {...axis} domain={[appFloor, 100]} width={58} tickFormatter={(value: number) => `${value}%`} axisLine={false} />
-              <Tooltip contentStyle={tooltipStyle} labelFormatter={(_label, rows) => String(rows?.[0]?.payload?.full ?? "")} formatter={(value) => [pct(typeof value === "number" ? value : null), ""]} />
+              <Tooltip contentStyle={tooltipStyle} labelFormatter={(_label, rows) => String(rows?.[0]?.payload?.full ?? "")} formatter={(_value, name, item) => [pct(rawOf(item)), name]} />
               <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} />
               <ReferenceLine y={targets.voice} stroke={C.warn} strokeDasharray="5 4" />
-              <Line name="Voice" type="monotone" dataKey="voice" stroke={C.blue} strokeWidth={2.2} dot={false} isAnimationActive={false} />
-              <Line name="Video" type="monotone" dataKey="video" stroke={C.violet} strokeWidth={2.2} dot={false} isAnimationActive={false} />
+              <Line name="Voice" type="monotone" dataKey="voice_plot" stroke={C.blue} strokeWidth={2.2} dot={false} isAnimationActive={false} />
+              <Line name="Video" type="monotone" dataKey="video_plot" stroke={C.violet} strokeWidth={2.2} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </Panel>
@@ -723,7 +747,8 @@ export default function KpiPage() {
           </div>
         </Panel>
 
-        <Panel title="Outage log" note={report.period === "year" ? "Most recent, from detailed records" : "Most recent first"}>
+        <Panel title="Outages and gaps" note={report.period === "year" ? "Most recent, from detailed records" : "Most recent first"}>
+          <h4 className="kpi-subhead">Internet outages</h4>
           {report.incidents.length === 0 ? (
             <p className="kpi-clear">No internet outages in this period.</p>
           ) : (
@@ -733,6 +758,25 @@ export default function KpiPage() {
                   <i aria-hidden="true" />
                   <span>
                     <b>{LINKS[item.link as keyof typeof LINKS] ?? item.link}</b> offline for {minutes(item.minutes)}
+                  </span>
+                  <time>{new Date(item.start).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time>
+                </li>
+              ))}
+            </ul>
+          )}
+          <h4 className="kpi-subhead">Reporting gaps</h4>
+          {report.gaps.length === 0 ? (
+            <p className="kpi-clear">The monitoring ran without a break.</p>
+          ) : (
+            <ul className="kpi-incidents kpi-gaps">
+              {report.gaps.map((item) => (
+                <li key={`${item.start}-${item.links}`}>
+                  <i aria-hidden="true" />
+                  <span>
+                    No results for 
+                    <b>{minutes(item.minutes)}</b>
+                    {item.ongoing ? " so far" : ""}
+                    {item.links === "both" ? "" : ` on ${LINKS[item.links]}`}
                   </span>
                   <time>{new Date(item.start).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time>
                 </li>
@@ -756,8 +800,8 @@ export default function KpiPage() {
         <p>
           <b>How these are measured.</b> Internet availability is the share of one-minute checks to the HomeNetWatch server, on each link, that
           succeeded. Voice and video availability is the share of their quality checks (every few seconds) that stayed within their limits. Packet
-          drop is the average loss those checks reported. Time offline is counted from failed internet checks. A period with no measurements shows a
-          gap, never 100%. Figures are cut off, not rounded up, at two decimals. Each day is stored as a daily record, and weeks, months and years are added up from those records.
+          drop is the average loss those checks reported. Time offline is counted from failed internet checks. A reporting gap is time with no results at all, because the Pi or the server was down; it is shown
+          separately and is not counted as internet downtime. A period with no measurements shows a gap, never 100%. Each day in the history gets a health score from 0 to 100 (internet 60%, voice 20%, video 10%, packet drop 10%): green is 95 or more, amber 80 to 94, red below 80. Figures are cut off, not rounded up, at two decimals. Each day is stored as a daily record, and weeks, months and years are added up from those records.
         </p>
         <p>{report.data_since ? `Measurements since ${new Date(report.data_since).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}. ` : ""}Home network, report generated {new Date(report.generated_at).toLocaleString()}.</p>
       </footer>

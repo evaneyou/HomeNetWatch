@@ -517,3 +517,64 @@
     font-size: 46px;
   }
 }
+
+/* Remote sensor picker, the same look as the one on Network Test. */
+.st .st-sensor .select-menu { display: block; min-width: 200px; }
+.st .st-sensor .select-menu-trigger {
+  width: 100%;
+  min-height: 44px;
+  height: 44px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  background: var(--s-card);
+  border: 1px solid var(--s-line);
+  border-radius: 12px;
+  color: var(--s-text, #e8ecf8);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .st .st-sensor .select-menu { width: 100%; }
+}
+
+.st-sensor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.st-head .st-controls {
+  flex: 1 1 100%;
+}
+
+.st-display {
+  height: 44px;
+  padding: 0 20px;
+  background: #2a3556;
+  border: 0;
+  border-radius: 12px;
+  color: var(--s-text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.st-display:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+@media (max-width: 640px) {
+  .st-sensor {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .st-sensor .select-menu {
+    flex: 1;
+  }
+}

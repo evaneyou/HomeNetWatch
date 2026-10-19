@@ -18,6 +18,8 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../api";
+import SelectMenu from "../components/SelectMenu";
+import type { MonitorAdmin } from "../types";
 import "../kpi.css";
 
 type Period = "day" | "week" | "month" | "year";
@@ -221,7 +223,7 @@ function missed(row: DailyRow, targets: Report["targets"]): string[] {
 type Cell = { day: string; row: DailyRow | null; pad?: boolean };
 
 /** One coloured square per day. Hover (or focus) a square for that day's numbers, click it to open the day. */
-function DailyHistory({ selected, onPick, targets, since }: { selected: string | null; onPick: (day: string) => void; targets: Report["targets"]; since: string | null }) {
+function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitorId: string; selected: string | null; onPick: (day: string) => void; targets: Report["targets"]; since: string | null }) {
   // Start no earlier than the first day with data, so the grid is not mostly empty.
   const clamp = (day: string) => (since && day < since ? since : day);
   const [last, setLast] = useState(isoToday());
@@ -229,8 +231,8 @@ function DailyHistory({ selected, onPick, targets, since }: { selected: string |
   const [tip, setTip] = useState<{ cell: Cell; x: number; y: number } | null>(null);
   const valid = ISO_DAY.test(first) && ISO_DAY.test(last) && first <= last && first >= shiftDay(last, -400);
   const rows = useQuery({
-    queryKey: ["kpi-daily", first, last],
-    queryFn: () => api.kpiDaily(first, last) as Promise<DailyRow[]>,
+    queryKey: ["kpi-daily", first, last, monitorId],
+    queryFn: () => api.kpiDaily(first, last, monitorId || undefined) as Promise<DailyRow[]>,
     enabled: valid,
     refetchInterval: 60000,
     placeholderData: (previous) => previous,
@@ -410,9 +412,25 @@ export default function KpiPage() {
   const period = (PERIODS.find((item) => item.key === params.get("period"))?.key ?? "week") as Period;
   const picked = params.get("date") ?? "";
   const day = ISO_DAY.test(picked) && picked < isoToday() ? picked : null;
+  const monitorsQ = useQuery({ queryKey: ["monitors"], queryFn: () => api.monitors() as Promise<MonitorAdmin[]> });
+  const monitors = monitorsQ.data ?? [];
+  // "" means every sensor together. A sensor id that no longer exists falls back to that.
+  const picked_monitor = params.get("sensor") ?? "";
+  const monitorId = monitors.some((item) => item.id === picked_monitor) ? picked_monitor : "";
+  // The picker holds a choice until Display is pressed. It starts on the sensor being shown.
+  const shown = monitorId || (monitors.length === 1 ? monitors[0].id : "");
+  const [draft, setDraft] = useState<string | null>(null);
+  const sensorValue = draft ?? shown;
+  function showSensor() {
+    const next: Record<string, string> = { period };
+    if (day) next.date = day;
+    if (sensorValue && monitors.length > 1) next.sensor = sensorValue;
+    setParams(next, { replace: true });
+    setDraft(null);
+  }
   const query = useQuery({
-    queryKey: ["kpi", period, day],
-    queryFn: () => api.kpi(period, day ?? undefined) as Promise<Report>,
+    queryKey: ["kpi", period, day, monitorId],
+    queryFn: () => api.kpi(period, day ?? undefined, monitorId || undefined) as Promise<Report>,
     refetchInterval: day ? false : 30000,
     placeholderData: (previous) => previous,
   });
@@ -420,6 +438,7 @@ export default function KpiPage() {
   function go(next: { period?: Period; date?: string | null }) {
     const chosen = next.date === undefined ? day : next.date;
     const query: Record<string, string> = { period: next.period ?? period };
+    if (monitorId) query.sensor = monitorId;
     if (chosen && chosen < isoToday()) query.date = chosen;
     setParams(query, { replace: true });
   }
@@ -496,6 +515,21 @@ export default function KpiPage() {
             {range}, {new Date(lastMoment).getUTCFullYear()} · {periodText} · times in UTC
           </p>
         </div>
+        {monitors.length > 0 ? (
+          <div className="kpi-sensor">
+            <SelectMenu className="kpi-select" aria-label="Remote sensor" value={sensorValue} onChange={(event) => setDraft(event.target.value)}>
+              {monitors.length > 1 ? <option value="">All sensors</option> : null}
+              {monitors.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </SelectMenu>
+            <button type="button" className="kpi-display" disabled={sensorValue === shown} onClick={showSensor}>
+              Display
+            </button>
+          </div>
+        ) : null}
         <div className="kpi-tools">
           <div className="kpi-seg" role="group" aria-label="Reporting period">
             {PERIODS.map((item) => (
@@ -787,6 +821,7 @@ export default function KpiPage() {
       </div>
 
       <DailyHistory
+        monitorId={monitorId}
         targets={targets}
         since={report.data_since ? report.data_since.slice(0, 10) : null}
         selected={day}

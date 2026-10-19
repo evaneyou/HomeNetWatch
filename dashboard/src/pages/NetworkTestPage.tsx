@@ -256,7 +256,7 @@ export default function NetworkTestPage() {
         ? "Stopped"
         : "Finished"
       : agent.status === "online"
-        ? "Ready"
+        ? ""
         : "Agent offline";
   const tests = new Map(catalog.tests.map((item) => [item.kind, item]));
   const activeSessions = live?.sessions.filter((item) => item.status === "running" || item.status === "pending").length ?? 0;
@@ -266,10 +266,12 @@ export default function NetworkTestPage() {
       <div className="aw-top">
         <header className="aw-head">
           <h1>Network Test</h1>
-          <p className="aw-scanned" role="status">
-            <i aria-hidden="true" />
-            {status}
-          </p>
+          {status ? (
+            <p className="aw-scanned" role="status">
+              <i aria-hidden="true" />
+              {status}
+            </p>
+          ) : null}
         </header>
 
         <div className="aw-bar">

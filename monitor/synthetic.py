@@ -675,6 +675,23 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
     ).start()
 
 
+# A continuous flow that reports nothing for 3 intervals, or loses every packet for 6, is restarted.
+# The second case matters: a sender that came back after a restart once lost every packet for 98 minutes
+# while the rest of the network was fine, and only a fresh start cleared it.
+MISSING_INTERVALS = 3
+SILENT_INTERVALS = 6
+
+
+def flow_state(flow: dict) -> str:
+    """"missing" when an interval has no receive figures, "lost" when every packet was lost, else "" for a live flow."""
+    if flow.get("rx") is None and flow.get("loss_pct") is None:
+        return "missing"
+    loss = flow.get("loss_pct")
+    if isinstance(loss, (int, float)) and loss >= 99.9:
+        return "lost"
+    return ""
+
+
 def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) -> None:
     global _last_failure
     run_id, link = item
@@ -693,16 +710,19 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
         if "flows" not in payload:
             continue
         flow0 = (payload.get("flows") or [{}])[0]
-        if flow0.get("rx") is None and flow0.get("loss_pct") is None:
+        silent = flow_state(flow0)
+        if silent:
             missing_rx += 1
-            if mode_of(item) == "continuous" and missing_rx >= 3:
+            limit = MISSING_INTERVALS if silent == "missing" else SILENT_INTERVALS
+            if mode_of(item) == "continuous" and missing_rx >= limit:
                 with _lock:
                     state = _running.get(item)
                     if state and state["proc"] is proc:
                         _running.pop(item, None)
                 try:
                     import agent_state
-                    agent_state.note_log("synthetic", "info", f"{link} flow restarted after 3 missing intervals")
+                    reason = "3 missing intervals" if silent == "missing" else f"{SILENT_INTERVALS} intervals with every packet lost"
+                    agent_state.note_log("synthetic", "info", f"{link} flow restarted after {reason}")
                 except Exception:
                     pass
                 proc.terminate()

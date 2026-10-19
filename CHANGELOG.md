@@ -12,6 +12,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Landing page figures:** updated to 109 merged pull requests, 172 automated tests and 25 fixes as of October 19, and the release line now says release 0.2 is published on GitHub (0.3 is in the changelog and `VERSION` but has no GitHub release yet).
 - **KPI toolbar:** the jump back to the current day says Today. The "Viewing history" label and the Print / Save PDF button are gone.
 
 ## [0.3] - 2026-10-18

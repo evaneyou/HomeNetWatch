@@ -10,6 +10,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Changed
+
+- **KPI toolbar:** the jump back to the current day says Today. The "Viewing history" label and the Print / Save PDF button are gone.
+
 ## [0.3] - 2026-10-18
 
 ### Added

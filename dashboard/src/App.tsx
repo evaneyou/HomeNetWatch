@@ -237,8 +237,7 @@ function Shell({ role, onLogout }: { role: User["role"]; onLogout: () => void })
           {showBack ? (
             <button className="btn icon-button" type="button" aria-label="Go back" onClick={goBack}>
               <svg className="topbar-glyph" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M19.5 12h-15" />
-                <path d="M12 4.5 4.5 12 12 19.5" />
+                <path d="M15.75 4.5 8.25 12l7.5 7.5" />
               </svg>
               <span className="icon-tip">Go back</span>
             </button>

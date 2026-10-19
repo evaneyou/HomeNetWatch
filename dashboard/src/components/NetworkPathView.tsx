@@ -103,14 +103,6 @@ function networkLabel(label: string): string {
   return label === "AS ?" ? "Unknown network" : label;
 }
 
-function tracedWhen(iso: string): string {
-  const when = new Date(iso);
-  const clock = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  if (when.toDateString() === new Date().toDateString()) return `today at ${clock}`;
-  return when.toLocaleString();
-}
-
-
 export type PathChoice = { id: string; label: string };
 
 /** The destination dropdown value that means "a host I will type in". */
@@ -233,8 +225,7 @@ export default function NetworkPathView({
   const destinationName = custom ? custom.target : (destinations.find((item) => item.id === destination)?.label ?? trace?.target.name ?? "HomeNetWatch server");
   const hop = trace?.hops.find((item) => item.ttl === selected) ?? trace?.hops[trace.hops.length - 1];
   const linkName = link === "wired" ? "Wired" : "Wi-Fi";
-  const networks = trace?.stats.asn_count || trace?.stats.network_count || 0;
-  const ixp = trace?.stats.ixp_count ?? 0;
+  // Only said when there is something to say: tracing, failed, nothing yet. A good trace needs no line.
   const status = running || waiting || (!custom && pathQ.isLoading)
     ? "Tracing…"
     : custom && customQ.data?.state === "failed"
@@ -243,9 +234,7 @@ export default function NetworkPathView({
         ? "Could not load this path."
         : trace.hops.length === 0 || !trace.traced_at
           ? `No traceroute yet on the ${linkName} link.`
-          : `Traced ${tracedWhen(trace.traced_at)}${custom ? ` to ${destinationName}` : ""} · ${trace.stats.hop_count} hop${trace.stats.hop_count === 1 ? "" : "s"}${
-              networks === 0 ? "" : ` · ${networks} network${networks === 1 ? "" : "s"}${ixp ? ` + ${ixp} IXP` : ""}`
-            }`;
+          : "";
 
   function chooseDestination(value: string) {
     if (value === HOST_CHOICE) {
@@ -264,10 +253,12 @@ export default function NetworkPathView({
       <div className="aw-top">
         <header className="aw-head">
           <h1>Path View</h1>
-          <p className="aw-scanned" role="status">
-            <i aria-hidden="true" />
-            {status}
-          </p>
+          {status ? (
+            <p className="aw-scanned" role="status">
+              <i aria-hidden="true" />
+              {status}
+            </p>
+          ) : null}
         </header>
 
         <div className="aw-bar">

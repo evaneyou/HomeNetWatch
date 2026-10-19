@@ -12,6 +12,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Top bar buttons:** Back, Home and the three dots are drawn in the same 15 by 15 box with the white, round-ended stroke of the menu icons, so they match each other and the menu.
 - **KPI toolbar:** the jump back to the current day says Today. The "Viewing history" label and the Print / Save PDF button are gone.
 
 ## [0.3] - 2026-10-18

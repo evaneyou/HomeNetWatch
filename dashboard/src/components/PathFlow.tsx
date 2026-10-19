@@ -1,53 +1,15 @@
-import {
-  BaseEdge,
-  Controls,
-  EdgeLabelRenderer,
-  Handle,
-  MarkerType,
-  Position,
-  ReactFlow,
-  ReactFlowProvider,
-  getBezierPath,
-  useNodesInitialized,
-  useNodesState,
-  useReactFlow,
-  type Edge,
-  type EdgeProps,
-  type Node,
-  type NodeProps,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useMemo } from "react";
 import { useElementWidth } from "../useNarrow";
 import type { PathGroup, PathHop, PathTrace } from "./NetworkPathView";
 
-const NODE_WIDTH = 244;
-/** Under this width the diagram runs top to bottom. */
-const WIDE = 760;
-const MAX_COLUMN = 460;
-const BAR_MAX = 26;
-const GAP_X = 60;
-const GAP_Y = 30;
-const PAD = 10;
 /** A step this big between two networks is worth flagging. */
 const BIG_STEP_MS = 15;
-
-type GroupData = {
-  group: PathGroup;
-  hops: PathHop[];
-  warn: number[];
-  index: number;
-  chosen: boolean;
-  axisMax: number;
-  selected: number | null;
-  onSelect: (ttl: number) => void;
-  onGroup: (index: number) => void;
-  vertical: boolean;
-};
-type GroupNode = Node<GroupData, "network">;
-
-type StepData = { delta: number | null; big: boolean };
-type StepEdge = Edge<StepData, "step">;
+/** Room each network and each handoff needs on the wide line; less than this and the path runs top to bottom. */
+const NET_MIN = 124;
+const HOP_MIN = 46;
+const STEP_W = 62;
+/** Height of the bars on the wide line, in pixels. */
+const BAR_MAX = 46;
 
 function fmt(value: number | null | undefined, digits = 1): string {
   if (value == null || Number.isNaN(value)) return "—";
@@ -58,235 +20,143 @@ function networkLabel(label: string): string {
   return label === "AS ?" ? "Unknown network" : label;
 }
 
-/** One network on the path, with the hops that belong to it. The hops stay buttons: pick one for its details. */
-function NetworkNode({ data }: NodeProps<GroupNode>) {
-  const { group, hops, warn, selected, onSelect, onGroup, vertical, index, chosen, axisMax } = data;
-  const dashed = group.role === "unknown";
-  // On a wide layout the connections leave at the header, so every link is level whatever a node's height.
-  const level = vertical ? undefined : { top: 38 };
+function step(delta: number | null): string {
+  return delta == null ? "?" : `${delta >= 0 ? "+" : ""}${fmt(delta)} ms`;
+}
+
+type Net = { group: PathGroup; index: number; hops: PathHop[]; big: boolean };
+
+type Props = {
+  nets: Net[];
+  warn: number[];
+  axisMax: number;
+  selected: number | null;
+  chosen: number | null;
+  onSelect: (ttl: number) => void;
+  onGroup: (index: number) => void;
+};
+
+function hopLabel(hop: PathHop): string {
+  return `Hop ${hop.ttl}, ${hop.name}, ${hop.silent ? "no reply" : `${fmt(hop.avg_ms)} milliseconds`}`;
+}
+
+function StepPill({ net }: { net: Net }) {
+  return <span className={`pm-pill${net.big ? " is-big" : ""}`}>{step(net.group.delta_in_ms)}</span>;
+}
+
+/** Wide: one line across the page. Networks are coloured stretches of it, hops rise from it as bars. */
+function Line({ nets, warn, axisMax, selected, chosen, onSelect, onGroup }: Props) {
   return (
-    <div
-      className={`npv-group npf-node${dashed ? " dashed" : ""}${chosen ? " is-chosen" : ""}`}
-      style={{ ["--c" as string]: `var(--role-${group.role})` }}
-      role="button"
-      tabIndex={0}
-      aria-pressed={chosen}
-      aria-label={`${group.name}, ${group.role_label}. Show details`}
-      onClick={() => onGroup(index)}
-      onKeyDown={(event) => {
-        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
-          event.preventDefault();
-          onGroup(index);
-        }
-      }}
-    >
-      <Handle type="target" position={vertical ? Position.Top : Position.Left} style={level} />
-      <Handle type="source" position={vertical ? Position.Bottom : Position.Right} style={level} />
-      <div className="npv-ghead">
-        <span className="npv-asn">{networkLabel(group.asn_label)}</span>
-        <div className="npv-gname">{group.name}</div>
-        <div className="npv-grole">{group.role_label}</div>
-      </div>
-      <div className="npv-chips">
-        {hops.map((hop) => (
-          <button
-            key={hop.ttl}
-            type="button"
-            className={`npv-chip nodrag nopan${hop.silent ? " silent" : ""}${warn.includes(hop.ttl) ? " warn" : ""}`}
-            style={{ ["--c" as string]: `var(--role-${hop.role})` }}
-            aria-pressed={selected === hop.ttl}
-            aria-label={`Hop ${hop.ttl}, ${hop.name}, ${hop.silent ? "no reply" : `${fmt(hop.avg_ms)} milliseconds`}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onSelect(hop.ttl);
-            }}
+    <div className="pm-line">
+      {nets.map((net, position) => (
+        <Fragment key={net.index}>
+          {position > 0 ? (
+            <div className={`pm-step${net.big ? " is-big" : ""}`} aria-hidden="true">
+              <span className="pm-base" />
+              <StepPill net={net} />
+            </div>
+          ) : null}
+          <div
+            className={`pm-net${chosen === net.index ? " is-chosen" : ""}`}
+            style={{ ["--c" as string]: `var(--role-${net.group.role})`, flex: `${net.hops.length} 1 0`, minWidth: Math.max(NET_MIN, net.hops.length * HOP_MIN) }}
           >
-            <span className="npf-bar-slot" aria-hidden="true">
-              {hop.silent || hop.avg_ms == null ? (
-                <i className="npf-bar none" />
-              ) : (
-                <i className="npf-bar" style={{ height: Math.max(4, Math.round((hop.avg_ms / axisMax) * BAR_MAX)) }} />
-              )}
-            </span>
-            <span className="n">#{hop.ttl}</span>
-            <span className="v">{hop.silent ? "* * *" : fmt(hop.avg_ms)}</span>
-            <span className="u">{hop.silent ? "no reply" : "ms"}</span>
-          </button>
-        ))}
-      </div>
+            <button
+              type="button"
+              className="pm-head"
+              aria-pressed={chosen === net.index}
+              aria-label={`${net.group.name}, ${net.group.role_label}. Show details`}
+              onClick={() => onGroup(net.index)}
+            >
+              <span className="pm-asn">{networkLabel(net.group.asn_label)}</span>
+              <b>{net.group.name}</b>
+            </button>
+            <div className="pm-hops">
+              {net.hops.map((hop) => {
+                const none = hop.silent || hop.avg_ms == null;
+                return (
+                  <button
+                    key={hop.ttl}
+                    type="button"
+                    className={`pm-hop${none ? " silent" : ""}${warn.includes(hop.ttl) ? " warn" : ""}${selected === hop.ttl ? " is-selected" : ""}`}
+                    style={{ ["--c" as string]: `var(--role-${hop.role})` }}
+                    aria-pressed={selected === hop.ttl}
+                    aria-label={hopLabel(hop)}
+                    onClick={() => onSelect(hop.ttl)}
+                  >
+                    <span className="pm-bars" aria-hidden="true">
+                      <i className={`pm-bar${none ? " none" : ""}`} style={none ? undefined : { height: Math.max(4, Math.round(((hop.avg_ms as number) / axisMax) * BAR_MAX)) }} />
+                    </span>
+                    <span className="pm-base" aria-hidden="true" />
+                    <span className="n">#{hop.ttl}</span>
+                    <span className="v">{none ? "* * *" : fmt(hop.avg_ms)}</span>
+                    <span className="u">{none ? "no reply" : "ms"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </Fragment>
+      ))}
     </div>
   );
 }
 
-/** The link between two networks, labelled with the latency added at that handoff. */
-function StepLine(props: EdgeProps<StepEdge>) {
-  const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, data } = props;
-  const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
-  const delta = data?.delta ?? null;
+/** Narrow: a rail running down the page. Plain HTML, so a thumb on it scrolls the page. */
+function Rail({ nets, warn, axisMax, selected, chosen, onSelect, onGroup }: Props) {
   return (
-    <>
-      <BaseEdge
-        id={id}
-        path={path}
-        markerEnd={markerEnd}
-        interactionWidth={0}
-        style={{ stroke: data?.big ? "#ffc24d" : "#4a5878", strokeWidth: 2.2, strokeLinecap: "round" }}
-      />
-      {[0, 0.5].map((phase) => (
-        <circle key={phase} r={3.6} fill={data?.big ? "#ffc24d" : "#6ee7a8"} opacity={0.9} className="npf-dot">
-          <animateMotion dur="1.8s" begin={`-${phase * 1.8}s`} repeatCount="indefinite" path={path} calcMode="linear" />
-        </circle>
-      ))}
-      <EdgeLabelRenderer>
-        <div
-          className={`npf-step nodrag nopan${data?.big ? " is-big" : ""}`}
-          style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
-        >
-          {delta == null ? "?" : `${delta >= 0 ? "+" : ""}${fmt(delta)} ms`}
+    <div className="pm-rail">
+      {nets.map((net, position) => (
+        <div className={`pm-rnet${chosen === net.index ? " is-chosen" : ""}`} key={net.index} style={{ ["--c" as string]: `var(--role-${net.group.role})` }}>
+          <button
+            type="button"
+            className="pm-rhead"
+            aria-pressed={chosen === net.index}
+            aria-label={`${net.group.name}, ${net.group.role_label}. Show details`}
+            onClick={() => onGroup(net.index)}
+          >
+            <span className="pm-rtext">
+              <span className="pm-asn">{networkLabel(net.group.asn_label)}</span>
+              <b>{net.group.name}</b>
+            </span>
+            {position > 0 ? <StepPill net={net} /> : null}
+          </button>
+          {net.hops.map((hop) => {
+            const none = hop.silent || hop.avg_ms == null;
+            return (
+              <button
+                key={hop.ttl}
+                type="button"
+                className={`pm-row${none ? " silent" : ""}${warn.includes(hop.ttl) ? " warn" : ""}${selected === hop.ttl ? " is-selected" : ""}`}
+                style={{ ["--c" as string]: `var(--role-${hop.role})` }}
+                aria-pressed={selected === hop.ttl}
+                aria-label={hopLabel(hop)}
+                onClick={() => onSelect(hop.ttl)}
+              >
+                <span className="n">#{hop.ttl}</span>
+                <span className="pm-track" aria-hidden="true">
+                  {none ? null : <i style={{ width: `${Math.max(3, Math.min(100, ((hop.avg_ms as number) / axisMax) * 100))}%` }} />}
+                </span>
+                <span className="v">
+                  {none ? (
+                    "no reply"
+                  ) : (
+                    <>
+                      {fmt(hop.avg_ms)} <small>ms</small>
+                    </>
+                  )}
+                </span>
+              </button>
+            );
+          })}
         </div>
-      </EdgeLabelRenderer>
-    </>
-  );
-}
-
-const nodeTypes = { network: NetworkNode };
-const edgeTypes = { step: StepLine };
-
-function Layout({
-  trace,
-  selected,
-  onSelect,
-  group: chosenGroup,
-  onGroup,
-  axisMax,
-  vertical,
-  width,
-  onHeight,
-}: {
-  trace: PathTrace;
-  selected: number | null;
-  onSelect: (ttl: number) => void;
-  group: number | null;
-  onGroup: (index: number) => void;
-  axisMax: number;
-  vertical: boolean;
-  width: number;
-  onHeight: (height: number) => void;
-}) {
-  const { getNodes, setViewport, fitView } = useReactFlow();
-  const ready = useNodesInitialized();
-  const placed = useRef("");
-  const [nodes, setNodes, onNodesChange] = useNodesState<GroupNode>([]);
-  const nodeWidth = vertical ? Math.min(MAX_COLUMN, Math.max(200, width - 2 * PAD)) : NODE_WIDTH;
-  const left = vertical ? Math.max(PAD, Math.round((width - nodeWidth) / 2)) : 0;
-  const hopsByTtl = useMemo(() => new Map(trace.hops.map((hop) => [hop.ttl, hop])), [trace.hops]);
-
-  // The boxes and what they say. Positions are kept, so choosing a hop does not move anything.
-  useEffect(() => {
-    setNodes((current) =>
-      trace.groups.map((group, index): GroupNode => {
-        const id = `g${index}`;
-        const existing = current.find((node) => node.id === id);
-        const data: GroupData = {
-          group,
-          hops: group.hop_ttls.map((ttl) => hopsByTtl.get(ttl)).filter((hop): hop is PathHop => Boolean(hop)),
-          warn: trace.warn_ttls,
-          index,
-          chosen: chosenGroup === index,
-          axisMax,
-          selected,
-          onSelect,
-          onGroup,
-          vertical,
-        };
-        return {
-          ...(existing ?? { position: { x: 0, y: 0 } }),
-          id,
-          type: "network",
-          data,
-          draggable: false,
-          selectable: false,
-          focusable: false,
-          style: { width: nodeWidth },
-        };
-      }),
-    );
-  }, [trace, hopsByTtl, selected, onSelect, chosenGroup, onGroup, axisMax, vertical, nodeWidth, setNodes]);
-
-  const edges = useMemo<StepEdge[]>(
-    () =>
-      trace.groups.slice(1).map((group, index) => {
-        const big = group.delta_in_ms != null && group.delta_in_ms >= BIG_STEP_MS;
-        return {
-          id: `s${index}`,
-          type: "step",
-          source: `g${index}`,
-          target: `g${index + 1}`,
-          selectable: false,
-          focusable: false,
-          markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: big ? "#ffc24d" : "#4a5878" },
-          data: { delta: group.delta_in_ms, big },
-        };
-      }),
-    [trace.groups],
-  );
-
-  // Once the boxes are measured, set them end to end, so a network with many hops gets the room it needs.
-  useEffect(() => {
-    const key = `${trace.traced_at}|${trace.groups.length}|${vertical}|${nodeWidth}`;
-    if (!ready || placed.current === key) return;
-    const measured = getNodes();
-    if (measured.length === 0 || measured.some((node) => !node.measured?.height)) return;
-    let cursor = 0;
-    let tallest = 0;
-    const next = measured.map((node) => {
-      const w = node.measured?.width ?? nodeWidth;
-      const h = node.measured?.height ?? 120;
-      tallest = Math.max(tallest, h);
-      const position = vertical ? { x: left, y: cursor + PAD } : { x: cursor, y: PAD };
-      cursor += vertical ? h + GAP_Y : w + GAP_X;
-      return { ...node, position };
-    });
-    placed.current = key;
-    setNodes(next as GroupNode[]);
-    if (vertical) {
-      onHeight(cursor - GAP_Y + 2 * PAD);
-      void setViewport({ x: 0, y: 0, zoom: 1 });
-    } else {
-      onHeight(tallest + 2 * PAD + 6);
-      requestAnimationFrame(() => void fitView({ padding: 0.03, minZoom: 0.55, maxZoom: 1, duration: 0 }));
-    }
-  }, [ready, trace.traced_at, trace.groups.length, vertical, nodeWidth, left, getNodes, setNodes, setViewport, fitView, onHeight, nodes]);
-
-  return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      nodeTypes={nodeTypes}
-      edgeTypes={edgeTypes}
-      minZoom={0.4}
-      maxZoom={2}
-      nodesDraggable={false}
-      nodesConnectable={false}
-      elementsSelectable={false}
-      // On a phone the diagram is laid out to fit and the page scrolls past it; it must not take the touch.
-      panOnDrag={!vertical}
-      zoomOnScroll={false}
-      zoomActivationKeyCode={["Control", "Meta"]}
-      zoomOnPinch={!vertical}
-      zoomOnDoubleClick={!vertical}
-      preventScrolling={false}
-      colorMode="dark"
-    >
-      <Controls showInteractive={false} position="bottom-right" />
-    </ReactFlow>
+      ))}
+    </div>
   );
 }
 
 /**
- * The network path as a diagram: one box per network, the hops inside it, and the latency each
- * handoff adds on the link between them. Left to right on a wide screen, top to bottom on a phone.
+ * The network path: one line left to right on a wide screen, a rail top to bottom when it will not fit.
+ * Each network is a coloured stretch with its hops on it, and the latency each handoff adds sits between them.
  */
 export default function PathFlow({
   trace,
@@ -302,18 +172,25 @@ export default function PathFlow({
   onGroup: (index: number) => void;
 }) {
   const [ref, width] = useElementWidth<HTMLDivElement>();
-  const vertical = width > 0 && width < WIDE;
+  const hopsByTtl = useMemo(() => new Map(trace.hops.map((hop) => [hop.ttl, hop])), [trace.hops]);
+  const nets = useMemo<Net[]>(
+    () =>
+      trace.groups.map((item, index) => ({
+        group: item,
+        index,
+        hops: item.hop_ttls.map((ttl) => hopsByTtl.get(ttl)).filter((hop): hop is PathHop => Boolean(hop)),
+        big: index > 0 && item.delta_in_ms != null && item.delta_in_ms >= BIG_STEP_MS,
+      })),
+    [trace.groups, hopsByTtl],
+  );
   const slowest = Math.max(0, ...trace.hops.map((hop) => (hop.silent ? 0 : (hop.avg_ms ?? 0))));
   const axisMax = Math.max(15, Math.ceil(slowest / 15) * 15);
-  const [height, setHeight] = useState(vertical ? 420 : 280);
-  const onHeight = useCallback((next: number) => setHeight(Math.ceil(next)), []);
+  const needed = nets.reduce((sum, net) => sum + Math.max(NET_MIN, net.hops.length * HOP_MIN), 0) + Math.max(0, nets.length - 1) * STEP_W;
+  const wide = width > 0 && width >= needed;
+  const shared: Props = { nets, warn: trace.warn_ttls, axisMax, selected, chosen: group, onSelect, onGroup };
   return (
-    <div ref={ref} className={`npf${vertical ? " is-vertical" : ""}`} style={{ height }}>
-      {width > 0 ? (
-        <ReactFlowProvider>
-          <Layout trace={trace} selected={selected} onSelect={onSelect} group={group} onGroup={onGroup} axisMax={axisMax} vertical={vertical} width={width} onHeight={onHeight} />
-        </ReactFlowProvider>
-      ) : null}
+    <div ref={ref} className={`pm${wide ? " is-wide" : " is-rail"}`}>
+      {width > 0 ? wide ? <Line {...shared} /> : <Rail {...shared} /> : null}
     </div>
   );
 }

@@ -631,7 +631,10 @@ def check_mtr(test: dict) -> dict:
     if status == "fail" and len(hops) > 1 and _mtr_answered_before_last(hops):
         # Many services drop trace probes at the last hop. If an ordinary ping still
         # gets through, the destination is up and the trace is not a failure.
-        if check_ping(test)["status"] != "fail":
+        # The ping goes to the trace target, not the test's own target: the path trace
+        # aims at the public address while the ping test aims at the tunnel address.
+        ping = check_ping({**test, "target": host, "threshold_ms": None})
+        if ping["status"] != "fail":
             status = "ok"
             message = f"{host}: last hop does not answer trace probes, ping is fine"
     return _result(

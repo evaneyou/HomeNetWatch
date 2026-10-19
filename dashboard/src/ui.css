@@ -346,21 +346,9 @@
 }
 
 .app-shell.ui-compact .npv-insight,
-.app-shell.ui-compact .npv-match.no {
-  background: color-mix(in srgb, var(--degraded) 12%, var(--bg-elevated));
-  border-color: color-mix(in srgb, var(--degraded) 45%, transparent);
-  color: var(--ink);
-}
-
 .app-shell.ui-compact .npv-notice.inferred {
   background: color-mix(in srgb, var(--role-ixp) 12%, var(--bg-elevated));
   border-color: color-mix(in srgb, var(--role-ixp) 45%, transparent);
-  color: var(--ink);
-}
-
-.app-shell.ui-compact .npv-match.yes {
-  background: color-mix(in srgb, var(--ok) 12%, var(--bg-elevated));
-  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
   color: var(--ink);
 }
 

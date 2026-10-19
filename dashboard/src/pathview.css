@@ -549,3 +549,252 @@
   font-weight: 700;
   color: var(--muted, #9aa6c4);
 }
+/* ---- BGP view: one checklist from you to the destination, with each network's place on both paths ---- */
+.bx-wrap {
+  display: grid;
+  gap: 12px;
+}
+.bx-verdict {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 11%, var(--bg-elevated, #161d2f));
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.bx-verdict.warn {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-elevated, #161d2f));
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+.bx-verdict svg {
+  flex: none;
+  margin-top: 2px;
+}
+.bx-verdict b {
+  display: block;
+  font-size: 14.5px;
+  color: var(--ink, #e8ecf8);
+}
+.bx-verdict span {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted, #9aa6c4);
+}
+
+.bx-head,
+.bx-row,
+.bx-cap {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 56px 56px;
+  column-gap: 8px;
+  align-items: center;
+}
+.bx-head {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line, #232d49);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted, #9aa6c4);
+}
+.bx-head span:nth-child(n + 3) {
+  text-align: center;
+}
+.bx-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* the rail down the left: a line you follow from the start to the destination, arrows pointing down it */
+.bx-gut {
+  position: relative;
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.bx-gut::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--line, #232d49);
+}
+.bx-cap:first-child .bx-gut::before {
+  top: 50%;
+}
+.bx-cap.last .bx-gut::before {
+  bottom: 50%;
+}
+.bx-row .bx-gut::after,
+.bx-cap:first-child .bx-gut::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  border-right: 2px solid var(--muted, #9aa6c4);
+  border-bottom: 2px solid var(--muted, #9aa6c4);
+  transform: rotate(45deg) translate(-1px, -1px);
+  z-index: 1;
+}
+.bx-node,
+.bx-end {
+  position: relative;
+  z-index: 1;
+  display: block;
+  box-sizing: border-box;
+  border-radius: 50%;
+}
+.bx-node {
+  width: 12px;
+  height: 12px;
+  background: var(--c);
+  box-shadow: 0 0 0 3px var(--bg-elevated, #161d2f);
+}
+.bx-end {
+  width: 10px;
+  height: 10px;
+  background: var(--bg-elevated, #161d2f);
+  border: 2px solid var(--muted, #9aa6c4);
+}
+.bx-cap {
+  min-height: 32px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted, #9aa6c4);
+}
+.bx-cap-text {
+  grid-column: 2 / -1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bx-row {
+  min-height: 52px;
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line, #232d49) 60%, transparent);
+}
+.bx-row .bx-gut::before {
+  top: -8px;
+  bottom: -8px;
+}
+.bx-row .bx-gut::after {
+  bottom: -9px;
+}
+.bx-who {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.bx-l1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.bx-l1 b {
+  min-width: 0;
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bx-as {
+  flex: none;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+}
+.bx-note {
+  font-size: 11.5px;
+  color: var(--muted, #9aa6c4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bx-note.origin {
+  font-weight: 800;
+  color: var(--ok);
+}
+.bx-step {
+  justify-self: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+}
+.bx-step.none {
+  color: var(--line, #232d49);
+  background: none;
+}
+.bx-step.none i {
+  display: block;
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--line, #232d49);
+}
+.bx-foot {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--muted, #9aa6c4);
+}
+.bx-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.bx-fact {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg-inset, #10172a);
+}
+.bx-fact .k {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted, #9aa6c4);
+}
+.bx-fact .v {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.bx-fact .v.ok {
+  color: var(--ok);
+}
+.bx-prefix {
+  margin: -4px 0 0;
+  font-size: 12px;
+  color: var(--muted, #9aa6c4);
+}
+.bx-prefix b {
+  font-family: var(--font-addr, ui-monospace, monospace);
+  font-weight: 500;
+  color: var(--ink, #e8ecf8);
+}

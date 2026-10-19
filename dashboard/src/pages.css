@@ -1252,69 +1252,6 @@
 }
 
 /* Path View diagrams (React Flow). */
-.npf {
-  position: relative;
-  width: 100%;
-  border-radius: 14px;
-  overflow: hidden;
-}
-
-.npf .react-flow {
-  background: transparent;
-}
-
-.npf .react-flow__handle {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.npf-as {
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  padding: 6px 10px;
-  border: 2px solid var(--c);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--c) 14%, #0b0f1a);
-  overflow: hidden;
-}
-
-.npf-as b {
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--c);
-}
-
-.npf-as span {
-  font-size: 11px;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.npf-tag {
-  font-style: normal;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--soft, #aab4cc);
-}
-
-.npf-tag.origin {
-  color: #6ee7a8;
-}
-
-.npf-lane {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--soft, #aab4cc);
-  white-space: nowrap;
-}
-
 @media (max-width: 768px) {
   .npv-bars,
   .npv-xlabels {
@@ -1336,10 +1273,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-}
-
-.npf .react-flow__node {
-  pointer-events: all !important;
 }
 
 /* Path View, compact: smaller headings and cards, the path across the full width, details below it. */

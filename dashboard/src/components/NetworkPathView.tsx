@@ -4,7 +4,7 @@ import { api } from "../api";
 import { isAnonymized } from "../anonymized";
 import { useGuestGate } from "../guestGate";
 import type { User } from "../types";
-import BgpFlow from "./BgpFlow";
+import BgpPath, { bgpVerdict } from "./BgpPath";
 import PathFlow from "./PathFlow";
 import SelectMenu from "./SelectMenu";
 import WaitButton from "./WaitButton";
@@ -645,12 +645,8 @@ function HopDetail({ trace, hop, headless = false }: { trace: PathTrace; hop: Pa
 function BgpView({ trace, headless = false }: { trace: PathTrace; headless?: boolean }) {
   const bgp = trace.bgp;
   const rpki = bgp.rpki ? bgp.rpki[0].toUpperCase() + bgp.rpki.slice(1) : "—";
-  const tiles: [string, string, string][] = [
-    ["Origin AS", bgp.origin_asn ? `AS${bgp.origin_asn}` : "—", ""],
-    ["Destination prefix", dash(bgp.prefix), "mono"],
-    ["RPKI", rpki, bgp.rpki === "valid" || bgp.rpki === "Valid" ? "ok" : ""],
-    ["Path stability", bgp.stable_days == null ? "—" : `Unchanged ${bgp.stable_days} days`, ""],
-  ];
+  const rpkiValid = bgp.rpki?.toLowerCase() === "valid";
+  const verdict = bgpVerdict(trace);
   return (
     <section className={headless ? "npv-bgp" : "npv-card"}>
       {headless ? null : (
@@ -659,30 +655,36 @@ function BgpView({ trace, headless = false }: { trace: PathTrace; headless?: boo
         <p className="npv-hint">The networks your packets crossed, next to the path BGP says should be used for the destination prefix.</p>
       </div>
       )}
-      <div className="npv-bgp-grid">
-        <div className="npv-bgp-paths">
-          <BgpFlow trace={trace} />
-          {bgp.path_match == null ? null : bgp.path_match ? (
-            <div className="npv-match yes">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M5 12.5l4.5 4.5L19 7.5" />
-              </svg>
-              <span>Paths match. The exchange point doesn&apos;t appear in BGP, which is expected.</span>
+      <div className="bx-wrap">
+        {verdict ? (
+          <div className={`bx-verdict ${verdict.tone}`}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              {verdict.tone === "ok" ? <path d="M5 12.5l4.5 4.5L19 7.5" /> : <path d="M12 7v6M12 17h.01" />}
+            </svg>
+            <div>
+              <b>{verdict.title}</b>
+              <span>{verdict.body}</span>
             </div>
-          ) : (
-            <div className="npv-match no">
-              <span>Paths differ. The traffic is not following the path BGP announces for this prefix.</span>
-            </div>
-          )}
+          </div>
+        ) : null}
+        <BgpPath trace={trace} />
+        <div className="bx-facts">
+          <div className="bx-fact">
+            <span className="k">Origin AS</span>
+            <span className="v">{bgp.origin_asn ? `AS${bgp.origin_asn}` : "—"}</span>
+          </div>
+          <div className="bx-fact">
+            <span className="k">RPKI</span>
+            <span className={`v${rpkiValid ? " ok" : ""}`}>{rpki}</span>
+          </div>
+          <div className="bx-fact">
+            <span className="k">Path stability</span>
+            <span className="v">{bgp.stable_days == null ? "—" : `${bgp.stable_days} days`}</span>
+          </div>
         </div>
-        <div className="npv-bgp-tiles">
-          {tiles.map(([label, value, cls]) => (
-            <div className="npv-bgp-tile" key={label}>
-              <span className="k">{label}</span>
-              <span className={`v ${cls}`}>{value}</span>
-            </div>
-          ))}
-        </div>
+        <p className="bx-prefix">
+          Destination prefix <b>{dash(bgp.prefix)}</b>
+        </p>
       </div>
     </section>
   );

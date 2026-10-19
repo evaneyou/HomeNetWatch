@@ -1268,30 +1268,6 @@
   pointer-events: none;
 }
 
-.npf-node {
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.npf-step {
-  position: absolute;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--panel, #131a2b);
-  border: 1px solid #4a5878;
-  color: var(--soft, #aab4cc);
-  font-size: 11px;
-  font-weight: 800;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.npf-step.is-big {
-  background: #ffc24d;
-  border-color: #ffc24d;
-  color: #0b0f1a;
-}
-
 .npf-as {
   box-sizing: border-box;
   display: flex;
@@ -1362,90 +1338,8 @@
   }
 }
 
-/* A network with many hops wraps them onto more rows rather than running off the box. */
-.npf-node .npv-chips {
-  flex-wrap: wrap;
-}
-
-/* A network box on the path is selectable; its hops show their latency as a bar. */
-.npf-node {
-  cursor: pointer;
-  transition: box-shadow 0.15s, border-color 0.15s;
-}
-
-.npf-node:hover {
-  border-color: color-mix(in srgb, var(--c) 80%, transparent);
-}
-
-.npf-node.is-chosen {
-  border-color: var(--c);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 45%, transparent);
-}
-
-.npf-node:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--mint) 55%, transparent);
-  outline-offset: 3px;
-}
-
-.npf-node .npv-chip {
-  justify-content: flex-end;
-}
-
-.npf-bar-slot {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  height: 34px;
-  width: 100%;
-}
-
-.npf-bar {
-  display: block;
-  width: 16px;
-  border-radius: 4px 4px 0 0;
-  background: var(--c);
-}
-
-.npf-bar.none {
-  height: 4px;
-  background: transparent;
-  border-top: 2px dashed var(--c);
-  border-radius: 0;
-}
-
-/* The boxes take the pointer even though they cannot be dragged, or they could not be clicked. */
 .npf .react-flow__node {
   pointer-events: all !important;
-}
-
-/* Tighter boxes: less padding and shorter bars, so the path takes less room. */
-.npf-node {
-  padding: 8px 10px;
-  gap: 6px;
-}
-
-.npf-node .npv-ghead {
-  gap: 3px;
-  padding: 0;
-}
-
-.npf-node .npv-chips {
-  gap: 6px;
-}
-
-.npf-node .npv-chip {
-  width: 52px;
-  padding: 5px 2px;
-  border-radius: 12px;
-  gap: 1px;
-}
-
-.npf-node .npv-chip .v {
-  font-size: 14px;
-}
-
-.npf-bar-slot {
-  height: 26px;
 }
 
 /* Path View, compact: smaller headings and cards, the path across the full width, details below it. */

@@ -12,6 +12,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Path View, network path:** redrawn as one line instead of boxes. Each network is a coloured stretch of the line, its hops rise from it as bars, and the latency added at each handoff sits between the networks (amber at 15 ms or more). When the path does not fit across, it becomes a rail running down the page with one row per hop. The diagram is plain HTML now, not React Flow, so a thumb on a phone scrolls the page instead of being caught by the diagram. Picking a network or a hop works as before.
 - **Top bar buttons:** Back, Home and the three dots are drawn in the same 15 by 15 box with the white, round-ended stroke of the menu icons, so they match each other and the menu. The Back button is a plain chevron without a tail.
 - **Landing page figures:** updated to 109 merged pull requests, 172 automated tests and 25 fixes as of October 19, and the release line now says release 0.2 is published on GitHub (0.3 is in the changelog and `VERSION` but has no GitHub release yet).
 - **KPI toolbar:** the jump back to the current day says Today. The "Viewing history" label and the Print / Save PDF button are gone.

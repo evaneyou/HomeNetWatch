@@ -130,7 +130,13 @@
   gap: 8px;
   min-width: 0;
 }
+/* The AS number is never split or squeezed; the name beside it is what gives way. */
+.npv-asn {
+  flex: none;
+  white-space: nowrap;
+}
 .pv-dhead b {
+  min-width: 0;
   font-size: 16px;
   font-weight: 800;
   overflow: hidden;

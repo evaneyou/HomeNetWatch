@@ -560,3 +560,21 @@ def test_allowlist_keeps_ipv4_peer_endpoints_only():
     assert any("@rtnp_sources accept" in command for command in allowed)
     assert any(command.endswith("drop") for command in allowed)
     assert not any("jump RTNP_IN" in command for command in allowed)
+
+
+def test_agent_restarts_a_flow_that_loses_every_packet():
+    path = Path(__file__).resolve().parents[2] / "monitor" / "synthetic.py"
+    spec = importlib.util.spec_from_file_location("monitor_synthetic_flow", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(path.parent))
+    assert module.flow_state({"rx": None, "loss_pct": None}) == "missing"
+    assert module.flow_state({"rx": 0, "loss_pct": 100.0}) == "lost"
+    assert module.flow_state({"rx": 100, "loss_pct": 0.4}) == ""
+    # a few lost packets are not an outage
+    assert module.flow_state({"rx": 90, "loss_pct": 10.0}) == ""
+    assert module.SILENT_INTERVALS > module.MISSING_INTERVALS

@@ -250,6 +250,6 @@ def poll_loop(stop: threading.Event, load_config: Callable[[], dict], get_json: 
                 test = body.get("test") if isinstance(body, dict) else None
                 if isinstance(test, dict):
                     run(dict(config), test, post_json)
-            except (OSError, urllib.error.URLError, TimeoutError, ValueError, KeyError):
+            except Exception:
                 pass
         stop.wait(POLL_SECONDS)

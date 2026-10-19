@@ -20,7 +20,26 @@ from sqlalchemy.orm import Session
 
 from app import guest_visits
 from app.db import SessionLocal
-from app.models import GuestVisit, ResultStatus, RfAlert, RfChannelStat, RfClient, SystemLog, TestResult, WifiObservation
+from app.models import (
+    AdhocTrace,
+    AuditEvent,
+    GuestVisit,
+    InstallerCode,
+    Issue,
+    IssueStatus,
+    MonitorHealth,
+    ResultStatus,
+    RfAlert,
+    RfChannelStat,
+    RfClient,
+    SpeedSample,
+    SpeedTest,
+    StressRun,
+    SyntheticRun,
+    SystemLog,
+    TestResult,
+    WifiObservation,
+)
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +85,39 @@ def apply_retention(db: Session, now: datetime) -> dict[str, int]:
     deleted_clients = db.execute(delete(RfClient).where(RfClient.observed_at < delete_before)).rowcount
     deleted_alerts = db.execute(delete(RfAlert).where(RfAlert.observed_at < delete_before)).rowcount
     deleted_system_logs = db.execute(delete(SystemLog).where(SystemLog.recorded_at < delete_before)).rowcount
+    deleted_health = db.execute(
+        delete(MonitorHealth).where(MonitorHealth.reported_at < now - timedelta(days=7))
+    ).rowcount
+    deleted_traces = db.execute(
+        delete(AdhocTrace).where(AdhocTrace.requested_at < now - timedelta(days=7))
+    ).rowcount
+    deleted_codes = db.execute(
+        delete(InstallerCode).where(
+            InstallerCode.monitor_id.is_(None),
+            InstallerCode.expires_at < now - timedelta(days=30),
+        )
+    ).rowcount
+    deleted_stress = db.execute(
+        delete(StressRun).where(StressRun.started_at < now - timedelta(days=30))
+    ).rowcount
+    db.execute(
+        delete(SyntheticRun).where(
+            SyntheticRun.mode.in_(("manual", "stress")),
+            SyntheticRun.status != "running",
+            SyntheticRun.started_at < delete_before,
+        )
+    )
+    old_speed_ids = select(SpeedTest.id).where(SpeedTest.requested_at < now - timedelta(days=30))
+    db.execute(delete(SpeedSample).where(SpeedSample.test_id.in_(old_speed_ids)))
+    deleted_speedtests = db.execute(
+        delete(SpeedTest).where(SpeedTest.requested_at < delete_before)
+    ).rowcount
+    deleted_audit = db.execute(
+        delete(AuditEvent).where(AuditEvent.created_at < delete_before)
+    ).rowcount
+    deleted_issues = db.execute(
+        delete(Issue).where(Issue.status == IssueStatus.resolved, Issue.opened_at < delete_before)
+    ).rowcount
     from app import kpi as kpi_module
 
     deleted_kpi = kpi_module.prune(db, now)
@@ -97,6 +149,13 @@ def apply_retention(db: Session, now: datetime) -> dict[str, int]:
         "deleted_clients": deleted_clients or 0,
         "deleted_alerts": deleted_alerts or 0,
         "deleted_system_logs": deleted_system_logs or 0,
+        "deleted_health": deleted_health or 0,
+        "deleted_traces": deleted_traces or 0,
+        "deleted_codes": deleted_codes or 0,
+        "deleted_stress": deleted_stress or 0,
+        "deleted_speedtests": deleted_speedtests or 0,
+        "deleted_audit": deleted_audit or 0,
+        "deleted_issues": deleted_issues or 0,
         "deleted_guest_visits": deleted_visits or 0,
         "deleted_kpi_hours": deleted_kpi,
         "daily_results": daily_results,
@@ -113,150 +172,175 @@ def apply_retention(db: Session, now: datetime) -> dict[str, int]:
     return summary
 
 
+def _chunk_windows(start: datetime, end: datetime, days: int = 7):
+    cursor = start
+    step = timedelta(days=days)
+    while cursor < end:
+        window_end = min(cursor + step, end)
+        yield cursor, window_end
+        cursor = window_end
+
+
 def _rollup_results(db: Session, start: datetime, end: datetime, resolution: str) -> int:
-    rows = db.scalars(
-        select(TestResult).where(TestResult.started_at >= start, TestResult.started_at < end)
-    ).all()
-    groups: dict[tuple, list[TestResult]] = defaultdict(list)
-    for row in rows:
-        groups[(row.test_id, _bucket(row.started_at, resolution))].append(row)
     rolled = 0
-    for (test_id, bucket), members in groups.items():
-        if len(members) < 2:
+    for win_start, win_end in _chunk_windows(start, end):
+        rows = db.scalars(
+            select(TestResult).where(TestResult.started_at >= win_start, TestResult.started_at < win_end)
+        ).all()
+        if not rows:
             continue
-        rolled += 1
-        averaged = _average_result(members, bucket)
-        finished_at = max(m.finished_at for m in members)
-        db.execute(delete(TestResult).where(TestResult.id.in_([m.id for m in members])))
-        db.add(
-            TestResult(
-                external_id=f"rollup-{uuid.uuid4().hex}",
-                test_id=test_id,
-                started_at=bucket,
-                finished_at=finished_at,
-                status=averaged["status"],
-                stages=averaged["stages"],
-                metrics=averaged["metrics"],
-                message="Daily average" if resolution == "day" else "Hourly average",
+        groups: dict[tuple, list[TestResult]] = defaultdict(list)
+        for row in rows:
+            groups[(row.test_id, _bucket(row.started_at, resolution))].append(row)
+        for (test_id, bucket), members in groups.items():
+            if len(members) < 2:
+                continue
+            rolled += 1
+            averaged = _average_result(members, bucket)
+            finished_at = max(m.finished_at for m in members)
+            db.execute(delete(TestResult).where(TestResult.id.in_([m.id for m in members])))
+            db.add(
+                TestResult(
+                    external_id=f"rollup-{uuid.uuid4().hex}",
+                    test_id=test_id,
+                    started_at=bucket,
+                    finished_at=finished_at,
+                    status=averaged["status"],
+                    stages=averaged["stages"],
+                    metrics=averaged["metrics"],
+                    message="Daily average" if resolution == "day" else "Hourly average",
+                )
             )
-        )
+        db.flush()
     return rolled
 
 
 def _rollup_wifi(db: Session, start: datetime, end: datetime, resolution: str) -> int:
-    rows = db.scalars(
-        select(WifiObservation).where(
-            WifiObservation.scanned_at >= start, WifiObservation.scanned_at < end
-        )
-    ).all()
-    groups: dict[tuple, list[WifiObservation]] = defaultdict(list)
-    for row in rows:
-        groups[(row.monitor_id, row.bssid, _bucket(row.scanned_at, resolution))].append(row)
     rolled = 0
-    for members in groups.values():
-        if len(members) < 2:
+    for win_start, win_end in _chunk_windows(start, end):
+        rows = db.scalars(
+            select(WifiObservation).where(
+                WifiObservation.scanned_at >= win_start, WifiObservation.scanned_at < win_end
+            )
+        ).all()
+        if not rows:
             continue
-        rolled += 1
-        latest = max(members, key=lambda row: row.scanned_at)
-        bucket = _bucket(latest.scanned_at, resolution)
-        averaged = WifiObservation(
-            monitor_id=latest.monitor_id,
-            scanned_at=bucket,
-            ssid=latest.ssid,
-            bssid=latest.bssid,
-            vendor=latest.vendor,
-            band=latest.band,
-            channel=latest.channel,
-            channel_width=latest.channel_width,
-            rssi_dbm=_mean(m.rssi_dbm for m in members),
-            noise_dbm=_mean_or_none(m.noise_dbm for m in members),
-            security=latest.security,
-            phy=latest.phy,
-            max_link_rate_mbps=round(_mean(m.max_link_rate_mbps for m in members)),
-            client_count=round(_mean(m.client_count for m in members)),
-        )
-        db.execute(delete(WifiObservation).where(WifiObservation.id.in_([m.id for m in members])))
-        db.add(averaged)
+        groups: dict[tuple, list[WifiObservation]] = defaultdict(list)
+        for row in rows:
+            groups[(row.monitor_id, row.bssid, _bucket(row.scanned_at, resolution))].append(row)
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            rolled += 1
+            latest = max(members, key=lambda row: row.scanned_at)
+            bucket = _bucket(latest.scanned_at, resolution)
+            averaged = WifiObservation(
+                monitor_id=latest.monitor_id,
+                scanned_at=bucket,
+                ssid=latest.ssid,
+                bssid=latest.bssid,
+                vendor=latest.vendor,
+                band=latest.band,
+                channel=latest.channel,
+                channel_width=latest.channel_width,
+                rssi_dbm=_mean(m.rssi_dbm for m in members),
+                noise_dbm=_mean_or_none(m.noise_dbm for m in members),
+                security=latest.security,
+                phy=latest.phy,
+                max_link_rate_mbps=round(_mean(m.max_link_rate_mbps for m in members)),
+                client_count=round(_mean(m.client_count for m in members)),
+            )
+            db.execute(delete(WifiObservation).where(WifiObservation.id.in_([m.id for m in members])))
+            db.add(averaged)
+        db.flush()
     return rolled
 
 
 def _rollup_channels(db: Session, start: datetime, end: datetime, resolution: str) -> int:
-    rows = db.scalars(
-        select(RfChannelStat).where(RfChannelStat.measured_at >= start, RfChannelStat.measured_at < end)
-    ).all()
-    groups: dict[tuple, list[RfChannelStat]] = defaultdict(list)
-    for row in rows:
-        groups[(row.monitor_id, row.band, row.channel, _bucket(row.measured_at, resolution))].append(row)
     rolled = 0
-    for members in groups.values():
-        if len(members) < 2:
+    for win_start, win_end in _chunk_windows(start, end):
+        rows = db.scalars(
+            select(RfChannelStat).where(RfChannelStat.measured_at >= win_start, RfChannelStat.measured_at < win_end)
+        ).all()
+        if not rows:
             continue
-        rolled += 1
-        latest = max(members, key=lambda row: row.measured_at)
-        db.execute(delete(RfChannelStat).where(RfChannelStat.id.in_([m.id for m in members])))
-        db.add(
-            RfChannelStat(
-                monitor_id=latest.monitor_id,
-                measured_at=_bucket(latest.measured_at, resolution),
-                band=latest.band,
-                channel=latest.channel,
-                noise_dbm=_mean_or_none(m.noise_dbm for m in members),
-                busy_pct=_mean_or_none(m.busy_pct for m in members),
-                airtime_pct=_mean_or_none(m.airtime_pct for m in members),
-                packets=round(_mean(m.packets for m in members)) if any(m.packets is not None for m in members) else None,
+        groups: dict[tuple, list[RfChannelStat]] = defaultdict(list)
+        for row in rows:
+            groups[(row.monitor_id, row.band, row.channel, _bucket(row.measured_at, resolution))].append(row)
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            rolled += 1
+            latest = max(members, key=lambda row: row.measured_at)
+            db.execute(delete(RfChannelStat).where(RfChannelStat.id.in_([m.id for m in members])))
+            db.add(
+                RfChannelStat(
+                    monitor_id=latest.monitor_id,
+                    measured_at=_bucket(latest.measured_at, resolution),
+                    band=latest.band,
+                    channel=latest.channel,
+                    noise_dbm=_mean_or_none(m.noise_dbm for m in members),
+                    busy_pct=_mean_or_none(m.busy_pct for m in members),
+                    airtime_pct=_mean_or_none(m.airtime_pct for m in members),
+                    packets=round(_mean(m.packets for m in members)) if any(m.packets is not None for m in members) else None,
+                )
             )
-        )
+        db.flush()
     return rolled
 
 
 def _rollup_clients(db: Session, start: datetime, end: datetime, resolution: str) -> int:
-    rows = db.scalars(select(RfClient).where(RfClient.observed_at >= start, RfClient.observed_at < end)).all()
-    groups: dict[tuple, list[RfClient]] = defaultdict(list)
-    for row in rows:
-        groups[(row.monitor_id, row.mac, _bucket(row.observed_at, resolution))].append(row)
     rolled = 0
-    for members in groups.values():
-        if len(members) < 2:
+    for win_start, win_end in _chunk_windows(start, end):
+        rows = db.scalars(select(RfClient).where(RfClient.observed_at >= win_start, RfClient.observed_at < win_end)).all()
+        if not rows:
             continue
-        rolled += 1
-        latest = max(members, key=lambda row: row.observed_at)
-        bucket = _bucket(latest.observed_at, resolution)
-        db.execute(delete(RfClient).where(RfClient.id.in_([m.id for m in members])))
-        probed: list[str] = []
-        for member in members:
-            try:
-                parsed = json.loads(member.probed_ssids or "[]")
-            except json.JSONDecodeError:
-                parsed = []
-            for name in parsed if isinstance(parsed, list) else []:
-                if isinstance(name, str) and name and name not in probed:
-                    probed.append(name)
-        opened = [member.first_seen for member in members if member.first_seen is not None]
-        lows = [member.signal_min for member in members if member.signal_min is not None]
-        highs = [member.signal_max for member in members if member.signal_max is not None]
-        db.add(
-            RfClient(
-                monitor_id=latest.monitor_id,
-                observed_at=bucket,
-                dedupe_key=latest.mac,
-                mac=latest.mac,
-                vendor=next((member.vendor for member in sorted(members, key=lambda row: row.observed_at, reverse=True) if member.vendor), ""),
-                bssid=latest.bssid,
-                signal=_mean_or_none(m.signal for m in members if m.signal),
-                signal_min=min(lows) if lows else None,
-                signal_max=max(highs) if highs else None,
-                last_seen=max(m.last_seen for m in members),
-                first_seen=min(opened) if opened else None,
-                randomized=any(m.randomized for m in members),
-                band=latest.band,
-                channel=latest.channel,
-                packets=latest.packets,
-                data_bytes=latest.data_bytes,
-                retries=latest.retries,
-                disconnects=latest.disconnects,
-                probed_ssids=json.dumps(probed[:12]),
+        groups: dict[tuple, list[RfClient]] = defaultdict(list)
+        for row in rows:
+            groups[(row.monitor_id, row.mac, _bucket(row.observed_at, resolution))].append(row)
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            rolled += 1
+            latest = max(members, key=lambda row: row.observed_at)
+            bucket = _bucket(latest.observed_at, resolution)
+            db.execute(delete(RfClient).where(RfClient.id.in_([m.id for m in members])))
+            probed: list[str] = []
+            for member in members:
+                try:
+                    parsed = json.loads(member.probed_ssids or "[]")
+                except json.JSONDecodeError:
+                    parsed = []
+                for name in parsed if isinstance(parsed, list) else []:
+                    if isinstance(name, str) and name and name not in probed:
+                        probed.append(name)
+            opened = [member.first_seen for member in members if member.first_seen is not None]
+            lows = [member.signal_min for member in members if member.signal_min is not None]
+            highs = [member.signal_max for member in members if member.signal_max is not None]
+            db.add(
+                RfClient(
+                    monitor_id=latest.monitor_id,
+                    observed_at=bucket,
+                    dedupe_key=latest.mac,
+                    mac=latest.mac,
+                    vendor=next((member.vendor for member in sorted(members, key=lambda row: row.observed_at, reverse=True) if member.vendor), ""),
+                    bssid=latest.bssid,
+                    signal=_mean_or_none(m.signal for m in members if m.signal),
+                    signal_min=min(lows) if lows else None,
+                    signal_max=max(highs) if highs else None,
+                    last_seen=max(m.last_seen for m in members),
+                    first_seen=min(opened) if opened else None,
+                    randomized=any(m.randomized for m in members),
+                    band=latest.band,
+                    channel=latest.channel,
+                    packets=latest.packets,
+                    data_bytes=latest.data_bytes,
+                    retries=latest.retries,
+                    disconnects=latest.disconnects,
+                    probed_ssids=json.dumps(probed[:12]),
+                )
             )
-        )
+        db.flush()
     return rolled
 
 

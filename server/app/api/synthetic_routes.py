@@ -406,7 +406,7 @@ def post_sample(
                 sample_key=key,
                 interval_index=body.interval_index,
                 recorded_at=body.recorded_at,
-                metrics=body.metrics,
+                metrics=body.metrics if run.mode == "stress" else {},
                 **extracted,
             )
         )

@@ -289,7 +289,7 @@ def health_loop() -> None:
         if config.get("token") and config.get("name") and config.get("server_url"):
             try:
                 report_once(dict(config))
-            except (OSError, urllib.error.URLError, TimeoutError, ValueError, KeyError) as exc:
+            except Exception as exc:
                 state._last_error = str(exc)
         with state._lock:
             interval = int(load_config().get("health_interval_seconds") or 60)

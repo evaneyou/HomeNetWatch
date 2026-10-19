@@ -238,6 +238,8 @@ class Issue(Base):
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    __table_args__ = (Index("ix_issues_status_opened", "status", "opened_at"),)
+
 
 class WifiObservation(Base):
     __tablename__ = "wifi_observations"
@@ -737,6 +739,7 @@ class SyntheticSample(Base):
     __table_args__ = (
         UniqueConstraint("run_id", "link", "sample_key", name="uq_synthetic_sample"),
         Index("ix_synthetic_sample_recorded", "recorded_at"),
+        Index("ix_synthetic_samples_run_link_recorded", "run_id", "link", "recorded_at"),
     )
 
 

@@ -521,56 +521,66 @@ def rollup_samples(
 
 
 def _collapse(db: Session, start: datetime, end: datetime, unit: str) -> int:
-    rows = db.scalars(
-        select(SyntheticSample).where(
-            SyntheticSample.recorded_at >= start,
-            SyntheticSample.recorded_at < end,
-            SyntheticSample.sample_key.not_like(f"{unit}:%"),
-        )
-    ).all()
-    grouped: dict[tuple, list[SyntheticSample]] = {}
-    for row in rows:
-        stamp = row.recorded_at.astimezone(timezone.utc)
-        if unit == "hour":
-            bucket = stamp.replace(minute=0, second=0, microsecond=0)
-        else:
-            bucket = stamp.replace(hour=0, minute=0, second=0, microsecond=0)
-        grouped.setdefault((row.run_id, row.link, bucket), []).append(row)
     written = 0
-    for (run_id, link, bucket), members in grouped.items():
-        if len(members) == 1 and members[0].sample_key.startswith(f"{unit}:"):
-            continue
-        key = f"{unit}:{bucket.isoformat()}"
-        existing = db.scalar(
+    cursor = start
+    step = timedelta(days=7)
+    while cursor < end:
+        window_end = min(cursor + step, end)
+        rows = db.scalars(
             select(SyntheticSample).where(
-                SyntheticSample.run_id == run_id,
-                SyntheticSample.link == link,
-                SyntheticSample.sample_key == key,
+                SyntheticSample.recorded_at >= cursor,
+                SyntheticSample.recorded_at < window_end,
+                SyntheticSample.sample_key.not_like(f"{unit}:%"),
             )
-        )
-        averaged = _average(members)
-        if existing is None:
-            db.add(
-                SyntheticSample(
-                    run_id=run_id,
-                    link=link,
-                    sample_key=key,
-                    interval_index=None,
-                    recorded_at=bucket,
-                    metrics={"rolled_up": unit},
-                    **averaged,
+        ).all()
+        cursor = window_end
+        if not rows:
+            continue
+        grouped: dict[tuple, list[SyntheticSample]] = {}
+        for row in rows:
+            stamp = row.recorded_at.astimezone(timezone.utc)
+            if unit == "hour":
+                bucket = stamp.replace(minute=0, second=0, microsecond=0)
+            else:
+                bucket = stamp.replace(hour=0, minute=0, second=0, microsecond=0)
+            grouped.setdefault((row.run_id, row.link, bucket), []).append(row)
+        delete_ids = []
+        for (run_id, link, bucket), members in grouped.items():
+            if len(members) == 1 and members[0].sample_key.startswith(f"{unit}:"):
+                continue
+            key = f"{unit}:{bucket.isoformat()}"
+            existing = db.scalar(
+                select(SyntheticSample).where(
+                    SyntheticSample.run_id == run_id,
+                    SyntheticSample.link == link,
+                    SyntheticSample.sample_key == key,
                 )
             )
-        else:
-            existing.rtt_ms = averaged["rtt_ms"]
-            existing.jitter_ms = averaged["jitter_ms"]
-            existing.loss_pct = averaged["loss_pct"]
-            existing.verdict = averaged["verdict"]
-        for member in members:
-            if member.sample_key != key:
-                db.delete(member)
-        written += 1
-    db.flush()
+            averaged = _average(members)
+            if existing is None:
+                db.add(
+                    SyntheticSample(
+                        run_id=run_id,
+                        link=link,
+                        sample_key=key,
+                        interval_index=None,
+                        recorded_at=bucket,
+                        metrics={"rolled_up": unit},
+                        **averaged,
+                    )
+                )
+            else:
+                existing.rtt_ms = averaged["rtt_ms"]
+                existing.jitter_ms = averaged["jitter_ms"]
+                existing.loss_pct = averaged["loss_pct"]
+                existing.verdict = averaged["verdict"]
+            for member in members:
+                if member.sample_key != key:
+                    delete_ids.append(member.id)
+            written += 1
+        if delete_ids:
+            db.execute(delete(SyntheticSample).where(SyntheticSample.id.in_(delete_ids)))
+        db.flush()
     return written
 
 

@@ -117,7 +117,7 @@ def _probed_list(raw: str) -> list[str]:
 def _remember(db: Session, monitor_id: UUID, bssid: str, seen: datetime) -> tuple[ApInventory, bool]:
     key = bssid.lower()
     row = db.scalar(
-        select(ApInventory).where(ApInventory.monitor_id == monitor_id, func.lower(ApInventory.bssid) == key)
+        select(ApInventory).where(ApInventory.monitor_id == monitor_id, ApInventory.bssid == key)
     )
     if row is None:
         row = ApInventory(
@@ -152,7 +152,7 @@ def post_wifi_scans(
     aps = parse_iw_scan(body.raw, noise_by_frequency(survey))
     stored = 0
     for ap in aps:
-        bssid = ap["bssid"]
+        bssid = ap["bssid"].lower()
         exists = db.scalar(
             select(WifiObservation.id).where(
                 WifiObservation.monitor_id == monitor.id,
@@ -541,7 +541,7 @@ def rf_ap_history(
         select(WifiObservation)
         .where(
             WifiObservation.monitor_id == agent_id,
-            func.lower(WifiObservation.bssid) == key,
+            WifiObservation.bssid == key,
             WifiObservation.scanned_at >= range_start(range_key),
         )
         .order_by(WifiObservation.scanned_at)
@@ -777,6 +777,18 @@ def _set_trust(db: Session, agent_id: UUID, bssid: str, trusted: bool) -> RfApOu
     record, _created = _remember(db, monitor.id, key, latest)
     record.trusted = trusted
     record.trust_source = "manual"
+    if trusted:
+        now_utc = datetime.now(timezone.utc)
+        for issue in db.scalars(
+            select(Issue).where(
+                Issue.monitor_id == monitor.id,
+                Issue.status == IssueStatus.open,
+                Issue.root_cause_stage == "airwave",
+                Issue.title.like(f"Possible evil twin % on {key}"),
+            )
+        ):
+            issue.status = IssueStatus.resolved
+            issue.resolved_at = now_utc
     db.commit()
     db.refresh(record)
     return _ap_out(row, record, latest)

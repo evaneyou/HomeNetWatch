@@ -1,8 +1,8 @@
 """Trust a same-SSID access point when it shares an OUI with the radio the remote agent is on."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import ApInventory, Issue, IssueSeverity, IssueStatus, Monitor, WifiObservation
@@ -70,7 +70,7 @@ def _latest_ssid(db: Session, monitor_id, bssid: str) -> str:
         select(WifiObservation.ssid)
         .where(
             WifiObservation.monitor_id == monitor_id,
-            func.lower(WifiObservation.bssid) == bssid.lower(),
+            WifiObservation.bssid == bssid.lower(),
         )
         .order_by(WifiObservation.scanned_at.desc())
         .limit(1)
@@ -90,6 +90,17 @@ def _decide(db: Session, monitor: Monitor, record: ApInventory, ssid: str, seen:
         record.trusted = True
         record.trust_source = "auto"
         record.label = MESH_LABEL
+        now_utc = datetime.now(timezone.utc)
+        for issue in db.scalars(
+            select(Issue).where(
+                Issue.monitor_id == monitor.id,
+                Issue.status == IssueStatus.open,
+                Issue.root_cause_stage == "airwave",
+                Issue.title.like(f"Possible evil twin % on {record.bssid.lower()}"),
+            )
+        ):
+            issue.status = IssueStatus.resolved
+            issue.resolved_at = now_utc
         return
     record.trusted = False
     record.trust_source = "auto"

@@ -6,30 +6,63 @@ alwaysApply: true
 
 # HomeNetWatch
 
-Home network monitoring: Pi remote agents push staged test results to FastAPI + Postgres; React dashboard reads APIs only.
+Home network monitoring. Pi remote agents push test results to a FastAPI + Postgres server. A React dashboard reads the server's API. `SPEC.md` is the source of truth for architecture, API shape and phases; read it before larger changes. `CLAUDE.md` holds the same rules for Claude Code; keep the two in step.
 
-## Architecture
+## Architecture rules
 
-- Remote agent → server (ingest); browser → dashboard → server (read). The remote agent never talks to the dashboard.
-- Stack: FastAPI / Postgres / React+Vite+TS / TanStack Query / **Recharts**.
-- No Grafana in this product. The remote agent package posts device health; staged tests stay out until asked.
+- Remote agent → server (ingest). Browser → dashboard → server (read). The remote agent never talks to the dashboard.
+- Stack: FastAPI, Postgres, React + Vite + TypeScript, TanStack Query, Recharts. No Grafana.
+- Prefer thin APIs. Charts use Recharts only.
+- Auth is cookie based with CSRF. Roles are enforced **server-side**; never rely on the UI to hide or block something.
+- Out of scope unless asked: staged test runner, webhooks, full enrollment ETag matrix, Playwright journeys, Grafana.
 
-## Repo layout
+## Layout
 
-- `SPEC.md` — source of truth
-- `server/` — FastAPI app, models, migrations, seed, tests
-- `dashboard/` — Vite React UI
-- `monitor/` — Pi package (setup page, enroll, device health)
-- `docker-compose.yml` — db + server + dashboard
+- `server/`: FastAPI app (`app/`), Alembic migrations (`alembic/`), seed, tests (`tests/`)
+- `dashboard/`: Vite React UI (`src/`)
+- `monitor/`: Raspberry Pi agent package (setup page, enrollment, checks, install scripts)
+- `site/`: the static landing page served at `/welcome/`. Plain HTML, CSS and JS; no build.
+- `deploy/`, `docker-compose.yml`, `docker-compose.prod.yml`, `wireguard/`: stack and production deployment
+- `docs/deploy.md`: production deployment guide
+- `scripts/`: backup, local-up, test-server, bump-version
+
+## Commands
+
+```bash
+cp .env.example .env
+docker compose up -d db                      # Postgres on 127.0.0.1:55432
+
+cd server
+uv sync --extra dev
+uv run alembic upgrade head
+uv run python -m app.seed                    # demo seed, dev only
+uv run pytest -q                             # server tests
+uv run uvicorn app.main:app --reload --port 8847
+
+./scripts/test-server.sh                     # same tests in a throwaway container (hns_test database)
+
+cd dashboard
+npm ci
+npm run dev                                  # http://127.0.0.1:3847
+npm run build                                # type-check + production build (CI runs this)
+```
+
+CI (`.github/workflows/ci.yml`) runs server tests, the dashboard build and `docker compose config`. Run the same checks before opening a PR.
 
 ## Conventions
 
-- Conventional commits: `docs:`, `feat:`, `test:`, `fix:`, `chore:`
-- Idempotent seed under `server` (stable IDs / wipe demo org)
-- Cookie auth: `admin` (write) / `viewer` (read-only UI)
-- Prefer thin APIs; rollups can be raw metrics until later phases
-- Charts: Recharts only for this slice
+- Conventional commits: `feat:`, `fix:`, `docs:`, `test:`, `chore:`.
+- Add or update tests for any behavior change. Server tests live in `server/tests/`.
+- Update `README.md`, `SPEC.md` or the component README when behavior changes.
+- New database changes need an Alembic migration. Check that dev and prod would end at the same head.
+- Seeds are idempotent. Production is seeded with `python -m app.seed --users-only`, never the demo seed.
 
-## Out of scope unless asked
+## Ground rules
 
-Staged test runner, webhooks, full enrollment ETag matrix, Playwright journeys, Grafana.
+- Work on a feature branch and open a PR. Do not push to `main`; merge only after review.
+- Dev and prod are the same machine (one Pi sensor can report to only one server), so work happens directly on the production server. The owner accepts that a change may break the live site. Still: commit changes to git so they can be reverted, and tell the owner what you are about to restart or rebuild.
+- Deploy with `./scripts/deploy.sh` in the repo folder: plain `docker compose up --build -d` leaves `rtnp` detached from the tunnel whenever `wireguard` is recreated. Run `./scripts/backup.sh` first when a change touches the database, migrations, enrollment or the agent/WireGuard ports.
+- Do not delete or recreate Docker volumes (database, WireGuard keys, TLS pin) without asking; they cannot be rebuilt from git.
+- **This repository is public.** Never commit or paste secrets, device keys, installer codes, `.env` values, WireGuard or TLS keys, real home IP addresses, device MACs, SSIDs or location data. Use `.env.example` for placeholders.
+- Keep dashboard changes shared-component safe: the Home page must not change unless the task says so.
+- Do not copy dev data (users, audit events, installer codes, check-ins) into production.

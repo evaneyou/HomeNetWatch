@@ -236,38 +236,17 @@ function Shell({ role, onLogout }: { role: User["role"]; onLogout: () => void })
         <div className="topbar-actions">
           {showBack ? (
             <button className="btn icon-button" type="button" aria-label="Go back" onClick={goBack}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M15.5 4 8.5 12l7 8"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+              <svg className="topbar-glyph" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15.75 4.5 8.25 12l7.5 7.5" />
               </svg>
               <span className="icon-tip">Go back</span>
             </button>
           ) : null}
           {showBack ? (
             <Link className="btn icon-button" to="/" aria-label="Home">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M4 11 12 4l8 7"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M7 10.25V20h10V10.25"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+              <svg className="topbar-glyph" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4.5 11.25 12 4.5l7.5 6.75" />
+                <path d="M7 10.25V19.5h10v-9.25" />
               </svg>
               <span className="icon-tip">Home</span>
             </Link>
@@ -281,10 +260,10 @@ function Shell({ role, onLogout }: { role: User["role"]; onLogout: () => void })
             aria-haspopup="menu"
             onClick={() => setMenuOpen((open) => !open)}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="4.725" r="1.6" fill="currentColor" />
-              <circle cx="12" cy="12" r="1.6" fill="currentColor" />
-              <circle cx="12" cy="19.275" r="1.6" fill="currentColor" />
+            <svg className="topbar-glyph" viewBox="0 0 24 24" aria-hidden="true">
+              <circle className="topbar-glyph-dot" cx="12" cy="6.25" r="1.75" />
+              <circle className="topbar-glyph-dot" cx="12" cy="12" r="1.75" />
+              <circle className="topbar-glyph-dot" cx="12" cy="17.75" r="1.75" />
             </svg>
           </button>
           {menuOpen ? (

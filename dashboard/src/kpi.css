@@ -626,10 +626,6 @@
   outline-offset: 1px;
 }
 
-.kpi-live.history {
-  color: var(--k-warn);
-}
-
 .kpi-filter {
   display: flex;
   flex-wrap: wrap;

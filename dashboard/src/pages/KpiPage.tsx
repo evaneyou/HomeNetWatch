@@ -557,21 +557,16 @@ export default function KpiPage() {
             </button>
             {day ? (
               <button type="button" className="kpi-latest" onClick={() => go({ date: null })}>
-                Latest
+                Today
               </button>
             ) : null}
           </div>
-          {day ? (
-            <span className="kpi-live history">Viewing history · {niceDay(day)}</span>
-          ) : (
+          {!day ? (
             <span className="kpi-live" title="This page refreshes every 30 seconds">
               <i aria-hidden="true" />
               Live · updated {new Date(query.dataUpdatedAt || report.generated_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}
             </span>
-          )}
-          <button type="button" className="kpi-print" onClick={() => window.print()}>
-            Print / Save PDF
-          </button>
+          ) : null}
         </div>
       </header>
 

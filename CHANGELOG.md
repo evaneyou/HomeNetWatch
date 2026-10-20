@@ -12,6 +12,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Added
 
+- **Server Health:** a kebab item under Issues for an admin. It graphs the server's CPU, memory, host interface, disk, and database, forecasts when the database would fill the disk, lists how long each kind of row is kept, and shows a weekly software and vulnerability check plus processes that look stuck. Migration `0045_server_health`.
 - **Software failures stay out of the KPI:** a continuous check that reports no packets and no round trip, while another check on the same link is still getting through, is marked as a software problem. The result log says so, an issue is opened, the KPI leaves those samples out, and the monitor is asked to restart that test (agent 0.8.1). A blackout of every check on the link is still a real failure. Migration `0044_software_impact`.
 
 ### Changed

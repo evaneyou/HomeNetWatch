@@ -1854,3 +1854,147 @@
     display: none;
   }
 }
+
+/* The figures are the section buttons, in the Airwaves colors. */
+.server-health-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.server-health-tile {
+  display: block;
+  text-align: left;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #232d49;
+  border-radius: 12px;
+  background: #161d2f;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.server-health-tile span,
+.server-health-tile small {
+  display: block;
+  color: #9aa6c4;
+  font-size: 0.74rem;
+}
+
+.server-health-tile strong {
+  display: block;
+  margin: 0.15rem 0;
+  font-size: 1.05rem;
+}
+
+.server-health-tile.active {
+  background: #4fd1b5;
+  border-color: #4fd1b5;
+  color: #06201b;
+}
+
+.server-health-tile.active span,
+.server-health-tile.active small {
+  color: #06201b;
+}
+
+.server-health-tile.warn:not(.active) strong {
+  color: var(--degraded);
+}
+
+.server-health-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.server-health-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem;
+}
+
+.server-health-card span,
+.server-health-card small,
+.server-health-note {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.server-health-card strong {
+  display: block;
+  margin: 0.2rem 0;
+  font-size: 1.2rem;
+}
+
+.server-health-heading {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.server-health-note {
+  margin: 0 0 0.6rem;
+}
+
+.server-health-kept-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.server-health-kept-row:last-child {
+  border-bottom: 0;
+}
+
+.server-health-kept-time {
+  font-weight: 800;
+  color: #4fd1b5;
+}
+
+.server-health-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.server-health-chip {
+  padding: 2px 10px;
+  border: 1px solid #232d49;
+  border-radius: 999px;
+  background: #161d2f;
+  color: #c3cce6;
+  font-size: 0.78rem;
+}
+
+.server-health-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.server-health-table th,
+.server-health-table td {
+  text-align: left;
+  padding: 0.4rem 0.45rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.risk-critical,
+.risk-high {
+  color: var(--fail);
+}
+
+.risk-medium {
+  color: var(--degraded);
+}
+
+.risk-low {
+  color: var(--muted);
+}

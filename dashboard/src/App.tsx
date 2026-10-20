@@ -28,6 +28,7 @@ import ConnectionDiagramPage from "./pages/ConnectionDiagramPage";
 import TestPage from "./pages/TestPage";
 import AppFooter from "./components/AppFooter";
 import KpiPage from "./pages/KpiPage";
+import ServerHealthPage from "./pages/ServerHealthPage";
 import NetworkTestPage from "./pages/NetworkTestPage";
 import SpeedTestPage from "./pages/SpeedTestPage";
 import type { User } from "./types";
@@ -100,7 +101,7 @@ function LegacyMonitorRedirect({ log = false }: { log?: boolean }) {
   return <Navigate to={query ? `${path}?${query}` : path} replace />;
 }
 
-function MenuIcon({ name }: { name: "airwaves" | "issues" | "settings" | "path" | "speed" | "network" | "kpi" | "about" | "logout" }) {
+function MenuIcon({ name }: { name: "airwaves" | "issues" | "server" | "settings" | "path" | "speed" | "network" | "kpi" | "about" | "logout" }) {
   return (
     <svg className="menu-icon" viewBox="0 0 24 24" aria-hidden="true">
       {name === "airwaves" ? (
@@ -116,6 +117,12 @@ function MenuIcon({ name }: { name: "airwaves" | "issues" | "settings" | "path" 
           <circle cx="12" cy="12" r="7.5" />
           <path d="M12 8v5" />
           <circle className="menu-icon-dot" cx="12" cy="16" r="0.9" />
+        </>
+      ) : null}
+      {name === "server" ? (
+        <>
+          <rect x="4.5" y="4" width="15" height="16" rx="2" />
+          <path d="M8 12h1.8l1.4-2.6 2.2 5.2 1.4-2.6H16" />
         </>
       ) : null}
       {name === "settings" ? (
@@ -184,6 +191,7 @@ function Shell({ role, onLogout }: { role: User["role"]; onLogout: () => void })
   const links = [
     { to: "/airwaves", label: "Airwaves", icon: "airwaves" as const },
     { to: "/issues", label: "Issues", icon: "issues" as const },
+    ...(role === "admin" ? [{ to: "/server-health", label: "Server Health", icon: "server" as const }] : []),
     ...(role === "admin" || role === "guest"
       ? [{ to: "/settings/onboarding", label: "Settings", icon: "settings" as const }]
       : []),
@@ -344,6 +352,7 @@ function Shell({ role, onLogout }: { role: User["role"]; onLogout: () => void })
           <Route path="/tests/:id" element={<TestPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/about/history" element={<VersionHistoryPage />} />
+          <Route path="/server-health" element={role === "admin" ? <ServerHealthPage /> : <Navigate to="/" replace />} />
           <Route path="/issues" element={<IssuesPage />} />
           <Route path="/issues/:id" element={<IssueDetailPage />} />
           <Route path="/settings" element={seeSettings ? <SettingsLayout /> : <Navigate to="/" replace />}>

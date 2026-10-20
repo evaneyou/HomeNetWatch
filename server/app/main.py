@@ -15,6 +15,7 @@ from app.api.rf_routes import router as rf_router
 from app.api.routes import router
 from app.api.settings_routes import router as settings_router
 from app.api.kpi_routes import router as kpi_router
+from app.api.server_health_routes import router as server_health_router
 from app.api.speedtest_routes import router as speedtest_router
 from app.api.stress_routes import router as stress_router
 from app.api.telegram_routes import router as telegram_router
@@ -74,6 +75,16 @@ async def _lifespan(_app: FastAPI):
                 log.exception("alert loop failed")
             await asyncio.sleep(60)
 
+    async def _server_health_loop() -> None:
+        from app.server_health import run_once
+
+        while True:
+            try:
+                await asyncio.to_thread(run_once)
+            except Exception:
+                log.exception("server health sample failed")
+            await asyncio.sleep(60)
+
     async def _kpi_loop() -> None:
         from app import kpi
 
@@ -96,7 +107,12 @@ async def _lifespan(_app: FastAPI):
         should_run_bg = run_bg.strip().lower() not in {"0", "false", "no"}
 
     tasks = (
-        [asyncio.create_task(_loop()), asyncio.create_task(_alert_loop()), asyncio.create_task(_kpi_loop())]
+        [
+            asyncio.create_task(_loop()),
+            asyncio.create_task(_alert_loop()),
+            asyncio.create_task(_kpi_loop()),
+            asyncio.create_task(_server_health_loop()),
+        ]
         if should_run_bg
         else []
     )
@@ -177,6 +193,7 @@ def create_app() -> FastAPI:
     app.include_router(stress_router)
     app.include_router(telegram_router)
     app.include_router(kpi_router)
+    app.include_router(server_health_router)
     return app
 
 

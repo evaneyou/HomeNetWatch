@@ -40,6 +40,9 @@ services:
       - wgstate:/var/lib/hns-wireguard
       - rtnpstate:/var/lib/hns-rtnp
       - ./geoip:/geoip:ro
+      # The host, read-only, so Server Health can see the machine rather than the container.
+      - /proc:/host/proc:ro
+      - /:/host:ro
     depends_on:
       db:
         condition: service_healthy

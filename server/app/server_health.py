@@ -1,0 +1,748 @@
+"""Samples of the HomeNetWatch server itself: CPU, memory, disk, database, and the host NIC.
+
+The container's own /proc hides the host NIC, so production mounts the host at /host.
+A missing mount falls back to this process, which is what tests and a local run use.
+"""
+
+from __future__ import annotations
+
+import gzip
+import logging
+import os
+import re
+import shutil
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Optional
+from zoneinfo import ZoneInfo
+
+import httpx
+from sqlalchemy import delete, select, text
+from sqlalchemy.orm import Session
+
+from app.models import ServerAdvisory, ServerDbDaily, ServerSample, ServerStuck
+
+log = logging.getLogger(__name__)
+
+EASTERN = ZoneInfo("America/New_York")
+SAMPLE_KEEP = timedelta(days=7)
+DAILY_KEEP_YEARS = 2
+SLEEP_MINUTES = 5
+HOT_MINUTES = 15
+HOT_SHARE = 0.9
+FORECAST_DAYS = 7
+FORECAST_FAR_DAYS = 365
+RISK_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+# How long each kind of row is kept, longest first. Matches services/retention.py. Measurements keep full
+# detail for 6 months, then hourly and daily averages until they are deleted at 2 years.
+RETENTION = [
+    {"kept": "5 years", "items": ["KPI"]},
+    {
+        "kept": "2 years",
+        "items": [
+            "Test results",
+            "Wi-Fi",
+            "Channels",
+            "Clients",
+            "Synthetic samples",
+            "Logs",
+            "Airwave alerts",
+            "Audit",
+            "Speed-test results",
+            "Resolved issues",
+            "Daily database size",
+        ],
+    },
+    {"kept": "1 year", "items": ["Guest visits"]},
+    {"kept": "90 days", "items": ["Resolved alerts"]},
+    {"kept": "30 days", "items": ["Stress runs", "Speed samples", "Expired unused codes"]},
+    {"kept": "7 days", "items": ["Pi health", "Traces", "Server samples"]},
+]
+
+
+def host_proc() -> Path:
+    configured = Path(os.environ.get("HNS_HOST_PROC", "/host/proc"))
+    if (configured / "stat").is_file():
+        return configured
+    return Path("/proc")
+
+
+def host_root() -> Path:
+    configured = Path(os.environ.get("HNS_HOST_ROOT", "/host"))
+    if os.path.ismount(configured):
+        return configured
+    return Path("/")
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def cpu_counters(stat_text: str) -> Optional[tuple[int, int]]:
+    """Busy and total jiffies from the aggregate `cpu` line. Idle includes iowait."""
+    for line in stat_text.splitlines():
+        if not line.startswith("cpu "):
+            continue
+        parts = [int(part) for part in line.split()[1:] if part.isdigit()]
+        if len(parts) < 4:
+            return None
+        idle = parts[3] + (parts[4] if len(parts) > 4 else 0)
+        return sum(parts) - idle, sum(parts)
+    return None
+
+
+def cpu_percent(previous: Optional[tuple[int, int]], current: Optional[tuple[int, int]]) -> Optional[float]:
+    if previous is None or current is None:
+        return None
+    busy = current[0] - previous[0]
+    total = current[1] - previous[1]
+    if total <= 0:
+        return None
+    return max(0.0, min(100.0, 100.0 * busy / total))
+
+
+def memory_mb(meminfo: str) -> tuple[int, int]:
+    values: dict[str, int] = {}
+    for line in meminfo.splitlines():
+        key, _, rest = line.partition(":")
+        number = rest.strip().split()
+        if number and number[0].isdigit():
+            values[key] = int(number[0])
+    total_kb = values.get("MemTotal", 0)
+    available_kb = values.get("MemAvailable", values.get("MemFree", 0))
+    used_kb = max(0, total_kb - available_kb)
+    return used_kb // 1024, total_kb // 1024
+
+
+def skipped_iface(name: str) -> bool:
+    lowered = name.lower()
+    return lowered == "lo" or lowered.startswith(("docker", "veth", "br-", "wg", "virbr"))
+
+
+def parse_net(text: str) -> dict[str, tuple[int, int]]:
+    found: dict[str, tuple[int, int]] = {}
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        name, rest = line.split(":", 1)
+        name = name.strip()
+        if not name or name.lower() == "face":
+            continue
+        numbers = [int(part) for part in rest.split() if part.isdigit()]
+        if len(numbers) < 9:
+            continue
+        found[name] = (numbers[0], numbers[8])
+    return found
+
+
+def choose_iface(counters: dict[str, tuple[int, int]]) -> tuple[str, int, int]:
+    usable = {name: pair for name, pair in counters.items() if not skipped_iface(name)}
+    if not usable:
+        return "", 0, 0
+    name = max(usable, key=lambda item: usable[item][0] + usable[item][1])
+    rx, tx = usable[name]
+    return name, rx, tx
+
+
+def byte_rates(previous: Optional[tuple[datetime, int, int]], current: tuple[datetime, int, int]) -> tuple[Optional[float], Optional[float]]:
+    if previous is None:
+        return None, None
+    elapsed = (current[0] - previous[0]).total_seconds()
+    if elapsed <= 0:
+        return None, None
+    return max(0.0, (current[1] - previous[1]) / elapsed), max(0.0, (current[2] - previous[2]) / elapsed)
+
+
+def parse_stat(text: str) -> Optional[tuple[str, str, int]]:
+    end = text.rfind(")")
+    start = text.find("(")
+    if start < 0 or end < start:
+        return None
+    rest = text[end + 2 :].split()
+    if len(rest) < 13:
+        return None
+    try:
+        ticks = int(rest[11]) + int(rest[12])
+    except ValueError:
+        return None
+    return text[start + 1 : end], rest[0], ticks
+
+
+def list_processes(proc: Path) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    if not proc.is_dir():
+        return found
+    for entry in proc.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            parsed = parse_stat((entry / "stat").read_text(encoding="utf-8", errors="replace"))
+            cmdline = (entry / "cmdline").read_bytes()
+        except OSError:
+            continue
+        if parsed is None:
+            continue
+        name, state, ticks = parsed
+        found.append(
+            {
+                "pid": int(entry.name),
+                "name": name[:128],
+                "state": state,
+                "ticks": ticks,
+                "userland": bool(cmdline.replace(b"\x00", b"").strip()),
+            }
+        )
+    return found
+
+
+def judge_stuck(
+    previous: dict[int, dict[str, Any]],
+    processes: list[dict[str, Any]],
+    now: datetime,
+    *,
+    clk_tck: int = 100,
+) -> list[dict[str, Any]]:
+    """Carry the sleep and hot counters forward. A row is reportable once `reason` is set."""
+    hot_ticks = int(HOT_SHARE * clk_tck * 60)
+    rows: list[dict[str, Any]] = []
+    for proc in processes:
+        if not proc.get("userland"):
+            continue
+        prior = previous.get(proc["pid"])
+        state = proc["state"]
+        d_minutes = (prior["d_minutes"] + 1) if prior and state == "D" and prior["state"] == "D" else (1 if state == "D" else 0)
+        hot_minutes = 0
+        if prior is not None and proc["ticks"] >= prior["cpu_ticks"]:
+            if proc["ticks"] - prior["cpu_ticks"] >= hot_ticks:
+                hot_minutes = prior["hot_minutes"] + 1
+        reason = None
+        if state == "Z":
+            reason = "zombie"
+        elif d_minutes >= SLEEP_MINUTES:
+            reason = "sleep"
+        elif hot_minutes >= HOT_MINUTES:
+            reason = "cpu"
+        same = prior is not None and prior.get("reason") == reason and reason is not None
+        rows.append(
+            {
+                "pid": proc["pid"],
+                "name": proc["name"],
+                "state": state,
+                "reason": reason,
+                "first_seen": prior["first_seen"] if same else now,
+                "seen_at": now,
+                "d_minutes": d_minutes,
+                "hot_minutes": hot_minutes,
+                "cpu_ticks": proc["ticks"],
+            }
+        )
+    return rows
+
+
+def version_tuple(value: str) -> tuple:
+    value = value.split(":", 1)[-1]
+    return tuple(int(part) if part.isdigit() else part for part in re.findall(r"\d+|[A-Za-z]+", value))
+
+
+def version_is_newer(latest: str, installed: str) -> bool:
+    return version_tuple(latest) > version_tuple(installed)
+
+
+def parse_dpkg(text: str) -> dict[str, str]:
+    installed: dict[str, str] = {}
+    name = version = status = ""
+
+    def flush() -> None:
+        if name and version and status == "install ok installed":
+            installed[name] = version
+
+    for line in text.splitlines():
+        if line == "":
+            flush()
+            name = version = status = ""
+        elif line.startswith("Package: "):
+            name = line.split(": ", 1)[1].strip()
+        elif line.startswith("Version: "):
+            version = line.split(": ", 1)[1].strip()
+        elif line.startswith("Status: "):
+            status = line.split(": ", 1)[1].strip()
+    flush()
+    return installed
+
+
+def parse_packages(text: str) -> dict[str, str]:
+    """Highest version of each package in an apt Packages file."""
+    newest: dict[str, str] = {}
+    name = version = ""
+
+    def flush() -> None:
+        if name and version and (name not in newest or version_is_newer(version, newest[name])):
+            newest[name] = version
+
+    for line in text.splitlines():
+        if line == "":
+            flush()
+            name = version = ""
+        elif line.startswith("Package: "):
+            name = line.split(": ", 1)[1].strip()
+        elif line.startswith("Version: "):
+            version = line.split(": ", 1)[1].strip()
+    flush()
+    return newest
+
+
+def parse_os_release(text: str) -> dict[str, str]:
+    found: dict[str, str] = {}
+    for line in text.splitlines():
+        if "=" not in line or line.startswith("#"):
+            continue
+        key, value = line.split("=", 1)
+        found[key] = value.strip().strip('"')
+    return found
+
+
+def risk_of(vuln: dict[str, Any]) -> str:
+    for severity in vuln.get("severity") or []:
+        score = str(severity.get("score") or "").strip().lower()
+        if score in RISK_ORDER:
+            return score
+        try:
+            number = float(score)
+        except ValueError:
+            continue
+        if number >= 9:
+            return "critical"
+        if number >= 7:
+            return "high"
+        if number >= 4:
+            return "medium"
+        return "low"
+    return "low"
+
+
+def advisories_from_osv(results: list[dict[str, Any]], names: list[str]) -> dict[str, list[dict[str, str]]]:
+    found: dict[str, list[dict[str, str]]] = {}
+    for name, item in zip(names, results):
+        rows = []
+        for vuln in item.get("vulns") or []:
+            rows.append(
+                {
+                    "id": str(vuln.get("id") or ""),
+                    "risk": risk_of(vuln),
+                    "summary": str(vuln.get("summary") or "")[:240],
+                }
+            )
+        if rows:
+            rows.sort(key=lambda row: RISK_ORDER.get(row["risk"], 9))
+            found[name] = rows
+    return found
+
+
+def build_advisory_payload(
+    *,
+    os_name: str,
+    kernel: str,
+    installed: dict[str, str],
+    newest: dict[str, str],
+    vulns: dict[str, list[dict[str, str]]],
+    error: str = "",
+) -> dict[str, Any]:
+    packages = []
+    for name, version in installed.items():
+        latest = newest.get(name) or ""
+        behind = bool(latest) and version_is_newer(latest, version)
+        advisories = vulns.get(name) or []
+        if not behind and not advisories:
+            continue
+        packages.append(
+            {
+                "name": name,
+                "installed": version,
+                "newest": latest or version,
+                "behind": behind,
+                "advisories": advisories,
+                "risk": advisories[0]["risk"] if advisories else "low",
+            }
+        )
+    packages.sort(key=lambda row: (RISK_ORDER.get(row["risk"], 9), row["name"]))
+    return {"os": os_name, "kernel": kernel, "error": error, "packages": packages}
+
+
+def next_sunday_3am(after: datetime) -> datetime:
+    local = after.astimezone(EASTERN)
+    days = (6 - local.weekday()) % 7
+    candidate = (local + timedelta(days=days)).replace(hour=3, minute=0, second=0, microsecond=0)
+    if candidate <= local:
+        candidate += timedelta(days=7)
+    return candidate.astimezone(timezone.utc)
+
+
+def check_due(now: datetime, last: Optional[datetime]) -> bool:
+    if last is None:
+        return True
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return now.astimezone(timezone.utc) >= next_sunday_3am(last)
+
+
+def forecast(daily: list[tuple[date, int]], free_bytes: int) -> dict[str, Any]:
+    """When a straight fit of daily database size would use up the free disk."""
+    if len(daily) < FORECAST_DAYS:
+        return {"ready": False, "growing": False, "full_on": None, "bytes_per_day": None, "far": False}
+    origin = daily[0][0].toordinal()
+    xs = [day.toordinal() - origin for day, _size in daily]
+    ys = [size for _day, size in daily]
+    mean_x = sum(xs) / len(xs)
+    mean_y = sum(ys) / len(ys)
+    spread = sum((x - mean_x) ** 2 for x in xs)
+    if spread <= 0:
+        return {"ready": True, "growing": False, "full_on": None, "bytes_per_day": 0, "far": False}
+    slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys)) / spread
+    if slope <= 0:
+        return {"ready": True, "growing": False, "full_on": None, "bytes_per_day": round(slope), "far": False}
+    intercept = mean_y - slope * mean_x
+    target = ys[-1] + max(0, free_bytes)
+    full_x = (target - intercept) / slope
+    days_ahead = full_x - xs[-1]
+    far = days_ahead > FORECAST_FAR_DAYS
+    full_on = None
+    if 0 <= days_ahead <= 365 * 200:
+        full_on = (daily[-1][0] + timedelta(days=int(round(days_ahead)))).isoformat()
+    return {
+        "ready": True,
+        "growing": True,
+        "full_on": full_on,
+        "bytes_per_day": round(slope),
+        "far": far,
+        "origin": daily[0][0].isoformat(),
+        "intercept": intercept,
+        "slope": slope,
+    }
+
+
+def predict_bytes(cast: dict[str, Any], when: datetime) -> Optional[float]:
+    if not cast.get("growing"):
+        return None
+    origin = date.fromisoformat(cast["origin"]).toordinal()
+    moment = when.astimezone(timezone.utc).date().toordinal() - origin
+    return cast["intercept"] + cast["slope"] * moment
+
+
+def _mb(value: int) -> int:
+    return int(value // (1024 * 1024))
+
+
+def read_machine(proc: Path, root: Path, previous_cpu: Optional[tuple[int, int]]) -> dict[str, Any]:
+    counters = cpu_counters(_read(proc / "stat"))
+    used_mb, total_mb = memory_mb(_read(proc / "meminfo"))
+    try:
+        disk = shutil.disk_usage(root if root.exists() else "/")
+    except OSError:
+        disk = shutil.disk_usage("/")
+    iface, rx, tx = choose_iface(parse_net(_read(proc / "net" / "dev")))
+    return {
+        "cpu_percent": cpu_percent(previous_cpu, counters),
+        "cpu_counters": counters,
+        "mem_used_mb": used_mb,
+        "mem_total_mb": total_mb,
+        "disk_used_bytes": disk.used,
+        "disk_total_bytes": disk.total,
+        "disk_free_bytes": disk.free,
+        "disk_used_mb": _mb(disk.used),
+        "disk_total_mb": _mb(disk.total),
+        "iface": iface,
+        "rx_bytes": rx,
+        "tx_bytes": tx,
+    }
+
+
+def read_database(db: Session) -> tuple[int, int, list[dict[str, Any]]]:
+    size = int(db.execute(text("SELECT pg_database_size(current_database())")).scalar() or 0)
+    connections = int(
+        db.execute(text("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()")).scalar() or 0
+    )
+    tables = [
+        {"name": name, "bytes": int(amount)}
+        for name, amount in db.execute(
+            text(
+                """
+                SELECT c.relname, pg_total_relation_size(c.oid)
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public' AND c.relkind = 'r'
+                ORDER BY pg_total_relation_size(c.oid) DESC
+                LIMIT 5
+                """
+            )
+        ).all()
+    ]
+    return size, connections, tables
+
+
+_last_cpu: Optional[tuple[int, int]] = None
+
+
+def record_sample(db: Session, now: Optional[datetime] = None, *, proc: Optional[Path] = None, root: Optional[Path] = None) -> ServerSample:
+    global _last_cpu
+    now = now or datetime.now(timezone.utc)
+    machine = read_machine(proc or host_proc(), root or host_root(), _last_cpu)
+    _last_cpu = machine["cpu_counters"]
+    db_bytes, connections, _tables = read_database(db)
+    sample = ServerSample(
+        recorded_at=now,
+        cpu_percent=machine["cpu_percent"],
+        mem_used_mb=machine["mem_used_mb"],
+        mem_total_mb=machine["mem_total_mb"],
+        disk_used_mb=machine["disk_used_mb"],
+        disk_total_mb=machine["disk_total_mb"],
+        db_bytes=db_bytes,
+        connections=connections,
+        iface=machine["iface"],
+        rx_bytes=machine["rx_bytes"],
+        tx_bytes=machine["tx_bytes"],
+    )
+    db.add(sample)
+    day = now.astimezone(timezone.utc).date()
+    daily = db.get(ServerDbDaily, day)
+    if daily is None:
+        db.add(ServerDbDaily(day=day, db_bytes=db_bytes, free_bytes=machine["disk_free_bytes"]))
+    else:
+        daily.db_bytes = db_bytes
+        daily.free_bytes = machine["disk_free_bytes"]
+    _store_stuck(db, list_processes(proc or host_proc()), now)
+    return sample
+
+
+def _store_stuck(db: Session, processes: list[dict[str, Any]], now: datetime) -> None:
+    previous = {
+        row.pid: {
+            "state": row.state,
+            "reason": row.reason,
+            "first_seen": row.first_seen,
+            "d_minutes": row.d_minutes,
+            "hot_minutes": row.hot_minutes,
+            "cpu_ticks": row.cpu_ticks,
+        }
+        for row in db.scalars(select(ServerStuck)).all()
+    }
+    try:
+        clk = os.sysconf("SC_CLK_TCK")
+    except (AttributeError, ValueError, OSError):
+        clk = 100
+    judged = judge_stuck(previous, processes, now, clk_tck=int(clk))
+    db.execute(delete(ServerStuck))
+    db.flush()
+    for row in judged:
+        db.add(ServerStuck(**row))
+
+
+def kernel_version(proc: Path) -> str:
+    text_value = _read(proc / "version")
+    parts = text_value.split()
+    if len(parts) >= 3 and parts[0] == "Linux":
+        return parts[2]
+    return parts[2] if len(parts) >= 3 else ""
+
+
+def package_urls(codename: str) -> list[str]:
+    urls = []
+    for pocket, host in (
+        (codename, "https://archive.ubuntu.com/ubuntu"),
+        (f"{codename}-updates", "https://archive.ubuntu.com/ubuntu"),
+        (f"{codename}-security", "https://security.ubuntu.com/ubuntu"),
+    ):
+        for component in ("main", "universe"):
+            urls.append(f"{host}/dists/{pocket}/{component}/binary-amd64/Packages.gz")
+    return urls
+
+
+def fetch_newest(codename: str, client: httpx.Client) -> dict[str, str]:
+    newest: dict[str, str] = {}
+    for url in package_urls(codename):
+        try:
+            response = client.get(url)
+            response.raise_for_status()
+            text_value = gzip.decompress(response.content).decode("utf-8", "replace")
+        except (httpx.HTTPError, OSError, gzip.BadGzipFile):
+            log.warning("package list unavailable: %s", url)
+            continue
+        for name, version in parse_packages(text_value).items():
+            if name not in newest or version_is_newer(version, newest[name]):
+                newest[name] = version
+    return newest
+
+
+def fetch_vulns(installed: dict[str, str], ecosystem: str, client: httpx.Client) -> dict[str, list[dict[str, str]]]:
+    names = list(installed)
+    found: dict[str, list[dict[str, str]]] = {}
+    for start in range(0, len(names), 100):
+        chunk = names[start : start + 100]
+        queries = [
+            {"version": installed[name], "package": {"name": name, "ecosystem": ecosystem}}
+            for name in chunk
+        ]
+        try:
+            response = client.post("https://api.osv.dev/v1/querybatch", json={"queries": queries})
+            response.raise_for_status()
+            results = response.json().get("results") or []
+        except (httpx.HTTPError, ValueError):
+            log.warning("vulnerability lookup failed for %s packages", len(chunk))
+            continue
+        found.update(advisories_from_osv(results, chunk))
+    return found
+
+
+def refresh_advisories(
+    db: Session,
+    now: datetime,
+    *,
+    installed: dict[str, str],
+    newest: dict[str, str],
+    vulns: dict[str, list[dict[str, str]]],
+    os_name: str,
+    kernel: str,
+    error: str = "",
+) -> None:
+    payload = build_advisory_payload(
+        os_name=os_name, kernel=kernel, installed=installed, newest=newest, vulns=vulns, error=error
+    )
+    row = db.get(ServerAdvisory, 1)
+    if row is None:
+        db.add(ServerAdvisory(id=1, checked_at=now, payload=payload))
+    else:
+        row.checked_at = now
+        row.payload = payload
+
+
+def refresh_advisories_live(db: Session, now: datetime, *, proc: Optional[Path] = None, root: Optional[Path] = None) -> None:
+    proc = proc or host_proc()
+    root = root or host_root()
+    release = parse_os_release(_read(root / "etc" / "os-release"))
+    installed = parse_dpkg(_read(root / "var" / "lib" / "dpkg" / "status"))
+    os_name = release.get("PRETTY_NAME") or release.get("NAME") or "Linux"
+    kernel = kernel_version(proc)
+    codename = release.get("VERSION_CODENAME") or ""
+    version_id = release.get("VERSION_ID") or ""
+    error = ""
+    newest: dict[str, str] = {}
+    vulns: dict[str, list[dict[str, str]]] = {}
+    if not installed:
+        error = "The host package list could not be read."
+    else:
+        try:
+            with httpx.Client(timeout=60, follow_redirects=True) as client:
+                if codename:
+                    newest = fetch_newest(codename, client)
+                if version_id:
+                    vulns = fetch_vulns(installed, f"Ubuntu:{version_id}:LTS", client)
+        except httpx.HTTPError as exc:
+            error = "The version check could not be finished."
+            log.warning("advisory refresh failed: %s", exc)
+    refresh_advisories(
+        db, now, installed=installed, newest=newest, vulns=vulns, os_name=os_name, kernel=kernel, error=error
+    )
+
+
+def maybe_refresh_advisories(db: Session, now: datetime) -> None:
+    row = db.get(ServerAdvisory, 1)
+    last = row.checked_at if row is not None else None
+    if check_due(now, last):
+        refresh_advisories_live(db, now)
+
+
+def prune(db: Session, now: datetime) -> int:
+    samples = db.execute(delete(ServerSample).where(ServerSample.recorded_at < now - SAMPLE_KEEP)).rowcount or 0
+    cutoff = date(now.year - DAILY_KEEP_YEARS, now.month, now.day) if now.month != 2 or now.day != 29 else date(now.year - DAILY_KEEP_YEARS, 2, 28)
+    daily = db.execute(delete(ServerDbDaily).where(ServerDbDaily.day < cutoff)).rowcount or 0
+    stuck = db.execute(delete(ServerStuck).where(ServerStuck.seen_at < now - timedelta(hours=1))).rowcount or 0
+    return samples + daily + stuck
+
+
+def _range_start(name: str, now: datetime) -> datetime:
+    hours = {"1h": 1, "6h": 6, "24h": 24, "7d": 24 * 7}.get(name, 1)
+    return now - timedelta(hours=hours)
+
+
+def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict[str, Any]:
+    now = now or datetime.now(timezone.utc)
+    since = _range_start(range_name, now)
+    samples = db.scalars(
+        select(ServerSample).where(ServerSample.recorded_at >= since).order_by(ServerSample.recorded_at)
+    ).all()
+    daily_rows = db.scalars(select(ServerDbDaily).order_by(ServerDbDaily.day)).all()
+    free = daily_rows[-1].free_bytes if daily_rows else 0
+    cast = forecast([(row.day, row.db_bytes) for row in daily_rows], free)
+    earlier = db.scalar(
+        select(ServerSample).where(ServerSample.recorded_at < since).order_by(ServerSample.recorded_at.desc()).limit(1)
+    )
+    previous: Optional[tuple[datetime, int, int]] = (
+        (earlier.recorded_at, earlier.rx_bytes, earlier.tx_bytes) if earlier is not None else None
+    )
+    points = []
+    for sample in samples:
+        rx_bps, tx_bps = byte_rates(previous, (sample.recorded_at, sample.rx_bytes, sample.tx_bytes))
+        previous = (sample.recorded_at, sample.rx_bytes, sample.tx_bytes)
+        points.append(
+            {
+                "t": sample.recorded_at,
+                "cpu": sample.cpu_percent,
+                "mem_used_mb": sample.mem_used_mb,
+                "mem_total_mb": sample.mem_total_mb,
+                "disk_used_mb": sample.disk_used_mb,
+                "disk_total_mb": sample.disk_total_mb,
+                "db_bytes": sample.db_bytes,
+                "forecast_bytes": predict_bytes(cast, sample.recorded_at),
+                "rx_bps": rx_bps,
+                "tx_bps": tx_bps,
+                "iface": sample.iface,
+                "connections": sample.connections,
+            }
+        )
+    latest = points[-1] if points else None
+    _size, connections, tables = read_database(db)
+    if latest is not None:
+        latest = {**latest, "connections": connections}
+    advisory = db.get(ServerAdvisory, 1)
+    stuck = [
+        {
+            "pid": row.pid,
+            "name": row.name,
+            "state": row.state,
+            "reason": row.reason,
+            "since": row.first_seen,
+        }
+        for row in db.scalars(select(ServerStuck).where(ServerStuck.reason.is_not(None)).order_by(ServerStuck.first_seen)).all()
+    ]
+    public_cast = {key: cast[key] for key in ("ready", "growing", "full_on", "bytes_per_day", "far")}
+    return {
+        "latest": latest,
+        "points": points,
+        "tables": tables,
+        "forecast": public_cast,
+        "retention": RETENTION,
+        "advisories": {"checked_at": advisory.checked_at, **advisory.payload} if advisory is not None else None,
+        "stuck": stuck,
+    }
+
+
+def run_once() -> None:
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        record_sample(db, now)
+        try:
+            maybe_refresh_advisories(db, now)
+        except Exception:
+            log.exception("server advisory refresh failed")
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()

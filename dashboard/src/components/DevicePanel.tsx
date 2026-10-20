@@ -148,7 +148,7 @@ export default function DevicePanel({ monitorId }: { monitorId: string }) {
 
   return (
     <>
-      <div className="probe-top">
+      <div className="probe-device-top">
         <section className="panel device-panel">
           <h2>Location</h2>
           {placeHidden ? <p className="anon-mark">{place || pinMark}</p> : <p className="muted">{place || "No location saved."}</p>}

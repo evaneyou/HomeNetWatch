@@ -2434,13 +2434,13 @@
 
 
 /* Remote Probe Status: location and probe facts, four vital tiles, one chart */
-.probe-top {
+.probe-device-top {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 1rem;
 }
 
-.probe-top .panel {
+.probe-device-top .panel {
   margin-bottom: 0;
 }
 
@@ -2531,7 +2531,7 @@
 }
 
 @media (max-width: 700px) {
-  .probe-top {
+  .probe-device-top {
     grid-template-columns: minmax(0, 1fr);
   }
 

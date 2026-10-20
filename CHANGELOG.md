@@ -16,6 +16,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Voice label:** the G.711 A-law check is labeled Voice G.711.
 - **Server folder name:** the production checkout is now `~/Home-Net-Watch`. The docs, the backup cron example and `rtnp-allowlist.service` use that path, and `COMPOSE_PROJECT_NAME=home-sensor` stays pinned in `.env.example` so the containers and volumes keep their names.
 - **Network Test:** the Wired and Wi-Fi choices are one segmented switch, and the button that starts a test matches the Start test button on Speed Test. The remote agent picker stays 200 pixels wide at the right of the title.
 - **Speed Test path:** while a test runs, packets ease up to the measured speed and keep moving instead of restarting on each sample. Download flows toward the Pi and upload flows the other way. On a phone the same path is a smaller row that fits the screen.

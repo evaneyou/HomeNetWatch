@@ -273,7 +273,7 @@ def test_recommended_profiles_and_comparison_report(client, db, monitor_token):
     assert stored is not None
     rows = db.scalars(select(SyntheticSample).where(SyntheticSample.run_id == stored.id)).all()
     assert len(rows) == 2
-    again = build_report(stored, list(rows), "Voice G.711 A-law")
+    again = build_report(stored, list(rows), "Voice G.711")
     assert [item["label"] for item in again["links"]] == ["Wired", "Wi-Fi"]
 
     wired_only = client.post(
@@ -342,7 +342,7 @@ def test_recommended_profiles_and_comparison_report(client, db, monitor_token):
     assert voice_again.json()["total"] == 3
     by_network = {item["network_slug"]: item for item in voice_log.json()["items"]}
     assert set(by_network) == {"wired", "wifi"}
-    assert by_network["wifi"]["test_name"] == "Voice G.711 A-law"
+    assert by_network["wifi"]["test_name"] == "Voice G.711"
     assert by_network["wifi"]["status"] == "fail"
     assert by_network["wifi"]["metrics"]["rtt_ms"] == 400
     assert by_network["wired"]["status"] == "ok"

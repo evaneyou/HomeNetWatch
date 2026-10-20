@@ -44,7 +44,7 @@ _EDITABLE = ("report_interval_s", "max_rtt_ms", "max_jitter_ms", "max_loss_pct",
 PROFILES: list[dict[str, Any]] = [
     {
         "slug": "voip-g711a",
-        "name": "Voice G.711 A-law",
+        "name": "Voice G.711",
         "category": "voice",
         "position": 1,
         "options": {

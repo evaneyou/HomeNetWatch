@@ -278,6 +278,10 @@ def list_processes(proc: Path) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     if not proc.is_dir():
         return found
+    try:
+        page = int(os.sysconf("SC_PAGE_SIZE"))
+    except (AttributeError, ValueError, OSError):
+        page = 4096
     for entry in proc.iterdir():
         if not entry.name.isdigit():
             continue
@@ -289,16 +293,92 @@ def list_processes(proc: Path) -> list[dict[str, Any]]:
         if parsed is None:
             continue
         name, state, ticks = parsed
+        command = cmdline.replace(b"\x00", b" ").decode("utf-8", "replace").strip()
+        rss_pages = 0
+        try:
+            resident = (entry / "statm").read_text(encoding="utf-8", errors="replace").split()
+            if len(resident) >= 2 and resident[1].isdigit():
+                rss_pages = int(resident[1])
+        except OSError:
+            rss_pages = 0
         found.append(
             {
                 "pid": int(entry.name),
                 "name": name[:128],
+                "command": (command or name)[:96],
                 "state": state,
                 "ticks": ticks,
-                "userland": bool(cmdline.replace(b"\x00", b"").strip()),
+                "rss_bytes": rss_pages * page,
+                "userland": bool(command),
             }
         )
     return found
+
+
+def cpu_cores(stat_text: str) -> int:
+    count = sum(1 for line in stat_text.splitlines() if line.startswith("cpu") and not line.startswith("cpu "))
+    return max(count, 1)
+
+
+def busiest_processes(
+    previous: dict[int, dict[str, Any]],
+    processes: list[dict[str, Any]],
+    now: datetime,
+    *,
+    clk_tck: int = 100,
+    cores: int = 1,
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    """Userland processes using the CPU since the last sample, as a share of the whole machine."""
+    cores = max(cores, 1)
+    clock = max(clk_tck, 1)
+    ranked: list[dict[str, Any]] = []
+    for proc in processes:
+        if not proc.get("userland"):
+            continue
+        prior = previous.get(proc["pid"])
+        if prior is None or prior.get("name") != proc["name"]:
+            continue
+        seen = prior.get("seen_at")
+        if seen is None:
+            continue
+        elapsed = (now - seen).total_seconds()
+        delta = proc["ticks"] - int(prior.get("cpu_ticks") or 0)
+        if elapsed <= 0 or delta < 0:
+            continue
+        share = 100.0 * delta / (clock * elapsed * cores)
+        if share < 0.5:
+            continue
+        ranked.append(
+            {
+                "pid": proc["pid"],
+                "name": str(proc.get("command") or proc["name"])[:96],
+                "cpu": round(min(share, 100.0), 1),
+            }
+        )
+    ranked.sort(key=lambda row: (-row["cpu"], row["pid"]))
+    return ranked[:limit]
+
+
+def largest_processes(processes: list[dict[str, Any]], total_bytes: int, *, limit: int = 8) -> list[dict[str, Any]]:
+    """The userland processes holding the most memory, as a share of the machine."""
+    ranked: list[dict[str, Any]] = []
+    for proc in processes:
+        if not proc.get("userland"):
+            continue
+        rss = int(proc.get("rss_bytes") or 0)
+        if rss < 1024 * 1024:
+            continue
+        ranked.append(
+            {
+                "pid": proc["pid"],
+                "name": str(proc.get("command") or proc["name"])[:96],
+                "bytes": rss,
+                "share": round(min(100.0 * rss / total_bytes, 100.0), 1) if total_bytes > 0 else None,
+            }
+        )
+    ranked.sort(key=lambda row: (-row["bytes"], row["pid"]))
+    return ranked[:limit]
 
 
 def judge_stuck(
@@ -1390,6 +1470,7 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
         latest = {**latest, "connections": connections}
     advisory = db.get(ServerAdvisory, 1)
     measured = db.get(ServerStorage, 1)
+    tracked = db.scalars(select(ServerStuck)).all()
     stuck = [
         {
             "pid": row.pid,
@@ -1398,8 +1479,22 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
             "reason": row.reason,
             "since": row.first_seen,
         }
-        for row in db.scalars(select(ServerStuck).where(ServerStuck.reason.is_not(None)).order_by(ServerStuck.first_seen)).all()
+        for row in sorted((row for row in tracked if row.reason), key=lambda row: row.first_seen)
     ]
+    try:
+        clk = os.sysconf("SC_CLK_TCK")
+    except (AttributeError, ValueError, OSError):
+        clk = 100
+    live = list_processes(host_proc())
+    processes = busiest_processes(
+        {row.pid: {"name": row.name, "cpu_ticks": row.cpu_ticks, "seen_at": row.seen_at} for row in tracked},
+        live,
+        now,
+        clk_tck=int(clk),
+        cores=cpu_cores(_read(host_proc() / "stat")),
+    )
+    total_bytes = int(latest["mem_total_mb"]) * 1024 * 1024 if latest is not None else 0
+    memory = largest_processes(live, total_bytes)
     public_cast = {key: cast[key] for key in ("ready", "growing", "full_on", "bytes_per_day", "far")}
     return {
         "latest": latest,
@@ -1412,6 +1507,8 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
             {"checked_at": advisory.checked_at, **slim_advisories(advisory.payload)} if advisory is not None else None
         ),
         "stuck": stuck,
+        "processes": processes,
+        "memory": memory,
         "storage": {
             "projection": disk_projection(daily_rows, now),
             "breakdown": {"checked_at": measured.checked_at, **measured.payload} if measured is not None else None,

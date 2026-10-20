@@ -94,6 +94,8 @@ type Report = {
     groups?: SoftwareGroup[];
   } | null;
   stuck: { pid: number; name: string; state: string; reason: string; since: string }[];
+  processes: { pid: number; name: string; cpu: number }[];
+  memory: { pid: number; name: string; bytes: number; share: number | null }[];
   storage: StorageReport;
   backups: BackupReport;
 };
@@ -801,18 +803,77 @@ export default function ServerHealthPage() {
   function section(key: SectionKey, current: Report) {
     switch (key) {
       case "cpu":
-        return <Chart key={key} title="CPU" data={data} span={span} lines={[{ key: "cpu", name: "Busy" }]} unit=" %" domain={[0, 100]} />;
+        return (
+          <div key={key}>
+            <Chart title="CPU" data={data} span={span} lines={[{ key: "cpu", name: "Busy" }]} unit=" %" domain={[0, 100]} />
+            <div className="panel">
+              <h2 className="server-health-heading">Busiest processes</h2>
+              <p className="muted server-health-note">Share of the whole machine since the last sample. Anything under 0.5% is left out.</p>
+              {(current.processes ?? []).length === 0 ? (
+                <div className="state-box">Nothing is using much CPU right now.</div>
+              ) : (
+                <table className="server-health-table">
+                  <thead>
+                    <tr>
+                      <th>Process</th>
+                      <th>PID</th>
+                      <th>CPU</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(current.processes ?? []).map((row) => (
+                      <tr key={row.pid}>
+                        <td>{row.name}</td>
+                        <td>{row.pid}</td>
+                        <td>{row.cpu.toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        );
       case "memory":
         return (
-          <Chart
-            key={key}
-            title="Memory"
-            note={latest ? `Total ${amount(latest.mem_total_mb * 1024 * 1024)}` : undefined}
-            data={data}
-            span={span}
-            lines={[{ key: "mem", name: "Used" }]}
-            unit=""
-          />
+          <div key={key}>
+            <Chart
+              title="Memory"
+              note={latest ? `Total ${amount(latest.mem_total_mb * 1024 * 1024)}` : undefined}
+              data={data}
+              span={span}
+              lines={[{ key: "mem", name: "Used" }]}
+              unit=""
+            />
+            <div className="panel">
+              <h2 className="server-health-heading">Largest processes</h2>
+              <p className="muted server-health-note">Resident memory right now, as a share of the machine. Anything under 1 MB is left out.</p>
+              {(current.memory ?? []).length === 0 ? (
+                <div className="state-box">Nothing is using much memory right now.</div>
+              ) : (
+                <table className="server-health-table">
+                  <thead>
+                    <tr>
+                      <th>Process</th>
+                      <th>PID</th>
+                      <th>Memory</th>
+                      <th>Share</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(current.memory ?? []).map((row) => (
+                      <tr key={row.pid}>
+                        <td>{row.name}</td>
+                        <td>{row.pid}</td>
+                        <td>{amount(row.bytes)}</td>
+                        <td>{row.share == null ? "—" : `${row.share.toFixed(1)}%`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
         );
       case "interface": {
         const machine = latest?.host_iface;

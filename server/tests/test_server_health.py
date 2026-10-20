@@ -14,6 +14,7 @@ from app.server_health import (
     cvss3_score,
     byte_rates,
     category_usage,
+    cpu_cores,
     check_due,
     choose_iface,
     read_iface,
@@ -21,6 +22,8 @@ from app.server_health import (
     cpu_percent,
     disk_projection,
     forecast,
+    busiest_processes,
+    largest_processes,
     judge_stuck,
     list_backups,
     maybe_refresh_advisories,
@@ -271,6 +274,29 @@ def test_backup_listing_reports_time_and_size_only(tmp_path):
     (tmp_path / "tls-20261020T031500Z.tar.gz").write_bytes(b"tls")
     assert list_backups(tmp_path, datetime(2026, 10, 20, 16, 0, tzinfo=timezone.utc))["fresh"] is True
     assert list_backups(tmp_path / "missing", now)["available"] is False
+
+
+def test_busiest_processes_are_a_share_of_the_machine():
+    now = datetime(2026, 10, 20, tzinfo=timezone.utc)
+    previous = {7: {"name": "postgres", "cpu_ticks": 100, "seen_at": now - timedelta(seconds=60)}}
+    processes = [
+        {"pid": 7, "name": "postgres", "command": "postgres: checkpointer", "ticks": 220, "userland": True},
+        {"pid": 8, "name": "idle", "command": "idle", "ticks": 5, "userland": True},
+        {"pid": 3, "name": "ksoftirqd", "command": "", "ticks": 9000, "userland": False},
+    ]
+    rows = busiest_processes(previous, processes, now, clk_tck=100, cores=2)
+    assert rows == [{"pid": 7, "name": "postgres: checkpointer", "cpu": 1.0}]
+    assert cpu_cores("cpu  1 0 0 1\ncpu0 1 0 0 1\ncpu1 0 0 0 0\n") == 2
+
+
+def test_largest_processes_are_a_share_of_memory():
+    processes = [
+        {"pid": 1, "name": "postgres", "command": "postgres: checkpointer", "userland": True, "rss_bytes": 400 * 1024 * 1024},
+        {"pid": 2, "name": "tiny", "command": "tiny", "userland": True, "rss_bytes": 1000},
+        {"pid": 3, "name": "kthread", "command": "", "userland": False, "rss_bytes": 9 * 1024 * 1024 * 1024},
+    ]
+    rows = largest_processes(processes, 8 * 1024 * 1024 * 1024)
+    assert rows == [{"pid": 1, "name": "postgres: checkpointer", "bytes": 400 * 1024 * 1024, "share": 4.9}]
 
 
 def test_viewer_is_refused_and_a_guest_can_read(client, db):

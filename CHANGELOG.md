@@ -17,6 +17,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
   vital tiles (CPU, memory, disk, temperature) switch a single 24-hour chart.
 - Server Health network chart shows the Oracle machine interface and the app container interface.
 - Server Health has a Backup tab with the time and size of each database, WireGuard, and agent TLS copy. The files are not offered for download.
+- Server Health CPU tab lists the processes using the machine since the last sample.
+- Server Health Memory tab lists the processes holding the most memory.
 
 ## [0.4] - 2026-10-20
 

@@ -5,5 +5,5 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/ubuntu/Home-Sensor
-ExecStart=/usr/bin/python3 /home/ubuntu/Home-Sensor/scripts/rtnp-allowlist.py
+WorkingDirectory=/home/ubuntu/Home-Net-Watch
+ExecStart=/usr/bin/python3 /home/ubuntu/Home-Net-Watch/scripts/rtnp-allowlist.py

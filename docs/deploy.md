@@ -112,7 +112,7 @@ This writes a database dump plus the WireGuard and TLS state to `backups/`, keep
 
 ```bash
 crontab -e
-# 15 3 * * * cd /home/ubuntu/Home-Sensor && ./scripts/backup.sh
+# 15 3 * * * cd /home/ubuntu/Home-Net-Watch && ./scripts/backup.sh
 ```
 
 The TLS and WireGuard archives matter as much as the database: they hold the keys your Pis trust. Without them every Pi has to be re-enrolled.
@@ -150,7 +150,7 @@ Settings, Guest visits shows where each guest sign-in came from. The lookup read
 ```bash
 ./scripts/update-geoip.sh                      # downloads ./geoip/dbip-city-lite.mmdb (about 130 MB)
 # crontab -e, on the 5th of each month:
-# 0 4 5 * * cd ~/Home-Sensor && ./scripts/update-geoip.sh
+# 0 4 5 * * cd ~/Home-Net-Watch && ./scripts/update-geoip.sh
 ```
 
 The server picks up a replaced file on the next request. Without the file the page still works and shows "Unknown". The data is licensed CC BY 4.0 and credited on the page.

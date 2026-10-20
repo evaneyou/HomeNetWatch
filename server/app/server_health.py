@@ -9,7 +9,6 @@ from __future__ import annotations
 import gzip
 import logging
 import os
-import re
 import shutil
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -243,13 +242,65 @@ def judge_stuck(
     return rows
 
 
-def version_tuple(value: str) -> tuple:
-    value = value.split(":", 1)[-1]
-    return tuple(int(part) if part.isdigit() else part for part in re.findall(r"\d+|[A-Za-z]+", value))
+def _dpkg_order(char: str) -> int:
+    if char == "~":
+        return -1
+    if not char or char.isdigit():
+        return 0
+    if char.isalpha():
+        return ord(char)
+    return ord(char) + 256
+
+
+def _dpkg_part(left: str, right: str) -> int:
+    """Compare one upstream or revision string the way dpkg does."""
+    i = j = 0
+    while i < len(left) or j < len(right):
+        first_diff = 0
+        while (i < len(left) and not left[i].isdigit()) or (j < len(right) and not right[j].isdigit()):
+            a = _dpkg_order(left[i]) if i < len(left) else 0
+            b = _dpkg_order(right[j]) if j < len(right) else 0
+            if a != b:
+                return -1 if a < b else 1
+            i += 1
+            j += 1
+        while i < len(left) and left[i] == "0":
+            i += 1
+        while j < len(right) and right[j] == "0":
+            j += 1
+        while i < len(left) and left[i].isdigit() and j < len(right) and right[j].isdigit():
+            if not first_diff:
+                first_diff = ord(left[i]) - ord(right[j])
+            i += 1
+            j += 1
+        if i < len(left) and left[i].isdigit():
+            return 1
+        if j < len(right) and right[j].isdigit():
+            return -1
+        if first_diff:
+            return -1 if first_diff < 0 else 1
+    return 0
+
+def compare_versions(left: str, right: str) -> int:
+    """-1, 0, or 1, in Debian version order: epoch, then upstream, then revision."""
+
+    def split(value: str) -> tuple[int, str, str]:
+        epoch = 0
+        if ":" in value:
+            head, value = value.split(":", 1)
+            epoch = int(head) if head.isdigit() else 0
+        upstream, _, revision = value.rpartition("-") if "-" in value else (value, "", "")
+        return epoch, upstream, revision
+
+    left_epoch, left_up, left_rev = split(left)
+    right_epoch, right_up, right_rev = split(right)
+    if left_epoch != right_epoch:
+        return -1 if left_epoch < right_epoch else 1
+    return _dpkg_part(left_up, right_up) or _dpkg_part(left_rev, right_rev)
 
 
 def version_is_newer(latest: str, installed: str) -> bool:
-    return version_tuple(latest) > version_tuple(installed)
+    return compare_versions(latest, installed) > 0
 
 
 def parse_dpkg(text: str) -> dict[str, str]:
@@ -736,10 +787,21 @@ def run_once() -> None:
     try:
         now = datetime.now(timezone.utc)
         record_sample(db, now)
-        try:
-            maybe_refresh_advisories(db, now)
-        except Exception:
-            log.exception("server advisory refresh failed")
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def run_advisories() -> None:
+    """The weekly check. It downloads package lists, so it runs apart from the minute sample."""
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        maybe_refresh_advisories(db, datetime.now(timezone.utc))
         db.commit()
     except Exception:
         db.rollback()

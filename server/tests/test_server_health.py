@@ -22,6 +22,7 @@ from app.server_health import (
     prune,
     record_sample,
     refresh_advisories,
+    version_is_newer,
 )
 from tests.conftest import login
 
@@ -103,6 +104,14 @@ def test_sunday_cache_does_not_fetch_again_the_same_week(db, monkeypatch):
     assert [row["name"] for row in payload["packages"]] == ["bash"]
     db.execute(delete(ServerAdvisory))
     db.commit()
+
+
+def test_versions_compare_in_debian_order():
+    assert version_is_newer("3.0.13-0ubuntu3.6", "3.0.13-0ubuntu3.4")
+    assert version_is_newer("1:1.0", "2.0")
+    assert version_is_newer("2.10", "2.9")
+    assert not version_is_newer("1.0~rc1", "1.0")
+    assert not version_is_newer("6.8.0-85.85", "6.8.0-85.85")
 
 
 def test_stuck_process_detection():

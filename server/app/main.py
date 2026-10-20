@@ -85,6 +85,16 @@ async def _lifespan(_app: FastAPI):
                 log.exception("server health sample failed")
             await asyncio.sleep(60)
 
+    async def _server_advisory_loop() -> None:
+        from app.server_health import run_advisories
+
+        while True:
+            try:
+                await asyncio.to_thread(run_advisories)
+            except Exception:
+                log.exception("server advisory check failed")
+            await asyncio.sleep(60 * 60)  # only fetches when the Sunday 3 AM Eastern check is due
+
     async def _kpi_loop() -> None:
         from app import kpi
 
@@ -112,6 +122,7 @@ async def _lifespan(_app: FastAPI):
             asyncio.create_task(_alert_loop()),
             asyncio.create_task(_kpi_loop()),
             asyncio.create_task(_server_health_loop()),
+            asyncio.create_task(_server_advisory_loop()),
         ]
         if should_run_bg
         else []

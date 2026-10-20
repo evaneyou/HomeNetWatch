@@ -4,7 +4,7 @@ export default function AboutPage() {
   return (
     <div>
       <h1 className="page-title">About</h1>
-      <p className="page-sub">HomeNetWatch 0.3</p>
+      <p className="page-sub">HomeNetWatch v0.4</p>
 
       <section className="panel">
         <h2>Overview</h2>
@@ -25,9 +25,9 @@ export default function AboutPage() {
       <section className="panel">
         <h2>Version history</h2>
         <p>
-          The current release is <span className="mono">0.3</span>, dated 18 October 2026. The
-          initial nine-day alpha build concluded with release <span className="mono">0.2</span> on
-          14 October 2026, following the first release, <span className="mono">0.1</span>, the day
+          The current release is <span className="mono">v0.4</span>, dated 20 October 2026. The
+          initial nine-day alpha build concluded with release <span className="mono">v0.2</span> on
+          14 October 2026, following the first release, <span className="mono">v0.1</span>, the day
           before. HomeNetWatch follows semantic versioning and is still pre-1.0.
         </p>
         <Link to="/about/history">Open version history</Link>
@@ -54,12 +54,30 @@ export function VersionHistoryPage() {
     <div>
       <h1 className="page-title">Version history</h1>
       <p className="page-sub">
-        Notable changes to HomeNetWatch. The current version is <span className="mono">0.3</span>.
+        Notable changes to HomeNetWatch. The current version is <span className="mono">v0.4</span>.
       </p>
 
       <section className="panel">
         <h2>
-          0.3 <span className="muted">18 October 2026</span>
+          v0.4 <span className="muted">20 October 2026</span>
+        </h2>
+
+        <h3 className="wifi-heading">Added</h3>
+        <ul className="about-list">
+          <li>Server Health: graphs of the server's CPU, memory, network, disk and database, a forecast of when the disk fills, a breakdown of what uses the disk and the database, and a weekly software and vulnerability check.</li>
+          <li>Software failures stay out of the KPI: a check that reports total loss while the same link is still passing traffic is marked as a software problem, and the Pi is asked to restart that test.</li>
+        </ul>
+
+        <h3 className="wifi-heading">Changed</h3>
+        <ul className="about-list">
+          <li>The G.711 A-law check is labeled Voice G.711.</li>
+          <li>Path View redrawn as one line of networks and hops, with the BGP view as a checklist read from you to the destination.</li>
+        </ul>
+      </section>
+
+      <section className="panel">
+        <h2>
+          v0.3 <span className="muted">18 October 2026</span>
         </h2>
 
         <h3 className="wifi-heading">Added</h3>
@@ -82,7 +100,7 @@ export function VersionHistoryPage() {
 
       <section className="panel">
         <h2>
-          0.2 <span className="muted">14 October 2026</span>
+          v0.2 <span className="muted">14 October 2026</span>
         </h2>
 
         <h3 className="wifi-heading">Added</h3>
@@ -108,7 +126,7 @@ export function VersionHistoryPage() {
 
       <section className="panel">
         <h2>
-          0.1 <span className="muted">13 October 2026</span>
+          v0.1 <span className="muted">13 October 2026</span>
         </h2>
         <p>First release.</p>
 

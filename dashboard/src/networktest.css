@@ -355,13 +355,25 @@
   flex: 0 0 auto;
   width: auto;
 }
-.nt .aw-agent .select-menu,
-.app-shell.ui-compact .nt .aw-agent .select-menu-trigger.aw-select {
+.nt .aw-agent .select-menu {
   display: block;
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
+}
+.app-shell.ui-compact .nt .aw-agent .select-menu-trigger.aw-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   box-sizing: border-box;
   width: 200px;
   min-width: 200px;
   max-width: 200px;
+  padding: 0 12px;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
 }
 .nt .aw-bar .aw-scan,
 .nt .aw-bar .nt-stop {

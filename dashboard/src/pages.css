@@ -2065,8 +2065,12 @@
   font-size: 0.85rem;
 }
 
-.software-bar-row .software-pill {
+.software-bar-row .software-pill,
+.software-tip-line .software-pill,
+.software-advisory .software-pill {
+  align-self: start;
   justify-self: start;
+  line-height: 1.4;
 }
 
 .software-bar {
@@ -2229,7 +2233,8 @@
 
 .software-tip-line {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  align-items: start;
   gap: 0.5rem;
   padding: 0.3rem 0;
   border-top: 1px solid var(--line);

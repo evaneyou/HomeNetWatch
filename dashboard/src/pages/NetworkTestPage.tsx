@@ -296,6 +296,17 @@ export default function NetworkTestPage() {
               ))}
             </div>
           ) : null}
+          {!running && !ended ? (
+            <label className="nt-duration">
+              <SelectMenu className="aw-select" aria-label="Run length" value={String(seconds)} onChange={(event) => setSeconds(Number(event.target.value))}>
+                {DURATIONS.filter((item) => item <= catalog.max_seconds).map((item) => (
+                  <option key={item} value={item}>
+                    {item < 60 ? `${item} seconds` : `${item / 60} minute${item === 60 ? "" : "s"}`}
+                  </option>
+                ))}
+              </SelectMenu>
+            </label>
+          ) : null}
           {running ? (
             <button className="nt-stop" type="button" disabled={busy} onClick={stopAll}>
               Stop all
@@ -314,17 +325,6 @@ export default function NetworkTestPage() {
               onClick={start}
             />
           )}
-          {!running && !ended ? (
-            <label className="nt-duration">
-              <SelectMenu className="aw-select" aria-label="Run length" value={String(seconds)} onChange={(event) => setSeconds(Number(event.target.value))}>
-                {DURATIONS.filter((item) => item <= catalog.max_seconds).map((item) => (
-                  <option key={item} value={item}>
-                    {item < 60 ? `${item} seconds` : `${item / 60} minute${item === 60 ? "" : "s"}`}
-                  </option>
-                ))}
-              </SelectMenu>
-            </label>
-          ) : null}
         </div>
       </div>
 

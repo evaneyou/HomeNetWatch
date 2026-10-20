@@ -229,6 +229,42 @@
   min-width: 0;
 }
 
+/* Narrow screens keep every icon whole and scroll the row, instead of clipping the last cards. */
+.sf.is-scroll {
+  height: 168px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  touch-action: pan-x pan-y;
+}
+
+.sf-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  height: 100%;
+  padding: 0 8px 0 2px;
+}
+
+.sf-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+
+.sf-link {
+  width: 22px;
+  height: 2px;
+  border-radius: 999px;
+  background: #5b6788;
+  flex: none;
+}
+
+.sf.is-scroll .sf-node {
+  flex: none;
+}
+
 .sf .react-flow {
   background: transparent;
 }

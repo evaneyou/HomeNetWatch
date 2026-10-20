@@ -9,9 +9,11 @@ import {
   type EdgeProps,
   type Node,
   type NodeProps,
+  useNodesInitialized,
+  useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export type SpeedPhase = "idle" | "waiting" | "ping" | "download" | "upload" | "done";
 
@@ -68,18 +70,22 @@ function Icon({ name }: { name: StageData["icon"] }) {
   );
 }
 
-function Stage({ data }: NodeProps<StageNode>) {
+function NodeCard({ data, handles = false }: { data: StageData; handles?: boolean }) {
   return (
     <div className={data.active ? "sf-node is-active" : "sf-node"} style={{ ["--pulse" as string]: `${data.pulse}s`, ["--tone" as string]: data.tone }}>
-      <Handle type="target" position={Position.Left} className="sf-handle" isConnectable={false} />
+      {handles ? <Handle type="target" position={Position.Left} className="sf-handle" isConnectable={false} /> : null}
       <span className="sf-icon">
         <Icon name={data.icon} />
       </span>
       <b>{data.label}</b>
       <small>{data.sub}</small>
-      <Handle type="source" position={Position.Right} className="sf-handle" isConnectable={false} />
+      {handles ? <Handle type="source" position={Position.Right} className="sf-handle" isConnectable={false} /> : null}
     </div>
   );
+}
+
+function Stage({ data }: NodeProps<StageNode>) {
+  return <NodeCard data={data} handles />;
 }
 
 /** Dots travel the line. The faster the test, the more of them and the quicker they go. */
@@ -110,18 +116,35 @@ function Flow({ sourceX, sourceY, targetX, targetY, data }: EdgeProps<FlowEdge>)
 const nodeTypes = { stage: Stage };
 const edgeTypes = { flow: Flow };
 
+/** Refit after the nodes have a real size, and again when the box changes width. */
+function Fit() {
+  const { fitView } = useReactFlow();
+  const ready = useNodesInitialized();
+  useEffect(() => {
+    if (!ready) return undefined;
+    const fit = () => fitView({ padding: 0.14, duration: 0 });
+    const frame = requestAnimationFrame(fit);
+    return () => cancelAnimationFrame(frame);
+  }, [ready, fitView]);
+  return null;
+}
+
+function stagesFor(link: "wired" | "wireless"): Omit<StageData, "active" | "pulse" | "tone">[] {
+  return [
+    { label: "Raspberry Pi", sub: link === "wired" ? "Wired" : "Wi-Fi", icon: "pi" },
+    { label: "Home router", sub: "Your network", icon: "router" },
+    { label: "Internet provider", sub: "Your ISP", icon: "isp" },
+    { label: "Internet", sub: "The path out", icon: "internet" },
+    { label: "Speed server", sub: "LibreSpeed", icon: "server" },
+  ];
+}
+
 function Diagram({ link, phase, mbps }: { link: "wired" | "wireless"; phase: SpeedPhase; mbps: number }) {
   const active = phase === "download" || phase === "upload";
   const tone = phase === "upload" ? COLORS.upload : COLORS.download;
   const pulse = active ? Math.round(Math.min(1.6, Math.max(0.35, 1.6 / (1 + mbps / 80))) * 20) / 20 : 3;
   const { nodes, edges } = useMemo(() => {
-    const stages: Omit<StageData, "active" | "pulse" | "tone">[] = [
-      { label: "Raspberry Pi", sub: link === "wired" ? "Wired" : "Wi-Fi", icon: "pi" },
-      { label: "Home router", sub: "Your network", icon: "router" },
-      { label: "Internet provider", sub: "Your ISP", icon: "isp" },
-      { label: "Internet", sub: "The path out", icon: "internet" },
-      { label: "Speed server", sub: "LibreSpeed", icon: "server" },
-    ];
+    const stages = stagesFor(link);
     const built: StageNode[] = stages.map((stage, index) => ({
       id: String(index),
       type: "stage",
@@ -147,7 +170,7 @@ function Diagram({ link, phase, mbps }: { link: "wired" | "wireless"; phase: Spe
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       fitView
-      fitViewOptions={{ padding: 0.04 }}
+      fitViewOptions={{ padding: 0.14 }}
       minZoom={0.2}
       maxZoom={1.2}
       nodesDraggable={false}
@@ -159,17 +182,51 @@ function Diagram({ link, phase, mbps }: { link: "wired" | "wireless"; phase: Spe
       zoomOnDoubleClick={false}
       preventScrolling={false}
       colorMode="dark"
-    />
+    >
+      <Fit />
+    </ReactFlow>
+  );
+}
+
+/** Five full-size cards in a row. A narrow screen scrolls them instead of slicing the icons. */
+function Strip({ link, phase, mbps }: { link: "wired" | "wireless"; phase: SpeedPhase; mbps: number }) {
+  const active = phase === "download" || phase === "upload";
+  const tone = phase === "upload" ? COLORS.upload : COLORS.download;
+  const pulse = active ? Math.round(Math.min(1.6, Math.max(0.35, 1.6 / (1 + mbps / 80))) * 20) / 20 : 3;
+  return (
+    <div className="sf-strip">
+      {stagesFor(link).map((stage, index) => (
+        <div className="sf-step" key={stage.label}>
+          {index > 0 ? <span className="sf-link" aria-hidden="true" /> : null}
+          <NodeCard data={{ ...stage, active, pulse, tone }} />
+        </div>
+      ))}
+    </div>
   );
 }
 
 /** A small picture of the connection: Pi to router to provider to the internet to the speed server. */
 export default function SpeedFlow({ link, phase, mbps }: { link: "wired" | "wireless"; phase: SpeedPhase; mbps: number }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [scroll, setScroll] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 1100px)").matches);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return undefined;
+    const update = () => setScroll(el.clientWidth < 780);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   return (
-    <div className="sf" aria-label="Path of the speed test traffic" role="img">
-      <ReactFlowProvider>
-        <Diagram link={link} phase={phase} mbps={mbps} />
-      </ReactFlowProvider>
+    <div className={scroll ? "sf is-scroll" : "sf"} ref={box} aria-label="Path of the speed test traffic" role="img">
+      {scroll ? (
+        <Strip link={link} phase={phase} mbps={mbps} />
+      ) : (
+        <ReactFlowProvider>
+          <Diagram link={link} phase={phase} mbps={mbps} />
+        </ReactFlowProvider>
+      )}
     </div>
   );
 }

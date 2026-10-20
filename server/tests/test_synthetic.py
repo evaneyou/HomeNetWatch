@@ -527,12 +527,29 @@ def test_guest_redaction_drops_markings_and_leaves_admin_results():
     hidden = redact(payload, UserRole.guest)
     assert hidden["public_ip"] == "###.#.###.#"
     assert hidden["lan_ip"] == ""
-    assert hidden["latitude"] == "##.#"
+    assert hidden["latitude"] == "##.#"  # no monitor_id, so this is not the probe's own place
     assert hidden["hostname"] == "######-####"
     assert hidden["metrics"] == {"rtt_ms": 20}
     assert hidden["aps"][0]["ssid"] == "####"
     assert hidden["aps"][0]["bssid"] == "##:##"
     assert hidden["aps"][0]["anon_key"] != hidden["aps"][1]["anon_key"]
+    probe = {
+        "monitor_id": "m1",
+        "location_label": "Living room",
+        "region": "New York",
+        "country": "United States",
+        "latitude": 40.75,
+        "longitude": -73.98,
+        "public_ip": "203.0.113.9",
+    }
+    shown = redact(probe, UserRole.guest)
+    assert shown["location_label"] == "Living room"
+    assert shown["region"] == "New York"
+    assert shown["latitude"] == 40.75
+    assert shown["public_ip"] == "###.#.###.#"
+    visitor = redact({"country": "Canada", "region": "Ontario", "city": "Toronto"}, UserRole.guest)
+    assert visitor["country"] == "######"
+    assert visitor["region"] == "#######"
     visible = redact(payload, UserRole.admin)
     assert visible["metrics"]["tos"] == 184
     assert visible["public_ip"] == "203.0.113.9"

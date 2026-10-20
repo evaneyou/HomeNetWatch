@@ -13,6 +13,7 @@ import os
 import platform
 import re
 import shutil
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from importlib import metadata
@@ -24,7 +25,7 @@ import httpx
 from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
-from app.models import ServerAdvisory, ServerDbDaily, ServerSample, ServerStuck
+from app.models import ServerAdvisory, ServerDbDaily, ServerSample, ServerStorage, ServerStuck
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ RETENTION = [
             "Audit",
             "Speed-test results",
             "Resolved issues",
-            "Daily database size",
+            "Daily database and disk size",
         ],
     },
     {"kept": "1 year", "items": ["Guest visits"]},
@@ -688,10 +689,13 @@ def record_sample(db: Session, now: Optional[datetime] = None, *, proc: Optional
     day = now.astimezone(timezone.utc).date()
     daily = db.get(ServerDbDaily, day)
     if daily is None:
-        db.add(ServerDbDaily(day=day, db_bytes=db_bytes, free_bytes=machine["disk_free_bytes"]))
+        daily = ServerDbDaily(day=day, db_bytes=db_bytes, free_bytes=machine["disk_free_bytes"])
+        db.add(daily)
     else:
         daily.db_bytes = db_bytes
         daily.free_bytes = machine["disk_free_bytes"]
+    daily.disk_used_bytes = machine["disk_used_bytes"]
+    daily.disk_total_bytes = machine["disk_total_bytes"]
     _store_stuck(db, list_processes(proc or host_proc()), now)
     return sample
 
@@ -990,6 +994,165 @@ def _range_start(name: str, now: datetime) -> datetime:
     return now - timedelta(hours=hours)
 
 
+PROJECTION_DAYS = 365  # how far ahead the storage line is drawn when the disk is not about to fill
+STORAGE_EVERY = timedelta(hours=6)
+STORAGE_HOME_CHILDREN = 3
+
+
+def disk_projection(rows: list[ServerDbDaily], now: datetime) -> dict[str, Any]:
+    """Where used disk is heading, from a straight fit of the daily readings."""
+    readings = [(row.day, row.disk_used_bytes, row.disk_total_bytes) for row in rows if row.disk_used_bytes and row.disk_total_bytes]
+    empty = {"ready": False, "growing": False, "bytes_per_day": None, "full_on": None, "far": False, "line": []}
+    if len(readings) < FORECAST_DAYS:
+        return empty
+    free = max(0, readings[-1][2] - readings[-1][1])
+    cast = forecast([(day, used) for day, used, _total in readings], free)
+    if not cast["growing"]:
+        return {**empty, "ready": True}
+    slope = float(cast["slope"])
+    used = float(readings[-1][1])
+    days_to_full = free / slope if slope > 0 else None
+    reach = min(days_to_full, PROJECTION_DAYS) if days_to_full is not None else PROJECTION_DAYS
+    end = now + timedelta(days=reach)
+    full_on = (now + timedelta(days=days_to_full)).date().isoformat() if days_to_full is not None and days_to_full < 365 * 200 else None
+    return {
+        "ready": True,
+        "growing": True,
+        "bytes_per_day": round(slope),
+        "full_on": full_on,
+        "far": days_to_full is None or days_to_full > PROJECTION_DAYS,
+        "line": [{"t": now, "bytes": used}, {"t": end, "bytes": used + slope * reach}],
+    }
+
+
+def _du(path: Path, timeout: int = 600) -> Optional[int]:
+    """Bytes under a path on the same filesystem, or None when it cannot be read."""
+    if not path.exists():
+        return None
+    try:
+        done = subprocess.run(
+            ["nice", "-n", "19", "du", "-sxb", str(path)], capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    first = (done.stdout or "").split("\t", 1)[0].strip()
+    return int(first) if first.isdigit() else None
+
+
+def measure_storage(root: Path, used_bytes: int, total_bytes: int, db_bytes: int) -> dict[str, Any]:
+    """What uses the disk, in groups with the parts inside them. Slow: it walks big folders."""
+    layers = _du(root / "var" / "lib" / "containerd") or 0
+    docker_dir = _du(root / "var" / "lib" / "docker") or 0
+    volumes = _du(root / "var" / "lib" / "docker" / "volumes") or 0
+    layers += max(0, docker_dir - volumes)
+
+    home_children: list[dict[str, Any]] = []
+    home_dir = root / "home"
+    users = sorted(path for path in home_dir.iterdir() if path.is_dir()) if home_dir.is_dir() else []
+    for user in users:
+        try:
+            entries = sorted(user.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            size = _du(entry)
+            if size:
+                name = entry.name if len(users) == 1 else f"{user.name}/{entry.name}"
+                home_children.append({"name": name, "bytes": size})
+    home_children.sort(key=lambda child: -child["bytes"])
+    home_total = _du(home_dir) or sum(child["bytes"] for child in home_children)
+    shown = home_children[:STORAGE_HOME_CHILDREN]
+    rest = home_total - sum(child["bytes"] for child in shown)
+    if rest > 0:
+        shown.append({"name": "Other", "bytes": rest})
+
+    system = _du(root / "usr") or 0
+    groups = [
+        {
+            "key": "docker",
+            "title": "Docker images and build cache",
+            "bytes": layers,
+            "children": [
+                {
+                    "name": "Image layers and build cache",
+                    "bytes": layers,
+                    "note": "Mostly build cache left over from deploys. On the server, docker builder prune clears it.",
+                }
+            ],
+        },
+        {"key": "home", "title": "Home folders", "bytes": home_total, "children": shown},
+        {
+            "key": "system",
+            "title": "System programs",
+            "bytes": system,
+            "children": [{"name": "Installed programs and libraries", "bytes": system, "note": "/usr"}],
+        },
+        {
+            "key": "volumes",
+            "title": "Docker volumes",
+            "bytes": volumes,
+            "children": [
+                {"name": "Database", "bytes": min(db_bytes, volumes)},
+                {"name": "Other volumes", "bytes": max(0, volumes - db_bytes)},
+            ],
+        },
+    ]
+    measured = sum(group["bytes"] for group in groups)
+    rest_bytes = max(0, used_bytes - measured)
+    groups.append(
+        {
+            "key": "other",
+            "title": "Everything else",
+            "bytes": rest_bytes,
+            "children": [{"name": "Logs, snaps, package caches, boot files", "bytes": rest_bytes, "note": "What is left after the groups above."}],
+        }
+    )
+    for group in groups:
+        group["children"] = [child for child in group["children"] if child["bytes"] > 0]
+    groups = [group for group in groups if group["bytes"] > 0]
+    groups.sort(key=lambda group: -group["bytes"])
+    return {"version": 1, "used_bytes": used_bytes, "total_bytes": total_bytes, "groups": groups}
+
+
+def storage_due(db: Session, now: datetime) -> bool:
+    row = db.get(ServerStorage, 1)
+    if row is None:
+        return True
+    last = row.checked_at if row.checked_at.tzinfo else row.checked_at.replace(tzinfo=timezone.utc)
+    return now - last >= STORAGE_EVERY
+
+
+def run_storage() -> None:
+    """Measure what uses the disk when the last measurement is old. It walks big folders, so it runs apart."""
+    from app.db import SessionLocal
+
+    now = datetime.now(timezone.utc)
+    db = SessionLocal()
+    try:
+        if not storage_due(db, now):
+            return
+        db_bytes = read_database(db)[0]
+    finally:
+        db.close()
+    root = host_root()
+    disk = shutil.disk_usage(root if root.exists() else "/")
+    payload = measure_storage(root, disk.used, disk.total, db_bytes)
+    db = SessionLocal()
+    try:
+        row = db.get(ServerStorage, 1)
+        if row is None:
+            db.add(ServerStorage(id=1, checked_at=now, payload=payload))
+        else:
+            row.checked_at = now
+            row.payload = payload
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 PREVIEW_ADVISORIES = 3  # what a row hover shows; the details page has the rest
 
 
@@ -1082,6 +1245,7 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
     if latest is not None:
         latest = {**latest, "connections": connections}
     advisory = db.get(ServerAdvisory, 1)
+    measured = db.get(ServerStorage, 1)
     stuck = [
         {
             "pid": row.pid,
@@ -1103,6 +1267,10 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
             {"checked_at": advisory.checked_at, **slim_advisories(advisory.payload)} if advisory is not None else None
         ),
         "stuck": stuck,
+        "storage": {
+            "projection": disk_projection(daily_rows, now),
+            "breakdown": {"checked_at": measured.checked_at, **measured.payload} if measured is not None else None,
+        },
     }
 
 

@@ -815,6 +815,18 @@ class ServerDbDaily(Base):
     day: Mapped[date] = mapped_column(Date, primary_key=True)
     db_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     free_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    disk_used_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    disk_total_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+
+class ServerStorage(Base):
+    """The cached breakdown of what uses the disk. One row."""
+
+    __tablename__ = "server_storage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
 class ServerAdvisory(Base):

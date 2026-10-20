@@ -95,6 +95,17 @@ async def _lifespan(_app: FastAPI):
                 log.exception("server advisory check failed")
             await asyncio.sleep(60 * 60)  # only fetches when the Sunday 3 AM Eastern check is due
 
+    async def _server_storage_loop() -> None:
+        from app.server_health import run_storage
+
+        await asyncio.sleep(120)  # walking the disk is heavy; let the server settle after a restart first
+        while True:
+            try:
+                await asyncio.to_thread(run_storage)
+            except Exception:
+                log.exception("server storage measurement failed")
+            await asyncio.sleep(60 * 60)  # only measures when the last result is six hours old
+
     async def _kpi_loop() -> None:
         from app import kpi
 
@@ -123,6 +134,7 @@ async def _lifespan(_app: FastAPI):
             asyncio.create_task(_kpi_loop()),
             asyncio.create_task(_server_health_loop()),
             asyncio.create_task(_server_advisory_loop()),
+            asyncio.create_task(_server_storage_loop()),
         ]
         if should_run_bg
         else []

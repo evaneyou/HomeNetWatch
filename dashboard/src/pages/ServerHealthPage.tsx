@@ -1,7 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ReferenceDot,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { api } from "../api";
 import { TimeAxis } from "../components/InternetDetail";
 import { CHART_COLORS } from "../chartTheme";
@@ -32,6 +43,22 @@ type PackageRow = {
   advisory_count?: number;
   risk: string;
 };
+type StorageReport = {
+  projection: {
+    ready: boolean;
+    growing: boolean;
+    bytes_per_day: number | null;
+    full_on: string | null;
+    far: boolean;
+    line: { t: string; bytes: number }[];
+  };
+  breakdown: {
+    checked_at: string;
+    used_bytes: number;
+    total_bytes: number;
+    groups: { key: string; title: string; bytes: number; children: { name: string; bytes: number; note?: string }[] }[];
+  } | null;
+};
 type SoftwareGroup = { key?: string; title: string; note?: string; error?: string; packages: PackageRow[] };
 type PackageDetail = {
   source: string;
@@ -56,6 +83,7 @@ type Report = {
     groups?: SoftwareGroup[];
   } | null;
   stuck: { pid: number; name: string; state: string; reason: string; since: string }[];
+  storage: StorageReport;
 };
 
 const RANGES: Range[] = ["1h", "6h", "24h", "7d"];
@@ -177,6 +205,116 @@ function Chart({
       {note ? <p className="muted server-health-note">{note}</p> : null}
       {body}
     </div>
+  );
+}
+
+function dayText(value: string): string {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function projectionText(projection: StorageReport["projection"]): string {
+  if (!projection.ready) return "There is not enough history yet. The projection needs 7 daily readings.";
+  if (!projection.growing) return "Used space is not growing.";
+  const rate = projection.bytes_per_day == null ? "" : ` about ${amount(projection.bytes_per_day)} a day`;
+  if (projection.full_on && !projection.far) return `At${rate}, the disk would fill on ${dayText(projection.full_on)}.`;
+  return `Used space is growing${rate ? `,${rate}` : ""}. The disk would not fill within the next year.`;
+}
+
+function StorageChart({ history, projection, total }: { history: { ts: number; used: number }[]; projection: StorageReport["projection"]; total: number }) {
+  const line = projection.line.map((point) => ({ ts: new Date(point.t).getTime(), projected: point.bytes }));
+  const rows: { ts: number; used?: number; projected?: number }[] = [...history, ...line].sort((a, b) => a.ts - b.ts);
+  if (history.length === 0) return <div className="state-box">No samples in this range yet.</div>;
+  const end = rows[rows.length - 1].ts;
+  const fills = projection.growing && projection.full_on && !projection.far && line.length === 2;
+  return (
+    <div style={{ width: "100%", height: 240 }}>
+      <ResponsiveContainer>
+        <LineChart data={rows} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
+          <CartesianGrid stroke="var(--line)" strokeDasharray="3 3" />
+          <XAxis
+            dataKey="ts"
+            type="number"
+            scale="time"
+            domain={[rows[0].ts, end]}
+            tick={{ fontSize: 11, fill: "var(--muted)" }}
+            tickFormatter={(value) => new Date(Number(value)).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+          />
+          <YAxis
+            domain={[0, total]}
+            tick={{ fontSize: 11, fill: "var(--muted)" }}
+            width={72}
+            tickFormatter={(value) => amount(Number(value))}
+          />
+          <Legend />
+          <Tooltip
+            labelFormatter={(value) => new Date(Number(value)).toLocaleString()}
+            formatter={(value, name) => [typeof value === "number" ? amount(value) : "—", String(name)]}
+          />
+          <ReferenceLine y={total} stroke="var(--fail)" strokeDasharray="6 4" label={{ value: `Disk size ${amount(total)}`, fill: "var(--fail)", fontSize: 11, position: "insideTopLeft" }} />
+          <Line type="monotone" dataKey="used" name="Used" stroke={CHART_COLORS[0]} dot={false} isAnimationActive={false} connectNulls={false} />
+          {line.length > 0 ? (
+            <Line
+              type="linear"
+              dataKey="projected"
+              name="Projection"
+              stroke={CHART_COLORS[1]}
+              strokeDasharray="6 4"
+              dot={false}
+              isAnimationActive={false}
+              connectNulls
+            />
+          ) : null}
+          {fills ? <ReferenceDot x={end} y={total} r={4} fill={CHART_COLORS[1]} stroke="none" /> : null}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function StorageBreakdown({ breakdown }: { breakdown: NonNullable<StorageReport["breakdown"]> }) {
+  const used = breakdown.used_bytes || 1;
+  const share = (bytes: number) => {
+    const percent = (100 * bytes) / used;
+    return percent > 0 && percent < 1 ? "<1%" : `${Math.round(percent)}%`;
+  };
+  return (
+    <>
+      <h3 className="server-health-heading">What uses the space</h3>
+      <p className="muted server-health-note">Measured {when(breakdown.checked_at)}. It is measured every 6 hours.</p>
+      <div
+        className="storage-stack"
+        role="img"
+        aria-label={breakdown.groups.map((group) => `${group.title} ${amount(group.bytes)}`).join(", ")}
+      >
+        {breakdown.groups.map((group) => (
+          <i key={group.key} className={`storage-${group.key}`} style={{ flex: group.bytes }} />
+        ))}
+      </div>
+      {breakdown.groups.map((group, index) => (
+        <details key={group.key} className={`storage-group storage-${group.key}`} open={index === 0 || undefined}>
+          <summary>
+            <span className="storage-title">
+              <span className="storage-swatch" />
+              {group.title}
+            </span>
+            <span className="storage-num">{amount(group.bytes)}</span>
+            <span className="storage-num muted">{share(group.bytes)}</span>
+          </summary>
+          {group.children.map((child) => (
+            <div className="storage-kid" key={child.name}>
+              <span>
+                {child.name}
+                {child.note ? <small>{child.note}</small> : null}
+              </span>
+              <span className="storage-num">{amount(child.bytes)}</span>
+              <span className="storage-num muted">{share(child.bytes)}</span>
+            </div>
+          ))}
+        </details>
+      ))}
+    </>
   );
 }
 
@@ -566,9 +704,11 @@ export default function ServerHealthPage() {
     setParams(next, { replace: true });
   }
 
+  // The storage chart always shows the last 7 days, so the line has history to project from.
+  const fetchRange: Range = active === "storage" ? "7d" : range;
   const query = useQuery({
-    queryKey: ["server-health", range],
-    queryFn: () => api.serverHealth(range) as Promise<Report>,
+    queryKey: ["server-health", fetchRange],
+    queryFn: () => api.serverHealth(fetchRange) as Promise<Report>,
     refetchInterval: 60_000,
   });
   const report = query.data;
@@ -622,7 +762,27 @@ export default function ServerHealthPage() {
           />
         );
       case "storage":
-        return <Chart key={key} title="Storage" data={data} span={span} lines={[{ key: "disk", name: "Used" }]} unit="" />;
+        return (
+          <div className="panel" key={key}>
+            <h2 className="server-health-heading">Storage</h2>
+            <p className="muted server-health-note">
+              {latest ? `${amount(latest.disk_used_mb * 1024 * 1024)} of ${amount(latest.disk_total_mb * 1024 * 1024)} used. ` : ""}
+              {projectionText(current.storage.projection)}
+            </p>
+            {latest ? (
+              <StorageChart
+                history={data.map((row) => ({ ts: row.ts, used: row.disk }))}
+                projection={current.storage.projection}
+                total={latest.disk_total_mb * 1024 * 1024}
+              />
+            ) : null}
+            {current.storage.breakdown ? (
+              <StorageBreakdown breakdown={current.storage.breakdown} />
+            ) : (
+              <p className="muted server-health-note">What uses the space is being measured. Check back in a few minutes.</p>
+            )}
+          </div>
+        );
       case "database":
         return (
           <div className="panel" key={key}>
@@ -706,7 +866,7 @@ export default function ServerHealthPage() {
     }
   }
 
-  const graphTab = active !== "software" && active !== "stuck";
+  const graphTab = active !== "software" && active !== "stuck" && active !== "storage";
 
   return (
     <div className="server-health">

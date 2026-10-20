@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import delete, select
 
 from app.auth import hash_password
-from app.models import ServerAdvisory, ServerDbDaily, ServerSample, ServerStuck, User, UserRole
+from app.models import ServerAdvisory, ServerDbDaily, ServerSample, ServerStorage, ServerStuck, User, UserRole
 from app.server_health import (
     advisories_from_osv,
     build_advisory_payload,
@@ -17,9 +17,11 @@ from app.server_health import (
     choose_iface,
     cpu_counters,
     cpu_percent,
+    disk_projection,
     forecast,
     judge_stuck,
     maybe_refresh_advisories,
+    measure_storage,
     parse_net,
     prune,
     record_sample,
@@ -286,4 +288,59 @@ def test_package_details_have_every_advisory_but_the_report_only_a_preview(clien
     assert client.get("/api/v1/server-health/software", params={"source": "x", "name": "tar"}).status_code == 404
 
     db.execute(delete(ServerAdvisory))
+    db.commit()
+
+def test_disk_projection_needs_a_week_then_dates_the_full_disk():
+    now = datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
+    gb = 1024**3
+    short = [ServerDbDaily(day=date(2026, 10, 14) + timedelta(days=i), db_bytes=1, free_bytes=1, disk_used_bytes=10 * gb, disk_total_bytes=40 * gb) for i in range(3)]
+    assert disk_projection(short, now)["ready"] is False
+
+    rows = [
+        ServerDbDaily(day=date(2026, 10, 14) + timedelta(days=i), db_bytes=1, free_bytes=1, disk_used_bytes=(10 + i) * gb, disk_total_bytes=40 * gb)
+        for i in range(7)
+    ]
+    cast = disk_projection(rows, now)
+    assert cast["ready"] and cast["growing"]
+    assert abs(cast["bytes_per_day"] - gb) < gb * 0.01
+    assert cast["full_on"] == (now + timedelta(days=24)).date().isoformat()  # 16 GB used, 24 GB free, 1 GB a day
+    assert cast["far"] is False
+    assert cast["line"][0]["bytes"] == 16 * gb
+
+    flat = [ServerDbDaily(day=date(2026, 10, 14) + timedelta(days=i), db_bytes=1, free_bytes=1, disk_used_bytes=10 * gb, disk_total_bytes=40 * gb) for i in range(7)]
+    assert disk_projection(flat, now)["growing"] is False
+
+
+def test_storage_breakdown_groups_what_uses_the_disk(tmp_path):
+    (tmp_path / "usr" / "lib").mkdir(parents=True)
+    (tmp_path / "usr" / "lib" / "big").write_bytes(b"x" * 50_000)
+    (tmp_path / "home" / "me" / ".cache").mkdir(parents=True)
+    (tmp_path / "home" / "me" / ".cache" / "blob").write_bytes(b"x" * 80_000)
+    (tmp_path / "home" / "me" / "project").mkdir()
+    (tmp_path / "home" / "me" / "project" / "file").write_bytes(b"x" * 20_000)
+    (tmp_path / "var" / "lib" / "containerd").mkdir(parents=True)
+    (tmp_path / "var" / "lib" / "containerd" / "layer").write_bytes(b"x" * 200_000)
+    (tmp_path / "var" / "lib" / "docker" / "volumes").mkdir(parents=True)
+    (tmp_path / "var" / "lib" / "docker" / "volumes" / "pg").write_bytes(b"x" * 30_000)
+
+    result = measure_storage(tmp_path, used_bytes=2_000_000, total_bytes=4_000_000, db_bytes=10_000)
+    groups = {group["key"]: group for group in result["groups"]}
+    assert set(groups) == {"docker", "home", "system", "volumes", "other"}
+    assert groups["docker"]["bytes"] >= 200_000
+    assert groups["home"]["children"][0]["name"] == ".cache"
+    assert groups["volumes"]["children"][0] == {"name": "Database", "bytes": 10_000}
+    assert groups["other"]["bytes"] == 2_000_000 - sum(g["bytes"] for k, g in groups.items() if k != "other")
+    assert [g["bytes"] for g in result["groups"]] == sorted((g["bytes"] for g in result["groups"]), reverse=True)
+
+
+def test_report_has_the_storage_projection_and_breakdown(client, db):
+    _user(db, "admin", UserRole.admin)
+    db.execute(delete(ServerStorage))
+    db.add(ServerStorage(id=1, checked_at=datetime.now(timezone.utc), payload={"version": 1, "used_bytes": 1, "total_bytes": 2, "groups": []}))
+    db.commit()
+    login(client)
+    body = client.get("/api/v1/server-health?range=7d").json()
+    assert body["storage"]["breakdown"]["total_bytes"] == 2
+    assert body["storage"]["projection"]["ready"] in (True, False)
+    db.execute(delete(ServerStorage))
     db.commit()

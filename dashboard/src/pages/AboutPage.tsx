@@ -62,16 +62,10 @@ export function VersionHistoryPage() {
           v0.4 <span className="muted">20 October 2026</span>
         </h2>
 
-        <h3 className="wifi-heading">Added</h3>
         <ul className="about-list">
-          <li>Server Health: graphs of the server's CPU, memory, network, disk and database, a forecast of when the disk fills, a breakdown of what uses the disk and the database, and a weekly software and vulnerability check.</li>
-          <li>Software failures stay out of the KPI: a check that reports total loss while the same link is still passing traffic is marked as a software problem, and the Pi is asked to restart that test.</li>
-        </ul>
-
-        <h3 className="wifi-heading">Changed</h3>
-        <ul className="about-list">
-          <li>The G.711 A-law check is labeled Voice G.711.</li>
-          <li>Path View redrawn as one line of networks and hops, with the BGP view as a checklist read from you to the destination.</li>
+          <li>The system now watches itself. One page shows how hard the server is working, how full its disk is, and when it would run out of space.</li>
+          <li>It also checks the server's software for known security flaws and says which ones have a fix ready.</li>
+          <li>A test that fails while the connection is clearly still working is treated as a software glitch, kept out of the performance report, and restarted on its own.</li>
         </ul>
       </section>
 
@@ -80,21 +74,12 @@ export function VersionHistoryPage() {
           v0.3 <span className="muted">18 October 2026</span>
         </h2>
 
-        <h3 className="wifi-heading">Added</h3>
         <ul className="about-list">
-          <li>Home overview: an Apps chip for real-time application flows (voice, video), with Wi-Fi shown first, debounced path health, and offline probe detection on the face orb.</li>
-          <li>Speed Test: a live 30-second speed test on the Pi over Wired or Wi-Fi, with an animated path diagram and real-time download and upload bar graphs.</li>
-          <li>KPI Dashboard and daily history: executive reporting of availability, voice/video quality, packet drop, latency, and speed across day, week, month, and year views, with CSV export.</li>
-          <li>Telegram alerts: real-time push notifications for network outages, ISP link degradation, Wi-Fi security alerts, Pi health, server issues, and application checks, with recovery notices.</li>
-          <li>Network Test (stress run): multi-session synthetic load testing (voice, video, remote desktop, market data, round-trip probe, throughput flood) with live per-link charts.</li>
-          <li>Airwaves redesign: compact phone-first layout, one-line band stats, channel graph, and Kismet memory caps with daily restarts.</li>
-          <li>Guest visits dashboard: 7-day to 1-year visitor analytics with GeoIP country and city breakdown.</li>
-        </ul>
-
-        <h3 className="wifi-heading">Changed</h3>
-        <ul className="about-list">
-          <li>Guest sessions mask each character of identifying fields with <code>#</code> while keeping measurements visible.</li>
-          <li>Hardened sign-in rate limiting, server-side DNS validation for traces, CSRF coverage, and Pi agent policy routing and Wi-Fi power management.</li>
+          <li>A one-page report of how the network has performed, by day, week, month or year, and it can be exported to a spreadsheet.</li>
+          <li>A 30-second speed test you can watch as it runs, over the wired connection or Wi-Fi.</li>
+          <li>A way to put the connection under load, with several kinds of traffic at once, and watch how it copes.</li>
+          <li>Alerts that arrive on your phone the moment something goes wrong, and again when it recovers.</li>
+          <li>A view of who has visited the guest network, and where they came from.</li>
         </ul>
       </section>
 
@@ -103,24 +88,10 @@ export function VersionHistoryPage() {
           v0.2 <span className="muted">14 October 2026</span>
         </h2>
 
-        <h3 className="wifi-heading">Added</h3>
         <ul className="about-list">
-          <li>Network Path Diagram: an animated diagram of the path each test takes, with hover details and zoom.</li>
-          <li>Path View as React Flow diagrams that fit a phone, with the latency chart and hop detail folded into the path.</li>
-          <li>Trace any host or public IP on demand from Path View (admin only).</li>
-          <li>Zoom on the real-time application health charts.</li>
-          <li>The agent reports its network interface names and LAN address.</li>
-        </ul>
-
-        <h3 className="wifi-heading">Changed</h3>
-        <ul className="about-list">
-          <li>A compact layout for Path View and the remote agent pages, with the time range on the tab row.</li>
-          <li>File Transfer is now Bandwidth Test, and Home shows Web first.</li>
-        </ul>
-
-        <h3 className="wifi-heading">Removed</h3>
-        <ul className="about-list">
-          <li>draw.io, the web-service MTR checks, and the Video call check.</li>
+          <li>The route from home to any website, drawn step by step, so you can see exactly where a connection slows down.</li>
+          <li>The whole view works on a phone.</li>
+          <li>Guests can be given view-only access, so someone can look without being able to change anything.</li>
         </ul>
       </section>
 
@@ -128,26 +99,10 @@ export function VersionHistoryPage() {
         <h2>
           v0.1 <span className="muted">13 October 2026</span>
         </h2>
-        <p>First release.</p>
-
-        <h3 className="wifi-heading">Added</h3>
         <ul className="about-list">
-          <li>Server: FastAPI and Postgres, cookie auth, enrollment with a pinned TLS key, WireGuard tunnels, and retention of raw results.</li>
-          <li>Dashboard: overview, remote-agent detail, internet path, airwaves, issues, and settings.</li>
-          <li>Pi agent: LAN setup page, device health, and HTTP, ping, MTR, and Bandwidth Test checks.</li>
-          <li>Bandwidth Test uses a LibreSpeed backend.</li>
-          <li>Airwaves: Wi-Fi scans and Kismet capture, with trusted access points and nearby clients.</li>
-        </ul>
-
-        <h3 className="wifi-heading">Fixed</h3>
-        <ul className="about-list">
-          <li>A path that stays slower, when the latest samples agree, is treated as the new normal instead of remaining marked slow.</li>
-          <li>A silent last hop on a path trace no longer turns the home tiles red by itself.</li>
-        </ul>
-
-        <h3 className="wifi-heading">Removed</h3>
-        <ul className="about-list">
-          <li>iperf3 bandwidth checks. Bandwidth Test is the throughput check.</li>
+          <li>A small device at home measures the connection around the clock and reports back to a central dashboard.</li>
+          <li>The dashboard shows at a glance what is healthy, what is struggling, and where along the path a problem begins.</li>
+          <li>It watches the Wi-Fi too: the nearby networks, the trusted access points, and the devices using them.</li>
         </ul>
       </section>
 

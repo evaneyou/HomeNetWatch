@@ -198,11 +198,13 @@ def _user(db, username: str, role: UserRole) -> None:
         db.commit()
 
 
-def test_viewer_is_refused(client, db):
+def test_viewer_is_refused_and_a_guest_can_read(client, db):
     _user(db, "viewer-health", UserRole.viewer)
     login(client, "viewer-health", "viewer-health")
-    response = client.get("/api/v1/server-health")
-    assert response.status_code == 403
+    assert client.get("/api/v1/server-health").status_code == 403
+    _user(db, "guest-health", UserRole.guest)
+    login(client, "guest-health", "guest-health")
+    assert client.get("/api/v1/server-health").status_code == 200
 
 
 def test_samples_are_stored_and_pruned(client, db):

@@ -133,6 +133,13 @@ def get_current_user(
     return user
 
 
+def require_reader(user: Annotated[User, Depends(get_current_user)]) -> User:
+    """Anyone signed in except a viewer. Server Health is read-only, so a guest may see it."""
+    if user.role == UserRole.viewer:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed")
+    return user
+
+
 def require_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
     if user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")

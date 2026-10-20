@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.auth import require_admin
+from app.auth import require_reader
 from app.db import get_db
 from app.models import User
 from app.server_health import package_detail, report
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/v1/server-health")
 @router.get("")
 def get_server_health(
     db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(require_admin)],
+    _reader: Annotated[User, Depends(require_reader)],
     range_name: Annotated[str, Query(alias="range", pattern="^(1h|6h|24h|7d)$")] = "1h",
 ) -> dict[str, Any]:
     return report(db, range_name)
@@ -27,7 +27,7 @@ def get_server_health(
 @router.get("/software")
 def get_software_package(
     db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(require_admin)],
+    _reader: Annotated[User, Depends(require_reader)],
     source: Annotated[str, Query(max_length=64)],
     name: Annotated[str, Query(max_length=200)],
 ) -> dict[str, Any]:

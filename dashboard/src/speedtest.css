@@ -225,44 +225,39 @@
 
 /* The path. */
 .sf {
+  --sf-tone: #4fd1b5;
   height: 150px;
   min-width: 0;
 }
 
-/* Narrow screens keep every icon whole and scroll the row, instead of clipping the last cards. */
-.sf.is-scroll {
-  height: 168px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  touch-action: pan-x pan-y;
+.sf.is-up {
+  --sf-tone: #6aa8ff;
 }
 
-.sf-strip {
+/* Phone: the same path, small enough that every icon fits. */
+.sf.is-compact {
+  height: 96px;
+}
+
+.sf-mini {
   display: flex;
   align-items: center;
-  gap: 12px;
-  width: max-content;
   height: 100%;
-  padding: 0 8px 0 2px;
+  min-width: 0;
 }
 
-.sf-step {
+.sf-mini .sf-step {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex: none;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
-.sf-link {
-  width: 22px;
-  height: 2px;
-  border-radius: 999px;
-  background: #5b6788;
+.sf-lane {
   flex: none;
-}
-
-.sf.is-scroll .sf-node {
-  flex: none;
+  width: 18px;
+  height: 16px;
+  overflow: visible;
 }
 
 .sf .react-flow {
@@ -307,13 +302,46 @@
   color: var(--s-soft);
 }
 
-.sf-node.is-active {
-  border-color: var(--tone);
+.sf.is-live .sf-node {
+  border-color: color-mix(in srgb, var(--sf-tone) 75%, var(--s-line));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--sf-tone) 22%, transparent);
 }
 
-.sf-node.is-active .sf-icon {
-  color: var(--tone);
-  animation: sf-pulse var(--pulse, 1s) ease-in-out infinite;
+.sf.is-live .sf-icon {
+  color: var(--sf-tone);
+  animation: sf-pulse 0.9s ease-in-out infinite;
+}
+
+.sf.is-compact .sf-node {
+  width: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 2px;
+  padding: 0 1px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.sf.is-compact .sf-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+
+.sf.is-compact .sf-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sf.is-compact .sf-node b {
+  font-size: 9px;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @keyframes sf-pulse {
@@ -323,8 +351,8 @@
     transform: scale(1);
   }
   50% {
-    box-shadow: 0 0 0 7px color-mix(in srgb, var(--tone) 22%, transparent);
-    transform: scale(1.06);
+    box-shadow: 0 0 14px 1px color-mix(in srgb, var(--sf-tone) 55%, transparent);
+    transform: scale(1.08);
   }
 }
 
@@ -488,7 +516,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sf-node.is-active .sf-icon {
+  .sf.is-live .sf-icon {
     animation: none;
   }
 }

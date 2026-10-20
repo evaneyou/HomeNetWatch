@@ -215,6 +215,8 @@ export const api = {
     request("/api/v1/settings/telegram/detect", { method: "POST", headers: csrfHeaders(csrf), body: JSON.stringify({ token }) }),
   telegramDisconnect: (csrf: string) => request("/api/v1/settings/telegram", { method: "DELETE", headers: csrfHeaders(csrf) }),
   serverHealth: (range: string) => request(`/api/v1/server-health?range=${encodeURIComponent(range)}`),
+  serverHealthPackage: (source: string, name: string) =>
+    request(`/api/v1/server-health/software?source=${encodeURIComponent(source)}&name=${encodeURIComponent(name)}`),
   kpi: (period: string, day?: string, monitorId?: string) =>
     request(`/api/v1/kpi?period=${encodeURIComponent(period)}${day ? `&day=${encodeURIComponent(day)}` : ""}${monitorId ? `&monitor_id=${encodeURIComponent(monitorId)}` : ""}`),
   kpiDaily: (first: string, last: string, monitorId?: string) =>

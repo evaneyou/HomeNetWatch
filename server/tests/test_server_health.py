@@ -244,3 +244,46 @@ def test_samples_are_stored_and_pruned(client, db):
     db.execute(delete(ServerSample).where(ServerSample.id == sample.id))
     db.execute(delete(ServerDbDaily).where(ServerDbDaily.day == now.date()))
     db.commit()
+
+
+def test_package_details_have_every_advisory_but_the_report_only_a_preview(client, db):
+    _user(db, "admin", UserRole.admin)
+    many = [{"id": f"UBUNTU-CVE-2026-{i}", "risk": "high", "summary": "x"} for i in range(40)]
+    payload = {
+        "version": 2,
+        "os": "Ubuntu 24.04",
+        "kernel": "7.0.0",
+        "error": "",
+        "packages": [
+            {"name": "linux-oracle", "installed": "1", "newest": "1", "behind": False, "advisories": many, "risk": "high"}
+        ],
+        "groups": [
+            {
+                "title": "Server container",
+                "packages": [
+                    {"name": "tar", "installed": "1", "newest": "2", "behind": True, "advisories": [], "risk": "low"}
+                ],
+            }
+        ],
+    }
+    db.execute(delete(ServerAdvisory))
+    db.add(ServerAdvisory(id=1, checked_at=datetime.now(timezone.utc), payload=payload))
+    db.commit()
+    login(client)
+
+    body = client.get("/api/v1/server-health?range=1h").json()
+    row = body["advisories"]["packages"][0]
+    assert len(row["advisories"]) == 3
+    assert row["advisory_count"] == 40
+    assert body["advisories"]["groups"][0]["key"] == "server-container"
+
+    full = client.get("/api/v1/server-health/software", params={"source": "host", "name": "linux-oracle"})
+    assert full.status_code == 200
+    assert len(full.json()["package"]["advisories"]) == 40
+    other = client.get("/api/v1/server-health/software", params={"source": "server-container", "name": "tar"})
+    assert other.json()["source_title"] == "Server container"
+    assert client.get("/api/v1/server-health/software", params={"source": "host", "name": "nope"}).status_code == 404
+    assert client.get("/api/v1/server-health/software", params={"source": "x", "name": "tar"}).status_code == 404
+
+    db.execute(delete(ServerAdvisory))
+    db.commit()

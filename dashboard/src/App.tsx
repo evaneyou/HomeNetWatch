@@ -28,7 +28,7 @@ import ConnectionDiagramPage from "./pages/ConnectionDiagramPage";
 import TestPage from "./pages/TestPage";
 import AppFooter from "./components/AppFooter";
 import KpiPage from "./pages/KpiPage";
-import ServerHealthPage from "./pages/ServerHealthPage";
+import ServerHealthPage, { ServerHealthPackagePage } from "./pages/ServerHealthPage";
 import NetworkTestPage from "./pages/NetworkTestPage";
 import SpeedTestPage from "./pages/SpeedTestPage";
 import type { User } from "./types";
@@ -353,6 +353,10 @@ function Shell({ role, onLogout }: { role: User["role"]; onLogout: () => void })
           <Route path="/about" element={<AboutPage />} />
           <Route path="/about/history" element={<VersionHistoryPage />} />
           <Route path="/server-health" element={role === "admin" ? <ServerHealthPage /> : <Navigate to="/" replace />} />
+          <Route
+            path="/server-health/software"
+            element={role === "admin" ? <ServerHealthPackagePage /> : <Navigate to="/" replace />}
+          />
           <Route path="/issues" element={<IssuesPage />} />
           <Route path="/issues/:id" element={<IssueDetailPage />} />
           <Route path="/settings" element={seeSettings ? <SettingsLayout /> : <Navigate to="/" replace />}>

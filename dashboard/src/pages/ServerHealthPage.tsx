@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { api } from "../api";
 import { TimeAxis } from "../components/InternetDetail";
@@ -23,7 +23,24 @@ type Point = {
   connections: number;
 };
 type Advisory = { id: string; risk: string; summary: string };
-type PackageRow = { name: string; installed: string; newest: string; behind: boolean; advisories: Advisory[]; risk: string };
+type PackageRow = {
+  name: string;
+  installed: string;
+  newest: string;
+  behind: boolean;
+  advisories: Advisory[];
+  advisory_count?: number;
+  risk: string;
+};
+type SoftwareGroup = { key?: string; title: string; note?: string; error?: string; packages: PackageRow[] };
+type PackageDetail = {
+  source: string;
+  source_title: string;
+  os: string;
+  kernel: string;
+  checked_at: string;
+  package: PackageRow;
+};
 type Report = {
   latest: Point | null;
   points: Point[];
@@ -36,7 +53,7 @@ type Report = {
     kernel: string;
     error?: string;
     packages: PackageRow[];
-    groups?: { title: string; note?: string; error?: string; packages: PackageRow[] }[];
+    groups?: SoftwareGroup[];
   } | null;
   stuck: { pid: number; name: string; state: string; reason: string; since: string }[];
 };
@@ -175,30 +192,295 @@ function allPackages(advisories: Report["advisories"]): PackageRow[] {
   return [...advisories.packages, ...(advisories.groups ?? []).flatMap((group) => group.packages)];
 }
 
-function PackageTable({ rows }: { rows: PackageRow[] }) {
+function riskLabel(risk: string): string {
+  return risk.charAt(0).toUpperCase() + risk.slice(1);
+}
+
+type Source = { key: string; title: string; heading: string; note?: string; error?: string; packages: PackageRow[] };
+
+function sourcesOf(advisories: NonNullable<Report["advisories"]>): Source[] {
+  const host = [advisories.os, advisories.kernel ? `kernel ${advisories.kernel}` : ""].filter(Boolean).join(" · ");
+  return [
+    { key: "host", title: "Host", heading: host ? `Host · ${host}` : "Host", error: advisories.error, packages: advisories.packages },
+    ...(advisories.groups ?? []).map((group) => ({
+      key: group.key ?? group.title,
+      title: group.title,
+      heading: group.title,
+      note: group.note,
+      error: group.error,
+      packages: group.packages,
+    })),
+  ];
+}
+
+function riskCounts(rows: PackageRow[]): Record<string, number> {
+  const counts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const row of rows) counts[row.risk in counts ? row.risk : "low"] += 1;
+  return counts;
+}
+
+/** Where an advisory id leads. Ids without a public page (such as "End of life") have none. */
+function advisoryUrl(id: string): string | null {
+  const cve = id.match(/CVE-\d{4}-\d+/);
+  if (id.startsWith("UBUNTU-") && cve) return `https://ubuntu.com/security/${cve[0]}`;
+  if (/^[A-Za-z]+-[\w.-]+$/.test(id)) return `https://osv.dev/vulnerability/${encodeURIComponent(id)}`;
+  return null;
+}
+
+function packageLink(source: string, name: string): string {
+  return `/server-health/software?${new URLSearchParams({ source, name }).toString()}`;
+}
+
+function fixText(row: PackageRow): string {
+  return row.behind ? `Update available: ${row.installed} to ${row.newest}.` : "Installed is the newest available. No fix yet.";
+}
+
+function PackageRows({ source, rows }: { source: string; rows: PackageRow[] }) {
   return (
-    <table className="server-health-table">
-      <thead>
-        <tr>
-          <th>Package</th>
-          <th>Installed</th>
-          <th>Newest</th>
-          <th>Advisory</th>
-          <th>Risk</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.name}>
-            <td>{row.name}</td>
-            <td>{row.installed}</td>
-            <td>{row.newest}</td>
-            <td>{row.advisories.map((item) => item.id).filter(Boolean).slice(0, 3).join(", ") || "—"}</td>
-            <td className={`risk-${row.risk}`}>{row.risk}</td>
-          </tr>
+    <div className="software-rows">
+      <div className="software-row software-head" aria-hidden="true">
+        <span>Package</span>
+        <span className="software-ver">Installed</span>
+        <span className="software-end">Advisories</span>
+        <span className="software-end">Risk</span>
+      </div>
+      {rows.map((row) => {
+        const total = row.advisory_count ?? row.advisories.length;
+        const more = total - row.advisories.length;
+        return (
+          <Link key={row.name} to={packageLink(source, row.name)} className="software-row software-link">
+            <span className="software-name">
+              {row.name}
+              {row.behind ? <em className="software-update">Update available</em> : null}
+            </span>
+            <span className="software-ver" title={row.behind ? `${row.installed} to ${row.newest}` : row.installed}>
+              {row.installed}
+            </span>
+            <span className="software-end">{total || "—"}</span>
+            <span className="software-end">
+              <span className={`software-pill software-${row.risk}`}>{riskLabel(row.risk)}</span>
+            </span>
+            <span className="software-tip" role="tooltip">
+              <strong>{row.name}</strong>
+              <small>{fixText(row)}</small>
+              {row.advisories.map((item) => (
+                <span className="software-tip-line" key={item.id}>
+                  <span className={`software-pill software-${item.risk}`}>{riskLabel(item.risk)}</span>
+                  <span>
+                    {item.id}
+                    {item.summary ? <small>{item.summary}</small> : null}
+                  </span>
+                </span>
+              ))}
+              <span className="software-tip-foot">{more > 0 ? `${more.toLocaleString()} more. ` : ""}Click for details.</span>
+            </span>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function SourceGroup({ source, filter }: { source: Source; filter: string | null }) {
+  const counts = riskCounts(source.packages);
+  const worst = source.packages.length ? riskRank(source.packages[0].risk) : RISK_ORDER.length;
+  const [showLow, setShowLow] = useState(false);
+  const sorted = [...source.packages].sort((a, b) => riskRank(a.risk) - riskRank(b.risk) || a.name.localeCompare(b.name));
+  const visible = filter
+    ? sorted.filter((row) => row.risk === filter)
+    : showLow
+      ? sorted
+      : sorted.filter((row) => row.risk !== "low");
+  const hiddenLow = filter ? 0 : sorted.length - sorted.filter((row) => row.risk !== "low").length;
+  if (filter && visible.length === 0) return null;
+  return (
+    <details className="software-source" open={worst <= 2 || undefined}>
+      <summary>
+        <span className="software-source-title">{source.heading}</span>
+        <span className="software-mini">
+          {RISK_ORDER.filter((risk) => counts[risk] > 0).map((risk) => (
+            <span key={risk} className={`software-${risk}`}>
+              {counts[risk]} {risk}
+            </span>
+          ))}
+        </span>
+        <span className="muted">
+          {source.packages.length} {source.packages.length === 1 ? "package" : "packages"}
+        </span>
+      </summary>
+      {source.note ? <p className="muted server-health-note">{source.note}</p> : null}
+      {source.error ? <p className="muted">{source.error}</p> : null}
+      {source.packages.length === 0 ? (
+        <div className="state-box">Nothing to review.</div>
+      ) : (
+        <>
+          {visible.length > 0 ? <PackageRows source={source.key} rows={visible} /> : <p className="muted">Only low-risk packages here.</p>}
+          {hiddenLow > 0 ? (
+            <button type="button" className="software-more" onClick={() => setShowLow((value) => !value)}>
+              {showLow ? "Hide low risk" : `Show ${hiddenLow} low risk`}
+            </button>
+          ) : null}
+        </>
+      )}
+    </details>
+  );
+}
+
+function SoftwarePanel({ advisories }: { advisories: NonNullable<Report["advisories"]> }) {
+  const [filter, setFilter] = useState<string | null>(null);
+  const sources = sourcesOf(advisories);
+  const all = sources.flatMap((source) => source.packages);
+  const counts = riskCounts(all);
+  const widest = Math.max(1, ...sources.map((source) => source.packages.length));
+  return (
+    <>
+      <p className="muted server-health-note">
+        Last checked {when(advisories.checked_at)}. The next check is Sunday at 3:00 AM Eastern.
+      </p>
+      <div className="software-tiles" role="group" aria-label="Packages by risk">
+        {RISK_ORDER.map((risk) => (
+          <button
+            key={risk}
+            type="button"
+            className={`software-tile software-${risk}`}
+            aria-pressed={filter === risk}
+            onClick={() => setFilter(filter === risk ? null : risk)}
+          >
+            <strong>{counts[risk]}</strong>
+            <span>{riskLabel(risk)}</span>
+          </button>
         ))}
-      </tbody>
-    </table>
+      </div>
+      <h3 className="server-health-heading">Risk by source</h3>
+      <div className="software-bars">
+        {sources.map((source) => {
+          const sourceCounts = riskCounts(source.packages);
+          const summary = RISK_ORDER.filter((risk) => sourceCounts[risk] > 0)
+            .map((risk) => `${sourceCounts[risk]} ${risk}`)
+            .join(", ");
+          return (
+            <div className="software-bar-row" key={source.key}>
+              <span>{source.title}</span>
+              {source.packages.length === 0 ? (
+                <span className="software-pill software-ok">Nothing to review</span>
+              ) : (
+                <div
+                  className="software-bar"
+                  style={{ width: `${Math.max(6, (100 * source.packages.length) / widest)}%` }}
+                  role="img"
+                  aria-label={`${source.title}: ${summary}`}
+                >
+                  {RISK_ORDER.filter((risk) => sourceCounts[risk] > 0).map((risk) => (
+                    <i key={risk} className={`software-fill-${risk}`} style={{ flex: sourceCounts[risk] }} />
+                  ))}
+                </div>
+              )}
+              <span className="muted">{source.packages.length}</span>
+            </div>
+          );
+        })}
+      </div>
+      <h3 className="server-health-heading">Details by source</h3>
+      {filter ? (
+        <p className="muted server-health-note">
+          Showing {filter} only.{" "}
+          <button type="button" className="software-more" onClick={() => setFilter(null)}>
+            Show all
+          </button>
+        </p>
+      ) : null}
+      <div className="software-sources">
+        {sources.map((source) => (
+          <SourceGroup key={`${source.key}-${filter ?? "all"}`} source={source} filter={filter} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function PackageDetailBody({ detail }: { detail: PackageDetail }) {
+  const row = detail.package;
+  const total = row.advisory_count ?? row.advisories.length;
+  const [shown, setShown] = useState(25);
+  return (
+    <>
+      <div className="software-facts">
+        <div>
+          <small>Source</small>
+          <span>{detail.source === "host" ? `Host · ${detail.os}` : detail.source_title}</span>
+        </div>
+        <div>
+          <small>Installed</small>
+          <span>{row.installed}</span>
+        </div>
+        <div>
+          <small>Newest available</small>
+          <span>{row.newest}</span>
+        </div>
+        <div>
+          <small>Risk</small>
+          <span className={`software-pill software-${row.risk}`}>{riskLabel(row.risk)}</span>
+        </div>
+      </div>
+      <div className="software-callout">
+        {row.behind ? `An update is available: ${row.installed} to ${row.newest}.` : "No fix yet. This is the newest version available, so there is nothing to install."}{" "}
+        <span className="muted">Last checked {when(detail.checked_at)}.</span>
+      </div>
+      <h2 className="server-health-heading">Advisories · {total.toLocaleString()}</h2>
+      {row.advisories.length === 0 ? (
+        <div className="state-box">No advisories are listed for this package.</div>
+      ) : (
+        <div className="software-rows">
+          {row.advisories.slice(0, shown).map((item) => {
+            const url = advisoryUrl(item.id);
+            return (
+              <div className="software-advisory" key={item.id}>
+                <span className={`software-pill software-${item.risk}`}>{riskLabel(item.risk)}</span>
+                {url ? (
+                  <a href={url} target="_blank" rel="noreferrer">
+                    {item.id}
+                  </a>
+                ) : (
+                  <span>{item.id}</span>
+                )}
+                <span>{item.summary || "No summary."}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {row.advisories.length > shown ? (
+        <button type="button" className="software-more" onClick={() => setShown(shown + 100)}>
+          Show {Math.min(100, row.advisories.length - shown)} more
+        </button>
+      ) : null}
+    </>
+  );
+}
+
+export function ServerHealthPackagePage() {
+  const [params] = useSearchParams();
+  const source = params.get("source") ?? "";
+  const name = params.get("name") ?? "";
+  const query = useQuery({
+    queryKey: ["server-health-package", source, name],
+    queryFn: () => api.serverHealthPackage(source, name) as Promise<PackageDetail>,
+    enabled: Boolean(source && name),
+  });
+  return (
+    <div className="server-health">
+      <p className="page-sub">
+        <Link to="/server-health?tab=software">Server Health</Link> / Software / {name}
+      </p>
+      <h1 className="page-title">{name || "Package"}</h1>
+      {query.isLoading ? <div className="state-box">Loading…</div> : null}
+      {query.isError ? <div className="state-box">That package is not in the latest check.</div> : null}
+      {query.data ? (
+        <div className="panel">
+          <PackageDetailBody detail={query.data} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -385,38 +667,7 @@ export default function ServerHealthPage() {
             {current.advisories == null ? (
               <div className="state-box">The weekly check has not finished.</div>
             ) : (
-              <>
-                <p className="muted server-health-note">
-                  Last checked {when(current.advisories.checked_at)}. The next check is Sunday at 3:00 AM Eastern.
-                </p>
-                <p>
-                  {current.advisories.os}
-                  {current.advisories.kernel ? ` · kernel ${current.advisories.kernel}` : ""}
-                </p>
-                {current.advisories.error ? <p className="muted">{current.advisories.error}</p> : null}
-                <h3 className="server-health-heading">Host</h3>
-                {current.advisories.packages.length === 0 ? (
-                  <div className="state-box">
-                    {current.advisories.error
-                      ? "Packages could not be compared on this check."
-                      : "No packages are behind, and none has a known vulnerability."}
-                  </div>
-                ) : (
-                  <PackageTable rows={current.advisories.packages} />
-                )}
-                {(current.advisories.groups ?? []).map((group) => (
-                  <div key={group.title}>
-                    <h3 className="server-health-heading server-health-group">{group.title}</h3>
-                    {group.note ? <p className="muted server-health-note">{group.note}</p> : null}
-                    {group.error ? <p className="muted">{group.error}</p> : null}
-                    {group.packages.length === 0 ? (
-                      <div className="state-box">Nothing to review.</div>
-                    ) : (
-                      <PackageTable rows={group.packages} />
-                    )}
-                  </div>
-                ))}
-              </>
+              <SoftwarePanel advisories={current.advisories} />
             )}
           </div>
         );

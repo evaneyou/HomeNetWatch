@@ -990,6 +990,58 @@ def _range_start(name: str, now: datetime) -> datetime:
     return now - timedelta(hours=hours)
 
 
+PREVIEW_ADVISORIES = 3  # what a row hover shows; the details page has the rest
+
+
+def source_key(title: str) -> str:
+    """A URL-safe name for a software source such as "Server container"."""
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "source"
+
+
+def _preview(row: dict[str, Any]) -> dict[str, Any]:
+    """A package row with only its worst advisories, so one kernel does not send a thousand."""
+    advisories = row.get("advisories") or []
+    return {**row, "advisories": advisories[:PREVIEW_ADVISORIES], "advisory_count": len(advisories)}
+
+
+def slim_advisories(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **payload,
+        "packages": [_preview(row) for row in payload.get("packages") or []],
+        "groups": [
+            {**group, "key": source_key(str(group.get("title") or "")), "packages": [_preview(row) for row in group.get("packages") or []]}
+            for group in payload.get("groups") or []
+        ],
+    }
+
+
+def package_detail(db: Session, source: str, name: str) -> Optional[dict[str, Any]]:
+    """One package from the cached weekly check, with every advisory."""
+    advisory = db.get(ServerAdvisory, 1)
+    if advisory is None:
+        return None
+    payload = advisory.payload
+    title = "Host"
+    rows = payload.get("packages") or []
+    if source != "host":
+        group = next((g for g in payload.get("groups") or [] if source_key(str(g.get("title") or "")) == source), None)
+        if group is None:
+            return None
+        title = str(group.get("title") or "")
+        rows = group.get("packages") or []
+    row = next((item for item in rows if item.get("name") == name), None)
+    if row is None:
+        return None
+    return {
+        "source": source,
+        "source_title": title,
+        "os": payload.get("os", ""),
+        "kernel": payload.get("kernel", ""),
+        "checked_at": advisory.checked_at,
+        "package": row,
+    }
+
+
 def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict[str, Any]:
     now = now or datetime.now(timezone.utc)
     since = _range_start(range_name, now)
@@ -1047,7 +1099,9 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
         "tables": tables,
         "forecast": public_cast,
         "retention": RETENTION,
-        "advisories": {"checked_at": advisory.checked_at, **advisory.payload} if advisory is not None else None,
+        "advisories": (
+            {"checked_at": advisory.checked_at, **slim_advisories(advisory.payload)} if advisory is not None else None
+        ),
         "stuck": stuck,
     }
 

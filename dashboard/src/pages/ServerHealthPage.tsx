@@ -71,6 +71,13 @@ type PackageDetail = {
   checked_at: string;
   package: PackageRow;
 };
+type BackupCopy = { taken_at: string; bytes: number };
+type BackupReport = {
+  available: boolean;
+  fresh: boolean;
+  newest: string | null;
+  kinds: { key: string; title: string; count: number; copies: BackupCopy[] }[];
+};
 type Report = {
   latest: Point | null;
   points: Point[];
@@ -88,6 +95,7 @@ type Report = {
   } | null;
   stuck: { pid: number; name: string; state: string; reason: string; since: string }[];
   storage: StorageReport;
+  backups: BackupReport;
 };
 
 const RANGES: Range[] = ["1h", "6h", "24h", "7d"];
@@ -663,7 +671,7 @@ export function ServerHealthPackagePage() {
   );
 }
 
-const SECTIONS = ["cpu", "memory", "interface", "storage", "database", "software", "stuck"] as const;
+const SECTIONS = ["cpu", "memory", "interface", "storage", "database", "backup", "software", "stuck"] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
 /** The figures are the buttons. Software and Processes get tiles of their own. */
@@ -706,6 +714,15 @@ function CardTabs({
       note: latest ? `${amount(latest.disk_used_mb * 1024 * 1024)} of ${amount(latest.disk_total_mb * 1024 * 1024)}` : "",
     },
     { key: "database", label: "Database", value: amount(latest?.db_bytes), note: `${latest?.connections ?? 0} connections` },
+    report.backups.available && report.backups.newest
+      ? {
+          key: "backup",
+          label: "Backup",
+          value: ago(report.backups.newest),
+          note: report.backups.fresh ? "newest copy" : "a daily copy is late",
+          warn: !report.backups.fresh,
+        }
+      : { key: "backup", label: "Backup", value: report.backups.available ? "None yet" : "Not visible", note: "daily at 3:15 AM UTC", warn: true },
     {
       key: "software",
       label: "Software",
@@ -879,6 +896,47 @@ export default function ServerHealthPage() {
             </div>
           </div>
         );
+      case "backup":
+        return (
+          <div className="panel" key={key}>
+            <h2 className="server-health-heading">Backup</h2>
+            <p className="muted server-health-note">
+              A copy is taken every day at 3:15 AM UTC. The newest 14 of each kind stay on this machine, and a copy should
+              live somewhere else too. The files themselves are not shown here.
+            </p>
+            {!current.backups.available ? <div className="state-box">The server cannot see the backup folder.</div> : null}
+            {current.backups.available && current.backups.kinds.every((kind) => kind.count === 0) ? (
+              <div className="state-box">No backups yet.</div>
+            ) : null}
+            {current.backups.kinds
+              .filter((kind) => kind.count > 0)
+              .map((kind) => (
+                <div key={kind.key}>
+                  <h3 className="server-health-heading">
+                    {kind.title} <span className="muted">{kind.count} saved</span>
+                  </h3>
+                  <table className="server-health-table">
+                    <thead>
+                      <tr>
+                        <th>Taken</th>
+                        <th>Size</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kind.copies.map((copy) => (
+                        <tr key={copy.taken_at}>
+                          <td>
+                            {when(copy.taken_at)} <span className="muted">({ago(copy.taken_at)})</span>
+                          </td>
+                          <td>{amount(copy.bytes)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+          </div>
+        );
       case "software":
         return (
           <div className="panel" key={key}>
@@ -925,7 +983,7 @@ export default function ServerHealthPage() {
     }
   }
 
-  const graphTab = active !== "software" && active !== "stuck" && active !== "storage";
+  const graphTab = active !== "software" && active !== "stuck" && active !== "storage" && active !== "backup";
 
   return (
     <div className="server-health">

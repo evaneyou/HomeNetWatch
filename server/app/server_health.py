@@ -98,6 +98,75 @@ def host_root() -> Path:
     return Path("/")
 
 
+# backup.sh names files db-<stamp>.sql.gz, wireguard-<stamp>.tar.gz, and tls-<stamp>.tar.gz.
+BACKUP_KINDS = (
+    ("db", "Database", ".sql.gz"),
+    ("wireguard", "WireGuard", ".tar.gz"),
+    ("tls", "Agent TLS", ".tar.gz"),
+)
+BACKUP_KEEP = 14
+BACKUP_STALE = timedelta(hours=26)
+_BACKUP_STAMP = re.compile(r"^\d{8}T\d{6}Z$")
+
+
+def backup_directory() -> Optional[Path]:
+    configured = os.environ.get("HNS_BACKUP_DIR", "").strip()
+    if not configured:
+        return None
+    return Path(configured)
+
+
+def list_backups(root: Optional[Path], now: Optional[datetime] = None) -> dict[str, Any]:
+    """Times and sizes of the backup copies. The files themselves stay on disk."""
+    now = now or datetime.now(timezone.utc)
+    empty: dict[str, Any] = {"available": False, "fresh": False, "newest": None, "kinds": []}
+    if root is None or not root.is_dir():
+        return empty
+    try:
+        names = [entry.name for entry in root.iterdir() if entry.is_file()]
+    except OSError:
+        return empty
+    kinds = []
+    newest: Optional[datetime] = None
+    fresh = True
+    for key, title, suffix in BACKUP_KINDS:
+        copies = []
+        for name in names:
+            prefix = f"{key}-"
+            if not name.startswith(prefix) or not name.endswith(suffix):
+                continue
+            stamp = name[len(prefix) : -len(suffix)]
+            if _BACKUP_STAMP.fullmatch(stamp) is None:
+                continue
+            try:
+                taken = datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+                size = (root / name).stat().st_size
+            except (OSError, ValueError):
+                continue
+            copies.append({"taken_at": taken, "bytes": size})
+        copies.sort(key=lambda item: item["taken_at"], reverse=True)
+        copies = copies[:BACKUP_KEEP]
+        latest = copies[0]["taken_at"] if copies else None
+        if latest is not None and (newest is None or latest > newest):
+            newest = latest
+        if latest is None or now - latest > BACKUP_STALE:
+            fresh = False
+        kinds.append(
+            {
+                "key": key,
+                "title": title,
+                "count": len(copies),
+                "copies": [{"taken_at": item["taken_at"].isoformat(), "bytes": item["bytes"]} for item in copies],
+            }
+        )
+    return {
+        "available": True,
+        "fresh": fresh,
+        "newest": newest.isoformat() if newest else None,
+        "kinds": kinds,
+    }
+
+
 def _read(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="replace")
@@ -1347,6 +1416,7 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
             "projection": disk_projection(daily_rows, now),
             "breakdown": {"checked_at": measured.checked_at, **measured.payload} if measured is not None else None,
         },
+        "backups": list_backups(backup_directory(), now),
     }
 
 

@@ -22,6 +22,7 @@ from app.server_health import (
     disk_projection,
     forecast,
     judge_stuck,
+    list_backups,
     maybe_refresh_advisories,
     measure_storage,
     parse_net,
@@ -249,6 +250,27 @@ def test_report_shows_the_machine_and_the_app_interface(client, db):
     assert same["host_rx_bps"] is None
     db.execute(delete(ServerSample))
     db.commit()
+
+
+def test_backup_listing_reports_time_and_size_only(tmp_path):
+    now = datetime(2026, 10, 20, 16, 0, tzinfo=timezone.utc)
+    (tmp_path / "db-20261020T155300Z.sql.gz").write_bytes(b"db")
+    (tmp_path / "wireguard-20261020T155300Z.tar.gz").write_bytes(b"wg-keys")
+    (tmp_path / "tls-20261019T031500Z.tar.gz").write_bytes(b"tls")
+    (tmp_path / "db-not-a-stamp.sql.gz").write_bytes(b"skip")
+    (tmp_path / "notes.txt").write_bytes(b"skip")
+    found = list_backups(tmp_path, now)
+    assert found["available"] is True
+    assert found["fresh"] is False
+    database, wireguard, tls = found["kinds"]
+    assert database["count"] == 1
+    assert database["copies"] == [{"taken_at": "2026-10-20T15:53:00+00:00", "bytes": 2}]
+    assert wireguard["copies"][0]["bytes"] == 7
+    assert tls["copies"][0]["taken_at"].startswith("2026-10-19T03:15:00")
+    assert "name" not in database["copies"][0]
+    (tmp_path / "tls-20261020T031500Z.tar.gz").write_bytes(b"tls")
+    assert list_backups(tmp_path, datetime(2026, 10, 20, 16, 0, tzinfo=timezone.utc))["fresh"] is True
+    assert list_backups(tmp_path / "missing", now)["available"] is False
 
 
 def test_viewer_is_refused_and_a_guest_can_read(client, db):

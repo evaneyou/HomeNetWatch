@@ -85,7 +85,7 @@ docker compose version      # must be 2.24 or newer
 
 ```bash
 git clone https://github.com/evaneyou/Home-Sensor.git
-cd Home-Sensor
+cd Home-Net-Watch
 cp .env.example .env
 ```
 
@@ -155,7 +155,7 @@ This writes a database dump plus the WireGuard and TLS state to `backups/`, keep
 
 ```bash
 crontab -e
-# 15 3 * * * cd /home/ubuntu/Home-Sensor && ./scripts/backup.sh
+# 15 3 * * * cd /home/ubuntu/Home-Net-Watch && ./scripts/backup.sh
 ```
 
 The TLS and WireGuard archives matter as much as the database: they hold the keys your Pis
@@ -189,7 +189,7 @@ CPU (95th percentile) under 20%, network under 20%, and, on A1 shapes, memory un
 ## Updating
 
 ```bash
-cd Home-Sensor
+cd Home-Net-Watch
 git pull
 docker compose up --build -d
 ```

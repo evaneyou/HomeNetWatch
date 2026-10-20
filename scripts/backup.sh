@@ -5,7 +5,7 @@
 # (default 14), and creates files readable only by you. Copy ./backups off the server too.
 #
 # Run from the repository root with the stack up:  ./scripts/backup.sh
-# Daily at 03:15 with cron:  15 3 * * * cd /home/ubuntu/Home-Sensor && ./scripts/backup.sh
+# Daily at 03:15 with cron:  15 3 * * * cd /home/ubuntu/Home-Net-Watch && ./scripts/backup.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 umask 077

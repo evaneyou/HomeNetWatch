@@ -12,7 +12,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
-- **Network Test:** the remote agent picker is 200 pixels wide, the same as the one on Speed Test, instead of stretching across the header.
+- **Network Test:** the remote agent picker and the Run button sit together at the right of the title, with the same size, gap and alignment as the sensor picker on Speed Test.
 - **Probe status map:** the state borders are drawn thinner.
 - **Path View, network path:** redrawn as one line instead of boxes. Each network is a coloured stretch of the line, its hops rise from it as bars, and the latency added at each handoff sits between the networks (amber at 15 ms or more). When the path does not fit across, it becomes a rail running down the page with one row per hop. The diagram is plain HTML now, not React Flow, so a thumb on a phone scrolls the page instead of being caught by the diagram. Picking a network or a hop works as before.
 - **Path View, BGP view:** redone as one checklist read from you at the top to the destination at the bottom, with a rail and arrows showing the direction. Each network is one row, and two columns (Your trace, BGP path) number its place along each path, or show a dash if it is not on that path. A plain sentence at the top says whether the traffic reaches the origin network BGP announces for the prefix; the old "Paths differ" warning is gone because the networks in between normally differ. The React Flow diagram is removed, so the page scrolls on a phone.

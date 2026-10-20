@@ -72,6 +72,7 @@ type Report = {
   latest: Point | null;
   points: Point[];
   tables: { name: string; bytes: number }[];
+  categories: { key: string; title: string; bytes: number; children: { name: string; bytes: number }[] }[];
   forecast: { ready: boolean; growing: boolean; full_on: string | null; bytes_per_day: number | null; far: boolean };
   retention: { kept: string; items: string[] }[];
   advisories: {
@@ -270,6 +271,43 @@ function StorageChart({ history, projection, total }: { history: { ts: number; u
         </LineChart>
       </ResponsiveContainer>
     </div>
+  );
+}
+
+function DatabaseCategories({ categories }: { categories: Report["categories"] }) {
+  const total = categories.reduce((sum, category) => sum + category.bytes, 0) || 1;
+  const share = (bytes: number) => {
+    const percent = (100 * bytes) / total;
+    return percent > 0 && percent < 1 ? "<1%" : `${Math.round(percent)}%`;
+  };
+  return (
+    <>
+      <h3 className="server-health-heading">What the database holds</h3>
+      <div className="storage-stack" role="img" aria-label={categories.map((category) => `${category.title} ${share(category.bytes)}`).join(", ")}>
+        {categories.map((category) => (
+          <i key={category.key} className={`storage-${category.key}`} style={{ flex: category.bytes }} />
+        ))}
+      </div>
+      {categories.map((category, index) => (
+        <details key={category.key} className={`storage-group storage-${category.key}`} open={index === 0 || undefined}>
+          <summary>
+            <span className="storage-title">
+              <span className="storage-swatch" />
+              {category.title}
+            </span>
+            <span className="storage-num">{amount(category.bytes)}</span>
+            <span className="storage-num muted">{share(category.bytes)}</span>
+          </summary>
+          {category.children.map((child) => (
+            <div className="storage-kid" key={child.name}>
+              <span>{child.name}</span>
+              <span className="storage-num">{amount(child.bytes)}</span>
+              <span className="storage-num muted">{share(child.bytes)}</span>
+            </div>
+          ))}
+        </details>
+      ))}
+    </>
   );
 }
 
@@ -798,11 +836,7 @@ export default function ServerHealthPage() {
               ]}
               unit=""
             />
-            {current.tables.length > 0 ? (
-              <p className="muted server-health-note">
-                Largest tables: {current.tables.map((table) => `${table.name} ${amount(table.bytes)}`).join(", ")}
-              </p>
-            ) : null}
+            {current.categories.length > 0 ? <DatabaseCategories categories={current.categories} /> : null}
             <h3 className="server-health-heading">How long rows are kept</h3>
             <div className="server-health-kept">
               {current.retention.map((group) => (

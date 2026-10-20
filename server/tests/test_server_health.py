@@ -13,6 +13,7 @@ from app.server_health import (
     build_advisory_payload,
     cvss3_score,
     byte_rates,
+    category_usage,
     check_due,
     choose_iface,
     cpu_counters,
@@ -217,6 +218,7 @@ def test_samples_are_stored_and_pruned(client, db):
         connections=1,
     )
     old_day = ServerDbDaily(day=date(now.year - 3, 1, 1), db_bytes=10, free_bytes=10)
+    db.execute(delete(ServerDbDaily).where(ServerDbDaily.day == old_day.day))
     db.add_all([old, old_day])
     db.commit()
     sample = record_sample(db, now)
@@ -344,3 +346,20 @@ def test_report_has_the_storage_projection_and_breakdown(client, db):
     assert body["storage"]["projection"]["ready"] in (True, False)
     db.execute(delete(ServerStorage))
     db.commit()
+
+def test_database_categories_sum_to_the_tables():
+    tables = [
+        {"name": "test_results", "bytes": 200},
+        {"name": "wifi_observations", "bytes": 100},
+        {"name": "synthetic_samples", "bytes": 90},
+        {"name": "synthetic_runs", "bytes": 10},
+        {"name": "rf_channel_stats", "bytes": 50},
+        {"name": "users", "bytes": 5},
+        {"name": "brand_new_table", "bytes": 3},
+    ]
+    groups = {group["key"]: group for group in category_usage(tables)}
+    assert groups["tests"]["bytes"] == 200
+    assert groups["synthetic"]["bytes"] == 100
+    assert groups["synthetic"]["children"][0]["name"] == "synthetic_samples"
+    assert groups["settings"]["bytes"] == 8  # users plus the unlisted table
+    assert sum(group["bytes"] for group in groups.values()) == sum(table["bytes"] for table in tables)

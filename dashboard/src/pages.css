@@ -2004,6 +2004,17 @@
 .storage-system { --k: #4fd1b5; }
 .storage-volumes { --k: #f0c04a; }
 .storage-other { --k: #6f7fae; }
+.storage-tests { --k: #6aa8ff; }
+.storage-wifi { --k: #b48cff; }
+.storage-synthetic { --k: #4fd1b5; }
+.storage-airwaves { --k: #f0c04a; }
+.storage-health { --k: #ff9a52; }
+.storage-kpi { --k: #6ee7a8; }
+.storage-server { --k: #6aa8ff; }
+.storage-speed { --k: #ff6f91; }
+.storage-alerts { --k: #ff9a52; }
+.storage-logs { --k: #f0c04a; }
+.storage-settings { --k: #6f7fae; }
 
 .storage-stack {
   display: flex;

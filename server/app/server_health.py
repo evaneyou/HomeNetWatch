@@ -67,6 +67,22 @@ RETENTION = [
     {"kept": "7 days", "items": ["Pi health", "Traces", "Server samples"]},
 ]
 
+# What the database holds, in the order the Database tab shows it. Tables not listed
+# fall into "Settings and accounts".
+CATEGORIES = [
+    {"key": "tests", "title": "Test results", "tables": ["test_results"]},
+    {"key": "wifi", "title": "Wi-Fi observations", "tables": ["wifi_observations"]},
+    {"key": "synthetic", "title": "Synthetic traffic", "tables": ["synthetic_samples", "synthetic_runs", "synthetic_profiles"]},
+    {"key": "airwaves", "title": "Airwaves", "tables": ["rf_channel_stats", "rf_clients", "rf_alerts", "ap_inventory"]},
+    {"key": "health", "title": "Pi health", "tables": ["monitor_health", "enrollment_checkins"]},
+    {"key": "kpi", "title": "KPI", "tables": ["kpi_hourly", "kpi_daily"]},
+    {"key": "server", "title": "Server health", "tables": ["server_samples", "server_advisories", "server_db_daily", "server_storage", "server_stuck"]},
+    {"key": "speed", "title": "Speed tests", "tables": ["speed_tests", "speed_samples"]},
+    {"key": "alerts", "title": "Alerts and issues", "tables": ["alert_events", "issues"]},
+    {"key": "logs", "title": "Logs and audit", "tables": ["system_logs", "audit_events", "adhoc_traces"]},
+    {"key": "settings", "title": "Settings and accounts", "tables": []},
+]
+
 
 def host_proc() -> Path:
     configured = Path(os.environ.get("HNS_HOST_PROC", "/host/proc"))
@@ -640,27 +656,46 @@ def read_machine(proc: Path, root: Path, previous_cpu: Optional[tuple[int, int]]
     }
 
 
-def read_database(db: Session) -> tuple[int, int, list[dict[str, Any]]]:
+def read_database(db: Session) -> tuple[int, int, list[dict[str, Any]], list[dict[str, Any]]]:
     size = int(db.execute(text("SELECT pg_database_size(current_database())")).scalar() or 0)
     connections = int(
         db.execute(text("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()")).scalar() or 0
     )
-    tables = [
-        {"name": name, "bytes": int(amount)}
-        for name, amount in db.execute(
-            text(
-                """
-                SELECT c.relname, pg_total_relation_size(c.oid)
-                FROM pg_class c
-                JOIN pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname = 'public' AND c.relkind = 'r'
-                ORDER BY pg_total_relation_size(c.oid) DESC
-                LIMIT 5
-                """
-            )
-        ).all()
-    ]
-    return size, connections, tables
+    rows = db.execute(
+        text(
+            """
+            SELECT c.relname, pg_total_relation_size(c.oid)
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r'
+            ORDER BY pg_total_relation_size(c.oid) DESC
+            """
+        )
+    ).all()
+    tables = [{"name": name, "bytes": int(amount)} for name, amount in rows]
+    return size, connections, tables[:5], category_usage(tables)
+
+
+def category_usage(tables: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """How much of the database each kind of data uses, largest first."""
+    by_table = {table["name"]: table["bytes"] for table in tables}
+    claimed: set[str] = set()
+    groups = []
+    for category in CATEGORIES:
+        names = category["tables"]
+        claimed.update(names)
+        children = [{"name": name, "bytes": by_table.get(name, 0)} for name in names]
+        children = [child for child in children if child["bytes"] > 0]
+        children.sort(key=lambda child: -child["bytes"])
+        groups.append({"key": category["key"], "title": category["title"], "bytes": sum(child["bytes"] for child in children), "children": children})
+    leftover = [{"name": name, "bytes": amount} for name, amount in by_table.items() if name not in claimed and amount > 0]
+    leftover.sort(key=lambda child: -child["bytes"])
+    settings = groups[-1]
+    settings["children"].extend(leftover)
+    settings["bytes"] += sum(child["bytes"] for child in leftover)
+    groups = [group for group in groups if group["bytes"] > 0]
+    groups.sort(key=lambda group: -group["bytes"])
+    return groups
 
 
 _last_cpu: Optional[tuple[int, int]] = None
@@ -671,7 +706,7 @@ def record_sample(db: Session, now: Optional[datetime] = None, *, proc: Optional
     now = now or datetime.now(timezone.utc)
     machine = read_machine(proc or host_proc(), root or host_root(), _last_cpu)
     _last_cpu = machine["cpu_counters"]
-    db_bytes, connections, _tables = read_database(db)
+    db_bytes, connections, _tables, _categories = read_database(db)
     sample = ServerSample(
         recorded_at=now,
         cpu_percent=machine["cpu_percent"],
@@ -1241,7 +1276,7 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
             }
         )
     latest = points[-1] if points else None
-    _size, connections, tables = read_database(db)
+    _size, connections, tables, categories = read_database(db)
     if latest is not None:
         latest = {**latest, "connections": connections}
     advisory = db.get(ServerAdvisory, 1)
@@ -1261,6 +1296,7 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
         "latest": latest,
         "points": points,
         "tables": tables,
+        "categories": categories,
         "forecast": public_cast,
         "retention": RETENTION,
         "advisories": (

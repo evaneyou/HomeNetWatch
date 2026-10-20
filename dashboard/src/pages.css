@@ -1998,3 +1998,8 @@
 .risk-low {
   color: var(--muted);
 }
+
+.server-health-group {
+  margin-top: 1rem;
+}
+

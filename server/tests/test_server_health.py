@@ -9,7 +9,9 @@ from sqlalchemy import delete, select
 from app.auth import hash_password
 from app.models import ServerAdvisory, ServerDbDaily, ServerSample, ServerStuck, User, UserRole
 from app.server_health import (
+    advisories_from_osv,
     build_advisory_payload,
+    cvss3_score,
     byte_rates,
     check_due,
     choose_iface,
@@ -22,6 +24,8 @@ from app.server_health import (
     prune,
     record_sample,
     refresh_advisories,
+    risk_of,
+    support_row,
     version_is_newer,
 )
 from tests.conftest import login
@@ -112,6 +116,46 @@ def test_versions_compare_in_debian_order():
     assert version_is_newer("2.10", "2.9")
     assert not version_is_newer("1.0~rc1", "1.0")
     assert not version_is_newer("6.8.0-85.85", "6.8.0-85.85")
+
+
+def test_risk_comes_from_the_full_record():
+    assert cvss3_score("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H") == 9.8
+    assert risk_of({"severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}]}) == "critical"
+    assert risk_of({"severity": [{"type": "Ubuntu", "score": "medium"}]}) == "medium"
+    both = {"severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"}, {"type": "Ubuntu", "score": "low"}]}
+    assert risk_of(both) == "low"
+    assert risk_of({"database_specific": {"severity": "MODERATE"}}) == "medium"
+    assert risk_of({"id": "bare"}) == "low"
+    rows = advisories_from_osv(
+        [{"vulns": [{"id": "A"}, {"id": "B"}]}],
+        ["curl"],
+        {"A": {"severity": [{"type": "Ubuntu", "score": "low"}], "summary": "minor"}, "B": {"severity": [{"type": "Ubuntu", "score": "high"}]}},
+    )
+    assert [row["risk"] for row in rows["curl"]] == ["high", "low"]
+
+
+def test_support_calendar_flags_old_and_ended_versions():
+    today = date(2026, 10, 20)
+    behind, note = support_row("PostgreSQL 16", "16.4", {"latest": "16.10", "eol": "2028-11-09"}, today)
+    assert behind["newest"] == "16.10" and behind["risk"] == "low"
+    assert "runs until 2028-11-09" in note
+    ended, _ = support_row("Python 3.8", "3.8.1", {"latest": "3.8.1", "eol": "2024-10-07"}, today)
+    assert ended["advisories"][0]["id"] == "End of life" and ended["risk"] == "high"
+    current, _ = support_row("PostgreSQL 16", "16.10", {"latest": "16.10", "eol": False}, today)
+    assert current is None
+
+
+def test_cache_in_an_older_shape_is_rebuilt(db, monkeypatch):
+    calls = {"n": 0}
+    monkeypatch.setattr("app.server_health.refresh_advisories_live", lambda *_args, **_kwargs: calls.update(n=calls["n"] + 1))
+    sunday = datetime(2026, 10, 18, 7, 0, tzinfo=timezone.utc)
+    db.execute(delete(ServerAdvisory))
+    db.add(ServerAdvisory(id=1, checked_at=sunday, payload={"packages": []}))
+    db.commit()
+    maybe_refresh_advisories(db, sunday + timedelta(days=1))
+    assert calls["n"] == 1
+    db.execute(delete(ServerAdvisory))
+    db.commit()
 
 
 def test_stuck_process_detection():

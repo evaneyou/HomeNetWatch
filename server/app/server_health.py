@@ -8,9 +8,14 @@ from __future__ import annotations
 
 import gzip
 import logging
+import math
 import os
+import platform
+import re
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
+from importlib import metadata
 from pathlib import Path
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -32,6 +37,8 @@ HOT_SHARE = 0.9
 FORECAST_DAYS = 7
 FORECAST_FAR_DAYS = 365
 RISK_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+PAYLOAD_VERSION = 2  # a cached check in an older shape is rebuilt on the next pass
+MAX_DETAILS = 600
 
 # How long each kind of row is kept, longest first. Matches services/retention.py. Measurements keep full
 # detail for 6 months, then hourly and daily averages until they are deleted at 2 years.
@@ -356,35 +363,102 @@ def parse_os_release(text: str) -> dict[str, str]:
     return found
 
 
-def risk_of(vuln: dict[str, Any]) -> str:
-    for severity in vuln.get("severity") or []:
-        score = str(severity.get("score") or "").strip().lower()
-        if score in RISK_ORDER:
-            return score
-        try:
-            number = float(score)
-        except ValueError:
-            continue
-        if number >= 9:
-            return "critical"
-        if number >= 7:
-            return "high"
-        if number >= 4:
-            return "medium"
-        return "low"
+WORD_RISK = {
+    "critical": "critical",
+    "high": "high",
+    "important": "high",
+    "medium": "medium",
+    "moderate": "medium",
+    "low": "low",
+    "negligible": "low",
+}
+
+_CVSS3_WEIGHTS = {
+    "AV": {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2},
+    "AC": {"L": 0.77, "H": 0.44},
+    "UI": {"N": 0.85, "R": 0.62},
+    "CIA": {"H": 0.56, "L": 0.22, "N": 0.0},
+}
+
+
+def cvss3_score(vector: str) -> Optional[float]:
+    """Base score from a CVSS v3 vector string. None when the vector is incomplete."""
+    metrics = dict(part.split(":", 1) for part in vector.split("/")[1:] if ":" in part)
+    try:
+        changed = metrics["S"] == "C"
+        privileges = {"N": 0.85, "L": 0.68 if changed else 0.62, "H": 0.5 if changed else 0.27}[metrics["PR"]]
+        exploit = (
+            8.22
+            * _CVSS3_WEIGHTS["AV"][metrics["AV"]]
+            * _CVSS3_WEIGHTS["AC"][metrics["AC"]]
+            * privileges
+            * _CVSS3_WEIGHTS["UI"][metrics["UI"]]
+        )
+        iss = 1 - (
+            (1 - _CVSS3_WEIGHTS["CIA"][metrics["C"]])
+            * (1 - _CVSS3_WEIGHTS["CIA"][metrics["I"]])
+            * (1 - _CVSS3_WEIGHTS["CIA"][metrics["A"]])
+        )
+    except KeyError:
+        return None
+    impact = 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15 if changed else 6.42 * iss
+    if impact <= 0:
+        return 0.0
+    raw = min((impact + exploit) * (1.08 if changed else 1), 10)
+    return math.ceil(raw * 10 - 1e-9) / 10
+
+
+def risk_from_number(number: float) -> str:
+    if number >= 9:
+        return "critical"
+    if number >= 7:
+        return "high"
+    if number >= 4:
+        return "medium"
     return "low"
 
 
-def advisories_from_osv(results: list[dict[str, Any]], names: list[str]) -> dict[str, list[dict[str, str]]]:
+def risk_of(vuln: dict[str, Any]) -> str:
+    """critical, high, medium, or low from an OSV record. Unscored records count as low."""
+    severities = vuln.get("severity") or []
+    # The distribution's own priority (Ubuntu, Debian) says more about this machine than a generic score.
+    for severity in severities:
+        word = str(severity.get("score") or "").strip().lower()
+        if word in WORD_RISK:
+            return WORD_RISK[word]
+    for severity in severities:
+        score = str(severity.get("score") or "").strip()
+        number: Optional[float] = None
+        if score.upper().startswith("CVSS:3"):
+            number = cvss3_score(score)
+        else:
+            try:
+                number = float(score)
+            except ValueError:
+                number = None
+        if number is not None:
+            return risk_from_number(number)
+    word = str((vuln.get("database_specific") or {}).get("severity") or "").strip().lower()
+    return WORD_RISK.get(word, "low")
+
+
+def advisories_from_osv(
+    results: list[dict[str, Any]],
+    names: list[str],
+    details: Optional[dict[str, dict[str, Any]]] = None,
+) -> dict[str, list[dict[str, str]]]:
+    """Advisory rows per package. `details` holds the full record by id, because a batch answer has no score."""
+    details = details or {}
     found: dict[str, list[dict[str, str]]] = {}
     for name, item in zip(names, results):
         rows = []
         for vuln in item.get("vulns") or []:
+            full = details.get(str(vuln.get("id") or ""), vuln)
             rows.append(
                 {
                     "id": str(vuln.get("id") or ""),
-                    "risk": risk_of(vuln),
-                    "summary": str(vuln.get("summary") or "")[:240],
+                    "risk": risk_of(full),
+                    "summary": str(full.get("summary") or full.get("details") or "")[:240],
                 }
             )
         if rows:
@@ -393,15 +467,12 @@ def advisories_from_osv(results: list[dict[str, Any]], names: list[str]) -> dict
     return found
 
 
-def build_advisory_payload(
-    *,
-    os_name: str,
-    kernel: str,
+def package_rows(
     installed: dict[str, str],
     newest: dict[str, str],
     vulns: dict[str, list[dict[str, str]]],
-    error: str = "",
-) -> dict[str, Any]:
+) -> list[dict[str, Any]]:
+    """Packages that are behind or have a known vulnerability, worst first."""
     packages = []
     for name, version in installed.items():
         latest = newest.get(name) or ""
@@ -420,7 +491,64 @@ def build_advisory_payload(
             }
         )
     packages.sort(key=lambda row: (RISK_ORDER.get(row["risk"], 9), row["name"]))
-    return {"os": os_name, "kernel": kernel, "error": error, "packages": packages}
+    return packages
+
+
+def support_row(name: str, version: str, cycle: Optional[dict[str, Any]], today: date) -> tuple[Optional[dict[str, Any]], str]:
+    """A row for a product with a support calendar (endoflife.date), and a one-line note."""
+    if not cycle:
+        return None, ""
+    latest = str(cycle.get("latest") or "")
+    eol_raw = cycle.get("eol")
+    eol: Optional[date] = None
+    if isinstance(eol_raw, str):
+        try:
+            eol = date.fromisoformat(eol_raw)
+        except ValueError:
+            eol = None
+    expired = eol is not None and eol <= today
+    behind = bool(latest) and version_is_newer(latest, version)
+    note = ""
+    if eol is not None:
+        note = f"{name} support {'ended' if expired else 'runs until'} {eol.isoformat()}."
+    if not behind and not expired:
+        return None, note
+    advisories = (
+        [{"id": "End of life", "risk": "high", "summary": f"Support ended {eol.isoformat()}."}]
+        if expired and eol is not None
+        else []
+    )
+    return (
+        {
+            "name": name,
+            "installed": version,
+            "newest": latest or version,
+            "behind": behind,
+            "advisories": advisories,
+            "risk": "high" if advisories else "low",
+        },
+        note,
+    )
+
+
+def build_advisory_payload(
+    *,
+    os_name: str,
+    kernel: str,
+    installed: dict[str, str],
+    newest: dict[str, str],
+    vulns: dict[str, list[dict[str, str]]],
+    error: str = "",
+    groups: Optional[list[dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    return {
+        "version": PAYLOAD_VERSION,
+        "os": os_name,
+        "kernel": kernel,
+        "error": error,
+        "packages": package_rows(installed, newest, vulns),
+        "groups": groups or [],
+    }
 
 
 def next_sunday_3am(after: datetime) -> datetime:
@@ -599,27 +727,38 @@ def kernel_version(proc: Path) -> str:
     return parts[2] if len(parts) >= 3 else ""
 
 
-def package_urls(codename: str) -> list[str]:
+def machine_arch() -> str:
+    return "arm64" if platform.machine().lower() in {"aarch64", "arm64"} else "amd64"
+
+
+def package_urls(distro: str, codename: str, arch: str) -> list[str]:
+    """Package lists that name the newest version of each package in a release."""
+    if distro == "debian":
+        return [
+            f"https://deb.debian.org/debian/dists/{codename}/main/binary-{arch}/Packages.gz",
+            f"https://deb.debian.org/debian/dists/{codename}-updates/main/binary-{arch}/Packages.gz",
+            f"https://security.debian.org/debian-security/dists/{codename}-security/main/binary-{arch}/Packages.gz",
+        ]
     urls = []
-    for pocket, host in (
-        (codename, "https://archive.ubuntu.com/ubuntu"),
-        (f"{codename}-updates", "https://archive.ubuntu.com/ubuntu"),
-        (f"{codename}-security", "https://security.ubuntu.com/ubuntu"),
-    ):
+    for pocket in (codename, f"{codename}-updates", f"{codename}-security"):
         for component in ("main", "universe"):
-            urls.append(f"{host}/dists/{pocket}/{component}/binary-amd64/Packages.gz")
+            if arch == "amd64":
+                host = "https://security.ubuntu.com/ubuntu" if pocket.endswith("-security") else "https://archive.ubuntu.com/ubuntu"
+            else:
+                host = "https://ports.ubuntu.com/ubuntu-ports"
+            urls.append(f"{host}/dists/{pocket}/{component}/binary-{arch}/Packages.gz")
     return urls
 
 
-def fetch_newest(codename: str, client: httpx.Client) -> dict[str, str]:
+def fetch_newest(distro: str, codename: str, client: httpx.Client) -> dict[str, str]:
     newest: dict[str, str] = {}
-    for url in package_urls(codename):
+    for url in package_urls(distro, codename, machine_arch()):
         try:
             response = client.get(url)
             response.raise_for_status()
             text_value = gzip.decompress(response.content).decode("utf-8", "replace")
-        except (httpx.HTTPError, OSError, gzip.BadGzipFile):
-            log.warning("package list unavailable: %s", url)
+        except (httpx.HTTPError, OSError, gzip.BadGzipFile) as exc:
+            log.warning("package list unavailable: %s (%s)", url, exc)
             continue
         for name, version in parse_packages(text_value).items():
             if name not in newest or version_is_newer(version, newest[name]):
@@ -627,24 +766,134 @@ def fetch_newest(codename: str, client: httpx.Client) -> dict[str, str]:
     return newest
 
 
-def fetch_vulns(installed: dict[str, str], ecosystem: str, client: httpx.Client) -> dict[str, list[dict[str, str]]]:
+def fetch_details(ids: list[str], client: httpx.Client, cache: dict[str, dict[str, Any]]) -> None:
+    """Full OSV records, which carry the score. A batch answer has only the id."""
+    wanted = [item for item in dict.fromkeys(ids) if item and item not in cache][:MAX_DETAILS]
+
+    def one(vuln_id: str) -> tuple[str, Optional[dict[str, Any]]]:
+        try:
+            response = client.get(f"https://api.osv.dev/v1/vulns/{vuln_id}")
+            response.raise_for_status()
+            return vuln_id, response.json()
+        except (httpx.HTTPError, ValueError):
+            return vuln_id, None
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for vuln_id, record in pool.map(one, wanted):
+            if record is not None:
+                cache[vuln_id] = record
+
+
+def fetch_vulns(
+    installed: dict[str, str],
+    ecosystem: str,
+    client: httpx.Client,
+    cache: Optional[dict[str, dict[str, Any]]] = None,
+) -> dict[str, list[dict[str, str]]]:
+    cache = cache if cache is not None else {}
     names = list(installed)
-    found: dict[str, list[dict[str, str]]] = {}
+    answers: list[tuple[list[str], list[dict[str, Any]]]] = []
     for start in range(0, len(names), 100):
         chunk = names[start : start + 100]
-        queries = [
-            {"version": installed[name], "package": {"name": name, "ecosystem": ecosystem}}
-            for name in chunk
-        ]
+        queries = [{"version": installed[name], "package": {"name": name, "ecosystem": ecosystem}} for name in chunk]
         try:
             response = client.post("https://api.osv.dev/v1/querybatch", json={"queries": queries})
             response.raise_for_status()
-            results = response.json().get("results") or []
+            answers.append((chunk, response.json().get("results") or []))
         except (httpx.HTTPError, ValueError):
             log.warning("vulnerability lookup failed for %s packages", len(chunk))
-            continue
-        found.update(advisories_from_osv(results, chunk))
+    ids = [str(vuln.get("id") or "") for _chunk, results in answers for item in results for vuln in item.get("vulns") or []]
+    fetch_details(ids, client, cache)
+    found: dict[str, list[dict[str, str]]] = {}
+    for chunk, results in answers:
+        found.update(advisories_from_osv(results, chunk, cache))
     return found
+
+
+def fetch_support(product: str, client: httpx.Client) -> list[dict[str, Any]]:
+    try:
+        response = client.get(f"https://endoflife.date/api/{product}.json")
+        response.raise_for_status()
+        data = response.json()
+        return data if isinstance(data, list) else []
+    except (httpx.HTTPError, ValueError):
+        log.warning("support calendar unavailable for %s", product)
+        return []
+
+
+def os_package_group(title: str, root: Path, client: httpx.Client, cache: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Packages of the operating system found under `root`, compared with that release's archive."""
+    release = parse_os_release(_read(root / "etc" / "os-release"))
+    installed = parse_dpkg(_read(root / "var" / "lib" / "dpkg" / "status"))
+    name = release.get("PRETTY_NAME") or release.get("NAME") or "Linux"
+    if not installed:
+        return {"title": title, "note": name, "error": "The package list could not be read.", "packages": []}
+    distro = release.get("ID", "")
+    version_id = release.get("VERSION_ID", "")
+    newest = fetch_newest(distro, release.get("VERSION_CODENAME", ""), client) if release.get("VERSION_CODENAME") else {}
+    ecosystem = ""
+    if distro == "ubuntu" and version_id:
+        ecosystem = f"Ubuntu:{version_id}:LTS" if "LTS" in name else f"Ubuntu:{version_id}"
+    elif distro == "debian" and version_id:
+        ecosystem = f"Debian:{version_id}"
+    vulns = fetch_vulns(installed, ecosystem, client, cache) if ecosystem else {}
+    return {"title": title, "note": name, "packages": package_rows(installed, newest, vulns)}
+
+
+def python_requirements() -> dict[str, str]:
+    """The server's own Python libraries and the versions it is running."""
+    installed: dict[str, str] = {}
+    try:
+        requires = metadata.requires("hns-server") or []
+    except metadata.PackageNotFoundError:
+        requires = []
+    for requirement in requires:
+        if "extra ==" in requirement:
+            continue
+        name = re.split(r"[\s\[<>=!~;(]", requirement, maxsplit=1)[0]
+        try:
+            installed[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            continue
+    return installed
+
+
+def fetch_pypi_latest(names: list[str], client: httpx.Client) -> dict[str, str]:
+    latest: dict[str, str] = {}
+    for name in names:
+        try:
+            response = client.get(f"https://pypi.org/pypi/{name}/json")
+            response.raise_for_status()
+            latest[name] = str(response.json()["info"]["version"])
+        except (httpx.HTTPError, ValueError, KeyError):
+            log.warning("latest version unavailable for %s", name)
+    return latest
+
+
+def python_group(client: httpx.Client, cache: dict[str, dict[str, Any]], today: date) -> dict[str, Any]:
+    installed = python_requirements()
+    rows = package_rows(installed, fetch_pypi_latest(list(installed), client), fetch_vulns(installed, "PyPI", client, cache))
+    version = platform.python_version()
+    cycle_name = ".".join(version.split(".")[:2])
+    cycles = fetch_support("python", client)
+    cycle = next((item for item in cycles if str(item.get("cycle")) == cycle_name), None)
+    row, note = support_row(f"Python {cycle_name}", version, cycle, today)
+    if row is not None:
+        rows.insert(0, row)
+        rows.sort(key=lambda item: (RISK_ORDER.get(item["risk"], 9), item["name"]))
+    return {"title": "Server application (Python)", "note": f"Python {version}. {note}".strip(), "packages": rows}
+
+
+def postgres_group(db: Session, client: httpx.Client, today: date) -> dict[str, Any]:
+    version = str(db.execute(text("SHOW server_version")).scalar() or "").split()[0]
+    major = version.split(".")[0]
+    cycle = next((item for item in fetch_support("postgresql", client) if str(item.get("cycle")) == major), None)
+    row, note = support_row(f"PostgreSQL {major}", version, cycle, today)
+    return {
+        "title": "PostgreSQL",
+        "note": f"Version {version}. {note}".strip(),
+        "packages": [row] if row is not None else [],
+    }
 
 
 def refresh_advisories(
@@ -657,9 +906,10 @@ def refresh_advisories(
     os_name: str,
     kernel: str,
     error: str = "",
+    groups: Optional[list[dict[str, Any]]] = None,
 ) -> None:
     payload = build_advisory_payload(
-        os_name=os_name, kernel=kernel, installed=installed, newest=newest, vulns=vulns, error=error
+        os_name=os_name, kernel=kernel, installed=installed, newest=newest, vulns=vulns, error=error, groups=groups
     )
     row = db.get(ServerAdvisory, 1)
     if row is None:
@@ -676,32 +926,54 @@ def refresh_advisories_live(db: Session, now: datetime, *, proc: Optional[Path] 
     installed = parse_dpkg(_read(root / "var" / "lib" / "dpkg" / "status"))
     os_name = release.get("PRETTY_NAME") or release.get("NAME") or "Linux"
     kernel = kernel_version(proc)
-    codename = release.get("VERSION_CODENAME") or ""
-    version_id = release.get("VERSION_ID") or ""
     error = ""
     newest: dict[str, str] = {}
     vulns: dict[str, list[dict[str, str]]] = {}
+    groups: list[dict[str, Any]] = []
+    today = now.astimezone(timezone.utc).date()
+    cache: dict[str, dict[str, Any]] = {}
     if not installed:
         error = "The host package list could not be read."
-    else:
-        try:
-            with httpx.Client(timeout=60, follow_redirects=True) as client:
+    try:
+        with httpx.Client(timeout=60, follow_redirects=True) as client:
+            if installed:
+                codename = release.get("VERSION_CODENAME") or ""
+                version_id = release.get("VERSION_ID") or ""
                 if codename:
-                    newest = fetch_newest(codename, client)
+                    newest = fetch_newest(release.get("ID", "ubuntu"), codename, client)
                 if version_id:
-                    vulns = fetch_vulns(installed, f"Ubuntu:{version_id}:LTS", client)
-        except httpx.HTTPError as exc:
-            error = "The version check could not be finished."
-            log.warning("advisory refresh failed: %s", exc)
+                    ecosystem = f"Ubuntu:{version_id}:LTS" if "LTS" in os_name else f"Ubuntu:{version_id}"
+                    vulns = fetch_vulns(installed, ecosystem, client, cache)
+            for build in (
+                lambda: postgres_group(db, client, today),
+                lambda: python_group(client, cache, today),
+                lambda: os_package_group("Server container", Path("/"), client, cache),
+            ):
+                try:
+                    groups.append(build())
+                except Exception:
+                    log.exception("software group failed")
+    except httpx.HTTPError as exc:
+        error = "The version check could not be finished."
+        log.warning("advisory refresh failed: %s", exc)
     refresh_advisories(
-        db, now, installed=installed, newest=newest, vulns=vulns, os_name=os_name, kernel=kernel, error=error
+        db,
+        now,
+        installed=installed,
+        newest=newest,
+        vulns=vulns,
+        os_name=os_name,
+        kernel=kernel,
+        error=error,
+        groups=groups,
     )
 
 
 def maybe_refresh_advisories(db: Session, now: datetime) -> None:
     row = db.get(ServerAdvisory, 1)
     last = row.checked_at if row is not None else None
-    if check_due(now, last):
+    old_format = row is not None and (row.payload or {}).get("version") != PAYLOAD_VERSION
+    if old_format or check_due(now, last):
         refresh_advisories_live(db, now)
 
 

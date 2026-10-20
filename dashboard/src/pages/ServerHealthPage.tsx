@@ -30,7 +30,14 @@ type Report = {
   tables: { name: string; bytes: number }[];
   forecast: { ready: boolean; growing: boolean; full_on: string | null; bytes_per_day: number | null; far: boolean };
   retention: { kept: string; items: string[] }[];
-  advisories: { checked_at: string; os: string; kernel: string; error?: string; packages: PackageRow[] } | null;
+  advisories: {
+    checked_at: string;
+    os: string;
+    kernel: string;
+    error?: string;
+    packages: PackageRow[];
+    groups?: { title: string; note?: string; error?: string; packages: PackageRow[] }[];
+  } | null;
   stuck: { pid: number; name: string; state: string; reason: string; since: string }[];
 };
 
@@ -156,6 +163,45 @@ function Chart({
   );
 }
 
+const RISK_ORDER = ["critical", "high", "medium", "low"];
+
+function riskRank(risk: string): number {
+  const index = RISK_ORDER.indexOf(risk);
+  return index < 0 ? RISK_ORDER.length : index;
+}
+
+function allPackages(advisories: Report["advisories"]): PackageRow[] {
+  if (!advisories) return [];
+  return [...advisories.packages, ...(advisories.groups ?? []).flatMap((group) => group.packages)];
+}
+
+function PackageTable({ rows }: { rows: PackageRow[] }) {
+  return (
+    <table className="server-health-table">
+      <thead>
+        <tr>
+          <th>Package</th>
+          <th>Installed</th>
+          <th>Newest</th>
+          <th>Advisory</th>
+          <th>Risk</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.name}>
+            <td>{row.name}</td>
+            <td>{row.installed}</td>
+            <td>{row.newest}</td>
+            <td>{row.advisories.map((item) => item.id).filter(Boolean).slice(0, 3).join(", ") || "—"}</td>
+            <td className={`risk-${row.risk}`}>{row.risk}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 const SECTIONS = ["cpu", "memory", "interface", "storage", "database", "software", "stuck"] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
@@ -173,8 +219,9 @@ function CardTabs({
   active: string;
   onPick: (key: string) => void;
 }) {
-  const behind = report.advisories?.packages.length ?? 0;
-  const worst = report.advisories?.packages[0]?.risk;
+  const reviewRows = allPackages(report.advisories);
+  const behind = reviewRows.length;
+  const worst = [...reviewRows].sort((a, b) => riskRank(a.risk) - riskRank(b.risk))[0]?.risk;
   const tiles: { key: string; label: string; value: string; note: string; warn?: boolean }[] = [
     { key: "cpu", label: "CPU", value: latest?.cpu == null ? "—" : `${latest.cpu.toFixed(0)}%`, note: "busy" },
     {
@@ -347,6 +394,7 @@ export default function ServerHealthPage() {
                   {current.advisories.kernel ? ` · kernel ${current.advisories.kernel}` : ""}
                 </p>
                 {current.advisories.error ? <p className="muted">{current.advisories.error}</p> : null}
+                <h3 className="server-health-heading">Host</h3>
                 {current.advisories.packages.length === 0 ? (
                   <div className="state-box">
                     {current.advisories.error
@@ -354,29 +402,20 @@ export default function ServerHealthPage() {
                       : "No packages are behind, and none has a known vulnerability."}
                   </div>
                 ) : (
-                  <table className="server-health-table">
-                    <thead>
-                      <tr>
-                        <th>Package</th>
-                        <th>Installed</th>
-                        <th>Newest</th>
-                        <th>Advisory</th>
-                        <th>Risk</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {current.advisories.packages.map((row) => (
-                        <tr key={row.name}>
-                          <td>{row.name}</td>
-                          <td>{row.installed}</td>
-                          <td>{row.newest}</td>
-                          <td>{row.advisories.map((item) => item.id).filter(Boolean).join(", ") || "—"}</td>
-                          <td className={`risk-${row.risk}`}>{row.risk}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <PackageTable rows={current.advisories.packages} />
                 )}
+                {(current.advisories.groups ?? []).map((group) => (
+                  <div key={group.title}>
+                    <h3 className="server-health-heading server-health-group">{group.title}</h3>
+                    {group.note ? <p className="muted server-health-note">{group.note}</p> : null}
+                    {group.error ? <p className="muted">{group.error}</p> : null}
+                    {group.packages.length === 0 ? (
+                      <div className="state-box">Nothing to review.</div>
+                    ) : (
+                      <PackageTable rows={group.packages} />
+                    )}
+                  </div>
+                ))}
               </>
             )}
           </div>

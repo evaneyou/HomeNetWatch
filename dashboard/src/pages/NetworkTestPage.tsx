@@ -284,47 +284,49 @@ export default function NetworkTestPage() {
               ))}
             </SelectMenu>
           </div>
+        </div>
+
+        <div className="nt-controls">
+          {!running && !ended ? (
+            <div className="nt-seg" role="group" aria-label="Links to stress">
+              {(["wired", "wireless"] as const).map((link) => (
+                <button key={link} type="button" className={links.includes(link) ? "active" : ""} aria-pressed={links.includes(link)} onClick={() => toggleLink(link)}>
+                  {NAMES[link]}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {!running && !ended ? (
+            <label className="nt-duration">
+              <SelectMenu className="aw-select" aria-label="Run length" value={String(seconds)} onChange={(event) => setSeconds(Number(event.target.value))}>
+                {DURATIONS.filter((item) => item <= catalog.max_seconds).map((item) => (
+                  <option key={item} value={item}>
+                    {item < 60 ? `${item} seconds` : `${item / 60} minute${item === 60 ? "" : "s"}`}
+                  </option>
+                ))}
+              </SelectMenu>
+            </label>
+          ) : null}
           {running ? (
             <button className="nt-stop" type="button" disabled={busy} onClick={stopAll}>
               Stop all
             </button>
           ) : ended ? (
-            <button className="aw-scan" type="button" onClick={reset}>
+            <button className="nt-go" type="button" onClick={reset}>
               New test
             </button>
           ) : (
             <WaitButton
-              className="aw-scan"
+              className="nt-go"
               busy={busy}
               disabled={agent.status !== "online" || planned.length === 0}
-              label="Run Stress Test"
-              busyLabel="Starting"
+              label="Start test"
+              busyLabel="Starting…"
               onClick={start}
             />
           )}
         </div>
       </div>
-
-      {!running && !ended ? (
-        <div className="nt-setup">
-          <div className="aw-pills" role="group" aria-label="Links to stress">
-            {(["wired", "wireless"] as const).map((link) => (
-              <button key={link} className={links.includes(link) ? "aw-pill active" : "aw-pill"} type="button" aria-pressed={links.includes(link)} onClick={() => toggleLink(link)}>
-                {NAMES[link]}
-              </button>
-            ))}
-          </div>
-          <label className="nt-duration">
-            <SelectMenu className="aw-select" aria-label="Run length" value={String(seconds)} onChange={(event) => setSeconds(Number(event.target.value))}>
-              {DURATIONS.filter((item) => item <= catalog.max_seconds).map((item) => (
-                <option key={item} value={item}>
-                  {item < 60 ? `${item} seconds` : `${item / 60} minute${item === 60 ? "" : "s"}`}
-                </option>
-              ))}
-            </SelectMenu>
-          </label>
-        </div>
-      ) : null}
 
       {error ? <div className="error">{error}</div> : null}
       {failed && stressId ? <div className="error">Lost contact with the server. Retrying.</div> : null}

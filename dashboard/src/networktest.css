@@ -5,11 +5,46 @@
   align-content: start;
 }
 
-.nt-setup {
+.nt-controls {
   display: flex;
+  flex: 1 1 100%;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 16px;
+  gap: 10px;
+}
+.nt-seg {
+  display: inline-flex;
+  padding: 3px;
+  background: var(--aw-card);
+  border: 1px solid var(--aw-line);
+  border-radius: 12px;
+}
+.nt-seg button {
+  height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--aw-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.nt-seg button:hover {
+  color: var(--aw-muted);
+  background: transparent;
+}
+.nt-seg button.active,
+.nt-seg button.active:hover {
+  background: var(--aw-mint);
+  color: var(--aw-ink);
+  font-weight: 800;
+}
+.nt-seg button:disabled,
+.nt-seg button:disabled:hover {
+  cursor: default;
+  opacity: 0.6;
 }
 .nt-duration {
   display: flex;
@@ -23,17 +58,37 @@
   min-width: 140px;
 }
 
+.nt-go,
 .nt-stop {
-  height: 44px;
-  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  min-width: 132px;
+  padding: 0 22px;
   border: 0;
   border-radius: 12px;
-  background: #ff8a7a;
-  color: #2a0a05;
   font: inherit;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
   cursor: pointer;
+}
+.nt-go,
+.nt-go:hover {
+  background: var(--aw-mint);
+  color: var(--aw-ink);
+}
+.nt-go:disabled,
+.nt-go:disabled:hover {
+  background: #2a3552;
+  color: var(--aw-soft);
+  cursor: default;
+}
+.nt-stop,
+.nt-stop:hover {
+  background: #ff8a7a;
+  color: #2a0a05;
 }
 .nt-stop:disabled {
   opacity: 0.6;
@@ -332,32 +387,74 @@
   }
 }
 
-/* The run, stop and new-test button sits at the far right of the header row. */
+/* The agent picker sits at the right of the title, the same width as the Speed Test sensor picker. */
+.nt .aw-top {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+.nt .aw-head {
+  flex: 1 1 auto;
+}
 .nt .aw-bar {
-  flex: 1;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
   min-width: 0;
 }
-.nt .aw-bar .aw-scan,
-.nt .aw-bar .nt-stop {
-  margin-left: auto;
+.nt .aw-agent {
+  flex: 0 0 auto;
+  width: auto;
 }
-@media (min-width: 769px) {
-  .nt .aw-head {
-    flex: none;
+.nt .aw-agent .select-menu {
+  display: block;
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
+}
+.app-shell.ui-compact .nt .aw-agent .select-menu-trigger.aw-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
+  padding: 0 12px;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+@media (max-width: 560px) {
+  .nt-controls,
+  .nt-seg,
+  .nt-duration,
+  .nt-go,
+  .nt-stop {
+    width: 100%;
+  }
+  .nt-seg button {
+    flex: 1;
   }
 }
-.nt .aw-bar .aw-scan,
-.nt .aw-bar .nt-stop {
-  flex: none;
-  white-space: nowrap;
-}
-@media (min-width: 769px) {
-  .nt .aw-agent {
-    margin-left: auto;
-  }
-  .nt .aw-bar .aw-scan,
-  .nt .aw-bar .nt-stop {
+@media (max-width: 640px) {
+  .nt .aw-bar {
+    width: 100%;
     margin-left: 0;
+  }
+  .nt .aw-agent {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .nt .aw-agent .select-menu,
+  .app-shell.ui-compact .nt .aw-agent .select-menu-trigger.aw-select {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
   }
 }
 

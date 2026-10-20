@@ -6,6 +6,7 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -783,3 +784,72 @@ class SystemLog(Base):
         Index("ix_system_logs_recorded_at", "recorded_at"),
         Index("ix_system_logs_monitor_recorded", "monitor_id", "recorded_at"),
     )
+
+
+class ServerSample(Base):
+    """One minute of the HomeNetWatch server: CPU, memory, disk, database, and the host NIC."""
+
+    __tablename__ = "server_samples"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    cpu_percent: Mapped[Optional[float]] = mapped_column(Float)
+    mem_used_mb: Mapped[int] = mapped_column(Integer, nullable=False)
+    mem_total_mb: Mapped[int] = mapped_column(Integer, nullable=False)
+    disk_used_mb: Mapped[int] = mapped_column(Integer, nullable=False)
+    disk_total_mb: Mapped[int] = mapped_column(Integer, nullable=False)
+    db_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    connections: Mapped[int] = mapped_column(Integer, nullable=False)
+    iface: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    rx_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    tx_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+    __table_args__ = (Index("ix_server_samples_recorded", "recorded_at"),)
+
+
+class ServerDbDaily(Base):
+    """One database size per UTC day, kept for the disk-full forecast."""
+
+    __tablename__ = "server_db_daily"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    db_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    free_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    disk_used_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    disk_total_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+
+class ServerStorage(Base):
+    """The cached breakdown of what uses the disk. One row."""
+
+    __tablename__ = "server_storage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ServerAdvisory(Base):
+    """The cached weekly package and vulnerability check. One row."""
+
+    __tablename__ = "server_advisories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ServerStuck(Base):
+    """A host process that currently looks stuck."""
+
+    __tablename__ = "server_stuck"
+
+    pid: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(8), nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(String(16))
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    d_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    hot_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cpu_ticks: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)

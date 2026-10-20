@@ -17,10 +17,25 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import RtnpSecret, SyntheticProfile, SyntheticRun, SyntheticSample
+from app.models import (
+    Issue,
+    IssueSeverity,
+    IssueStatus,
+    Network,
+    NetworkKind,
+    RtnpSecret,
+    SyntheticProfile,
+    SyntheticRun,
+    SyntheticSample,
+)
 
 LINKS = ("wired", "wireless")
 LINK_LABELS = {"wired": "Wired", "wireless": "Wi-Fi"}
+SOFTWARE = "software"
+SOFTWARE_REASON = "Software problem in the monitor. Not counted as a service failure."
+BLACKOUT_LOSS = 99.9
+SIBLING_WINDOW = timedelta(minutes=3)
+RESTART_GAP = timedelta(minutes=2)
 UDP_PORT = 8998
 CONTROL_PORT = 8999
 
@@ -29,7 +44,7 @@ _EDITABLE = ("report_interval_s", "max_rtt_ms", "max_jitter_ms", "max_loss_pct",
 PROFILES: list[dict[str, Any]] = [
     {
         "slug": "voip-g711a",
-        "name": "Voice G.711 A-law",
+        "name": "Voice G.711",
         "category": "voice",
         "position": 1,
         "options": {
@@ -401,6 +416,162 @@ def normalize_links(links: list[str]) -> list[str]:
     return chosen
 
 
+def is_blackout(rtt: Optional[float], jitter: Optional[float], loss: Optional[float]) -> bool:
+    """A window with no packets and no timing. A real delay or a partial loss is not this."""
+    if loss is None or loss < BLACKOUT_LOSS:
+        return False
+    if rtt is not None and rtt > 0:
+        return False
+    if jitter is not None and jitter > 0:
+        return False
+    return True
+
+
+def _aware(value: datetime) -> datetime:
+    return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def sibling_is_up(db: Session, monitor_id: Any, link: str, profile_slug: str, when: datetime) -> bool:
+    """True when another continuous check on this link got a real measurement nearby."""
+    moment = _aware(when)
+    rows = db.execute(
+        select(
+            SyntheticSample.rtt_ms,
+            SyntheticSample.jitter_ms,
+            SyntheticSample.loss_pct,
+            SyntheticSample.verdict,
+        )
+        .join(SyntheticRun, SyntheticSample.run_id == SyntheticRun.id)
+        .where(
+            SyntheticRun.monitor_id == monitor_id,
+            SyntheticRun.mode == "continuous",
+            SyntheticRun.profile_slug != profile_slug,
+            SyntheticSample.link == link,
+            SyntheticSample.recorded_at >= moment - SIBLING_WINDOW,
+            SyntheticSample.recorded_at <= moment + SIBLING_WINDOW,
+            ~SyntheticSample.sample_key.startswith("hour:"),
+            ~SyntheticSample.sample_key.startswith("day:"),
+        )
+        .limit(30)
+    ).all()
+    for rtt, jitter, loss, verdict in rows:
+        if verdict == SOFTWARE:
+            continue
+        if not is_blackout(rtt, jitter, loss):
+            return True
+    return False
+
+
+def _restart_token(options: dict[str, Any], link: str, when: datetime) -> tuple[dict[str, Any], bool]:
+    """Bump the per-link restart counter, at most once every two minutes."""
+    moment = _aware(when)
+    restarts = dict(options.get("software_restarts") or {})
+    entry = dict(restarts.get(link) or {})
+    token = int(entry.get("token") or 0)
+    previous = entry.get("at")
+    try:
+        last = datetime.fromisoformat(previous) if isinstance(previous, str) else None
+    except ValueError:
+        last = None
+    if last is not None and last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    if last is not None and moment - last < RESTART_GAP:
+        return options, False
+    token += 1
+    restarts[link] = {"token": token, "at": moment.isoformat()}
+    return {**options, "software_restarts": restarts}, True
+
+
+def _software_title(name: str, link: str) -> str:
+    return f"{name} on {LINK_LABELS.get(link, link)} stopped in the monitor"
+
+
+def _open_software_issue(db: Session, monitor: Any, run: SyntheticRun, link: str, when: datetime) -> None:
+    name = db.scalar(select(SyntheticProfile.name).where(SyntheticProfile.slug == run.profile_slug)) or run.profile_slug
+    title = _software_title(name, link)
+    existing = db.scalar(
+        select(Issue).where(
+            Issue.monitor_id == monitor.id,
+            Issue.status == IssueStatus.open,
+            Issue.root_cause_stage == SOFTWARE,
+            Issue.title == title,
+        )
+    )
+    if existing is not None:
+        return
+    kind = NetworkKind.wifi if link == "wireless" else NetworkKind.wired
+    network = db.scalar(select(Network).where(Network.group_id == monitor.group_id, Network.kind == kind))
+    db.add(
+        Issue(
+            group_id=monitor.group_id,
+            monitor_id=monitor.id,
+            network_id=network.id if network is not None else None,
+            title=title,
+            summary=(
+                "This check reported no packets and no round trip while another check on the same link was still getting through. "
+                "That is a software problem in the monitor, not the service, so these results are left out of the KPI. "
+                "A restart of this test was requested."
+            ),
+            severity=IssueSeverity.warning,
+            status=IssueStatus.open,
+            root_cause_stage=SOFTWARE,
+            opened_at=_aware(when),
+        )
+    )
+
+
+def _resolve_software_issue(db: Session, monitor: Any, run: SyntheticRun, link: str, when: datetime) -> None:
+    name = db.scalar(select(SyntheticProfile.name).where(SyntheticProfile.slug == run.profile_slug)) or run.profile_slug
+    title = _software_title(name, link)
+    issue = db.scalar(
+        select(Issue).where(
+            Issue.monitor_id == monitor.id,
+            Issue.status == IssueStatus.open,
+            Issue.root_cause_stage == SOFTWARE,
+            Issue.title == title,
+        )
+    )
+    if issue is None:
+        return
+    issue.status = IssueStatus.resolved
+    issue.resolved_at = _aware(when)
+
+
+def classify_software(
+    db: Session,
+    monitor: Any,
+    run: SyntheticRun,
+    link: str,
+    when: datetime,
+    extracted: dict[str, Any],
+) -> dict[str, Any]:
+    """Mark a total blackout as a software problem when the rest of the link is fine, and ask for a restart.
+
+    A blackout on every check is left as a real failure. A manual or stress run is left as it was reported.
+    """
+    if run.mode != "continuous":
+        return extracted
+    blackout = is_blackout(extracted.get("rtt_ms"), extracted.get("jitter_ms"), extracted.get("loss_pct"))
+    if not blackout:
+        if extracted.get("verdict") in ("pass", "fail"):
+            _resolve_software_issue(db, monitor, run, link, when)
+        return extracted
+    if not sibling_is_up(db, monitor.id, link, run.profile_slug, when):
+        return extracted
+    options, _changed = _restart_token(dict(run.options or {}), link, when)
+    run.options = options
+    _open_software_issue(db, monitor, run, link, when)
+    return {**extracted, "verdict": SOFTWARE}
+
+
+def restart_token_for(run: SyntheticRun, link: str) -> int:
+    entry = ((run.options or {}).get("software_restarts") or {}).get(link) or {}
+    try:
+        return int(entry.get("token") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def metrics_from_interval(payload: dict[str, Any]) -> dict[str, Any]:
     flows = payload.get("flows") or []
     flow = flows[0] if flows else {}
@@ -592,7 +763,12 @@ def _average(rows: list[SyntheticSample]) -> dict[str, Any]:
         return sum(numbers) / len(numbers)
 
     verdicts = [row.verdict for row in rows if row.verdict]
-    verdict = "fail" if "fail" in verdicts else ("pass" if verdicts else None)
+    if verdicts and set(verdicts) <= {SOFTWARE}:
+        verdict = SOFTWARE
+    elif "fail" in verdicts:
+        verdict = "fail"
+    else:
+        verdict = "pass" if verdicts else None
     return {
         "rtt_ms": mean([row.rtt_ms for row in rows]),
         "jitter_ms": mean([row.jitter_ms for row in rows]),

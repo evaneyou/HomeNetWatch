@@ -33,6 +33,7 @@ function fmt(value: number | null | undefined): string {
 function statusOf(verdict: string | null): string {
   if (verdict === "pass") return "ok";
   if (verdict === "fail") return "fail";
+  if (verdict === "software") return "software";
   return "unknown";
 }
 
@@ -65,6 +66,9 @@ export default function RealtimeHealth({
         <h2 style={{ marginTop: 0, fontSize: "1.4rem" }}>
           {link === "wireless" ? "Wi-Fi" : "Wired"} · {selected?.name ?? "Real-Time Application Health"}
         </h2>
+        {selected?.latest.verdict === "software" ? (
+          <p className="muted">Software problem in the monitor. These results are left out of the KPI, and a restart of this test was requested.</p>
+        ) : null}
         <ChartBody item={selected} range={range} loading={healthQ.isLoading} failed={healthQ.isError} />
       </div>
     );
@@ -89,6 +93,7 @@ export default function RealtimeHealth({
             </button>
             <span className="mono">
               {fmt(item.latest.rtt_ms)} ms · jitter {fmt(item.latest.jitter_ms)} ms · loss {fmt(item.latest.loss_pct)}%
+              {item.latest.verdict === "software" ? " · software" : ""}
             </span>
           </div>
           <span
@@ -111,7 +116,7 @@ function strip(points: Point[]): string {
     const status = statuses[index];
     let end = index + 1;
     while (end < statuses.length && statuses[end] === status) end += 1;
-    const color = status === "ok" ? "var(--ok)" : status === "fail" ? "var(--fail)" : "var(--line)";
+    const color = status === "ok" ? "var(--ok)" : status === "fail" ? "var(--fail)" : status === "software" ? "var(--degraded)" : "var(--line)";
     stops.push(`${color} ${(index / statuses.length) * 100}% ${(end / statuses.length) * 100}%`);
     index = end;
   }

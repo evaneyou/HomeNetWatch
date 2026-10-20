@@ -121,6 +121,9 @@ def apply_retention(db: Session, now: datetime) -> dict[str, int]:
     from app import kpi as kpi_module
 
     deleted_kpi = kpi_module.prune(db, now)
+    from app.server_health import prune as prune_server_health
+
+    deleted_server = prune_server_health(db, now)
     deleted_visits = db.execute(
         delete(GuestVisit).where(GuestVisit.visited_at < now - timedelta(days=guest_visits.RETENTION_DAYS))
     ).rowcount
@@ -158,6 +161,7 @@ def apply_retention(db: Session, now: datetime) -> dict[str, int]:
         "deleted_issues": deleted_issues or 0,
         "deleted_guest_visits": deleted_visits or 0,
         "deleted_kpi_hours": deleted_kpi,
+        "deleted_server_health": deleted_server,
         "daily_results": daily_results,
         "hourly_results": hourly_results,
         "daily_wifi": daily_wifi,

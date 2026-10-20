@@ -22,6 +22,7 @@ from sqlalchemy import Date, DateTime, case, cast, delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models import KpiDaily, KpiHourly, Network, ResultStatus, SyntheticRun, SyntheticSample, Test, TestKind, TestResult
+from app.synthetic import SOFTWARE, is_blackout
 
 log = logging.getLogger(__name__)
 
@@ -222,7 +223,17 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
             ~SyntheticSample.sample_key.startswith("day:"),
         )
     ).all()
-    for sample, slug, monitor_id in sample_rows:
+    rows = list(sample_rows)
+    healthy: dict[tuple[UUID, str], list[tuple[datetime, str]]] = defaultdict(list)
+    for sample, slug, monitor_id in rows:
+        if sample.verdict == SOFTWARE or is_blackout(sample.rtt_ms, sample.jitter_ms, sample.loss_pct):
+            continue
+        healthy[(monitor_id, sample.link)].append((sample.recorded_at, slug))
+    window = timedelta(minutes=3)
+    for sample, slug, monitor_id in rows:
+        # A total blackout while another check on the link is fine is a monitor problem, not the service.
+        if sample.verdict == SOFTWARE or _software_blackout(sample, slug, monitor_id, healthy, window):
+            continue
         kind = "voice" if slug.startswith("voip-") else "video" if slug == "video-conference" else "apps"
         acc = out[(hour_of(sample.recorded_at), monitor_id, sample.link, kind)]
         if sample.verdict in ("pass", "fail"):
@@ -231,6 +242,16 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
                 acc.failed += 1
         acc.add_metrics(sample.rtt_ms, sample.jitter_ms, sample.loss_pct)
     return out
+
+
+def _software_blackout(sample: SyntheticSample, slug: str, monitor_id: UUID, healthy: dict, window: timedelta) -> bool:
+    if not is_blackout(sample.rtt_ms, sample.jitter_ms, sample.loss_pct):
+        return False
+    moment = sample.recorded_at
+    for recorded, other in healthy.get((monitor_id, sample.link), ()):
+        if other != slug and abs(recorded - moment) <= window:
+            return True
+    return False
 
 
 _SUM_FIELDS = (

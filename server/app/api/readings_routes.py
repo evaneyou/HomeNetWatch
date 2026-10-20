@@ -422,6 +422,8 @@ def _synthetic_out(sample: SyntheticSample, monitor: Monitor, names: dict[str, s
     network_slug, network_name = _LOG_LINK.get(sample.link, (sample.link, sample.link))
     if sample.verdict == "pass":
         status, reason = "ok", "Within the round-trip, jitter, and loss limits."
+    elif sample.verdict == "software":
+        status, reason = "software", "Software problem in the monitor. Not counted as a service failure."
     elif sample.verdict == "fail":
         status, reason = "fail", "Outside the round-trip, jitter, or loss limit."
     else:

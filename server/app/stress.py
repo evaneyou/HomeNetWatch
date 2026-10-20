@@ -37,7 +37,7 @@ _DSCP_FIELD = {"key": "dscp", "label": "Priority marking (DSCP)", "type": "choic
 
 CODECS = {
     "g711": ("Voice G.711 µ-law", "voip-g711"),
-    "g711a": ("Voice G.711 A-law", "voip-g711a"),
+    "g711a": ("Voice G.711", "voip-g711a"),
     "g729": ("Voice G.729", "voip-g729"),
     "g723": ("Voice G.723.1", "voip-g723"),
 }

@@ -351,6 +351,23 @@
   flex: none;
   white-space: nowrap;
 }
+/* Same width as the Speed Test sensor picker: 200px, and it does not grow to fill the row. */
+.nt .aw-agent {
+  flex: 0 0 auto;
+  width: auto;
+}
+.nt .aw-agent .select-menu {
+  width: 200px;
+}
+@media (max-width: 640px) {
+  .nt .aw-agent {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .nt .aw-agent .select-menu {
+    width: 100%;
+  }
+}
 @media (min-width: 769px) {
   .nt .aw-agent {
     margin-left: auto;

@@ -355,10 +355,13 @@
   flex: 0 0 auto;
   width: auto;
 }
-.nt .aw-agent .select-menu {
+.nt .aw-agent .select-menu,
+.app-shell.ui-compact .nt .aw-agent .select-menu-trigger.aw-select {
   display: block;
-  width: auto;
+  box-sizing: border-box;
+  width: 200px;
   min-width: 200px;
+  max-width: 200px;
 }
 .nt .aw-bar .aw-scan,
 .nt .aw-bar .nt-stop {
@@ -377,9 +380,11 @@
     flex: 1 1 auto;
     min-width: 0;
   }
-  .nt .aw-agent .select-menu {
+  .nt .aw-agent .select-menu,
+  .app-shell.ui-compact .nt .aw-agent .select-menu-trigger.aw-select {
     width: 100%;
     min-width: 0;
+    max-width: none;
   }
 }
 

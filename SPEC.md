@@ -88,6 +88,7 @@ Ping, MTR, Wi-Fi test runner, offline spool, Grafana, webhooks, full enrollment 
 ## Design principles
 
 - Health color is the primary signal (green / amber / red).
+- A continuous application check that reports no packets and no round trip, while another check on the same link is still getting through, is a software problem in the monitor. Those results are marked software, left out of the KPI, opened as an issue, and the monitor is asked to restart that test. A blackout of every check on the link stays a real failure.
 - Stage waterfall on Test detail is the distinctive moment of the product.
 - Charts live in the React app via Recharts — not an external Grafana stack.
 - Dense but readable ops UI; real copy; no marketing fluff inside the product.

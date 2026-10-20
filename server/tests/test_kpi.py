@@ -67,15 +67,25 @@ def _run(db, monitor: Monitor, slug: str, links=("wired",)) -> SyntheticRun:
     return run
 
 
-def _sample(db, run: SyntheticRun, minute: int, verdict: str, loss: float, link="wired", when: datetime = HOUR) -> None:
+def _sample(
+    db,
+    run: SyntheticRun,
+    minute: int,
+    verdict: str,
+    loss: float,
+    link="wired",
+    when: datetime = HOUR,
+    rtt: float = 30.0,
+    jitter: float = 3.0,
+) -> None:
     db.add(
         SyntheticSample(
             run_id=run.id,
             link=link,
             sample_key=f"{minute}:{uuid.uuid4().hex[:6]}",
             recorded_at=when + timedelta(minutes=minute),
-            rtt_ms=30.0,
-            jitter_ms=3.0,
+            rtt_ms=rtt,
+            jitter_ms=jitter,
             loss_pct=loss,
             verdict=verdict,
             metrics={},
@@ -139,6 +149,39 @@ def test_voice_and_video_availability_and_packet_loss(db):
     assert result["summary"]["video"]["loss_avg"] == pytest.approx(0.2)
     assert result["links"]["voice"]["wireless"]["availability"] == pytest.approx(100.0)
     assert result["app_loss_avg"] is not None and 0 < result["app_loss_avg"] < 1
+
+
+def test_a_software_blackout_is_left_out_when_the_link_is_otherwise_up(db):
+    monitor = _pi(db)
+    voice = _run(db, monitor, "voip-g711a", ("wireless",))
+    video = _run(db, monitor, "video-conference", ("wireless",))
+    for minute in range(4):
+        _sample(db, voice, minute, "pass", 0.0, link="wireless")
+        _sample(db, video, minute, "fail", 100.0, link="wireless", rtt=0.0, jitter=0.0)
+    _sample(db, video, 5, "fail", 4.0, link="wireless", rtt=90.0, jitter=8.0)
+    _sample(db, video, 6, "software", 100.0, link="wireless", rtt=0.0, jitter=0.0)
+    db.commit()
+    kpi.rebuild(db, HOUR, HOUR + timedelta(hours=1))
+    db.commit()
+
+    result = kpi.report(db, "day", now=NOW, monitor_id=monitor.id)
+    assert result["summary"]["voice"]["samples"] == 4
+    assert result["summary"]["voice"]["failed"] == 0
+    assert result["summary"]["video"]["samples"] == 1
+    assert result["summary"]["video"]["failed"] == 1
+    assert result["summary"]["video"]["loss_avg"] == pytest.approx(4.0)
+
+
+def test_a_blackout_of_the_only_check_still_counts(db):
+    monitor = _pi(db)
+    video = _run(db, monitor, "video-conference", ("wireless",))
+    _sample(db, video, 1, "fail", 100.0, link="wireless", rtt=0.0, jitter=0.0)
+    db.commit()
+    kpi.rebuild(db, HOUR, HOUR + timedelta(hours=1))
+    db.commit()
+    result = kpi.report(db, "day", now=NOW, monitor_id=monitor.id)
+    assert result["summary"]["video"]["samples"] == 1
+    assert result["summary"]["video"]["failed"] == 1
 
 
 def test_manual_and_stress_runs_are_not_counted(db):

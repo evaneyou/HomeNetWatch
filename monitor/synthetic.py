@@ -638,9 +638,15 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
     except (ValueError, KeyError) as exc:
         _finish(config, run_id, link, "failed", str(exc))
         return
+    wanted_restart = int(job.get("restart_token") or 0)
     with _lock:
         current = _running.get(item)
-        if current and current["args"] == args and current["proc"].poll() is None:
+        if (
+            current
+            and current["args"] == args
+            and current["proc"].poll() is None
+            and not restart_pending(current.get("restart_token"), wanted_restart)
+        ):
             return
     if current:
         _stop(item)
@@ -659,7 +665,7 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
         env=_send_env(target, source, interface),
     )
     with _lock:
-        _running[item] = {"args": args, "proc": proc, "mode": job.get("mode")}
+        _running[item] = {"args": args, "proc": proc, "mode": job.get("mode"), "restart_token": wanted_restart}
     if job.get("mode") == "stress":
         # The server ends a stress test after five minutes at most. If it cannot be
         # reached, this timer still stops the flow.
@@ -680,6 +686,11 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
 # while the rest of the network was fine, and only a fresh start cleared it.
 MISSING_INTERVALS = 3
 SILENT_INTERVALS = 6
+
+
+def restart_pending(running: Optional[int], wanted: int) -> bool:
+    """True when the server has asked for a newer restart than the one this process applied."""
+    return int(wanted or 0) > int(running or 0)
 
 
 def flow_state(flow: dict) -> str:

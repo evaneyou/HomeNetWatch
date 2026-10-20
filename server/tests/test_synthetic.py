@@ -2,15 +2,15 @@
 
 import importlib.util
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
 
 from sqlalchemy import select
 
 from app.auth import hash_password
-from app.models import Monitor, SyntheticRun, SyntheticSample, User, UserRole
-from app.synthetic import build_report, is_tunnel_target, launch_plan, public_host, send_args
+from app.models import Issue, IssueStatus, Monitor, SyntheticRun, SyntheticSample, User, UserRole
+from app.synthetic import build_report, is_blackout, is_tunnel_target, launch_plan, public_host, send_args
 from conftest import login
 
 
@@ -578,3 +578,107 @@ def test_agent_restarts_a_flow_that_loses_every_packet():
     # a few lost packets are not an outage
     assert module.flow_state({"rx": 90, "loss_pct": 10.0}) == ""
     assert module.SILENT_INTERVALS > module.MISSING_INTERVALS
+    assert module.restart_pending(1, 2) is True
+    assert module.restart_pending(2, 2) is False
+    assert module.restart_pending(None, 0) is False
+
+
+def test_blackout_needs_no_timing_and_a_partial_loss_is_not_one():
+    assert is_blackout(0, 0, 100)
+    assert is_blackout(None, None, 100)
+    assert not is_blackout(80, 0, 100)
+    assert not is_blackout(0, 4, 100)
+    assert not is_blackout(20, 2, 1)
+
+
+def _post_sample(client, token, run_id, link, when, rtt, jitter, loss, passed, index):
+    return client.post(
+        "/api/v1/synthetic/samples",
+        headers=_headers(token),
+        json={
+            "run_id": str(run_id),
+            "link": link,
+            "interval_index": index,
+            "recorded_at": when.isoformat(),
+            "metrics": {
+                "type": "interval",
+                "index": index,
+                "flows": [
+                    {
+                        "rtt": {"avg_ms": rtt, "jitter_ms": jitter},
+                        "loss_pct": loss,
+                        "verdict": {"pass": passed},
+                    }
+                ],
+            },
+        },
+    )
+
+
+def test_a_blackout_beside_a_healthy_check_is_a_software_issue(client, db, monitor_token):
+    monitor = _monitor(db)
+    voice = SyntheticRun(
+        monitor_id=monitor.id, profile_slug="voip-g711a", mode="continuous", links=["wireless"], options={}, status="running", finished_links=[]
+    )
+    video = SyntheticRun(
+        monitor_id=monitor.id,
+        profile_slug="video-conference",
+        mode="continuous",
+        links=["wireless"],
+        options={},
+        status="running",
+        finished_links=[],
+    )
+    alone = SyntheticRun(
+        monitor_id=monitor.id, profile_slug="video-conference", mode="continuous", links=["wired"], options={}, status="running", finished_links=[]
+    )
+    db.add_all([voice, video, alone])
+    db.commit()
+    start = datetime(2026, 10, 19, 23, 20, tzinfo=timezone.utc)
+    healthy = _post_sample(client, monitor_token, voice.id, "wireless", start, 40, 2, 0, True, 1)
+    assert healthy.status_code == 200, healthy.text
+    marked = _post_sample(client, monitor_token, video.id, "wireless", start + timedelta(seconds=10), 0, 0, 100, False, 1)
+    assert marked.status_code == 200, marked.text
+    db.expire_all()
+    stored = db.scalar(select(SyntheticSample).where(SyntheticSample.run_id == video.id))
+    assert stored is not None
+    assert stored.verdict == "software"
+    assert stored.metrics.get("impact") == "software"
+    issue = db.scalar(select(Issue).where(Issue.monitor_id == monitor.id, Issue.root_cause_stage == "software"))
+    assert issue is not None and issue.status == IssueStatus.open
+    assert "Wi-Fi" in issue.title
+    assert db.get(SyntheticRun, video.id).options["software_restarts"]["wireless"]["token"] == 1
+
+    again = _post_sample(client, monitor_token, video.id, "wireless", start + timedelta(seconds=40), 0, 0, 100, False, 2)
+    assert again.status_code == 200, again.text
+    db.expire_all()
+    assert db.get(SyntheticRun, video.id).options["software_restarts"]["wireless"]["token"] == 1
+    later = _post_sample(client, monitor_token, video.id, "wireless", start + timedelta(minutes=3), 0, 0, 100, False, 3)
+    assert later.status_code == 200, later.text
+    db.expire_all()
+    assert db.get(SyntheticRun, video.id).options["software_restarts"]["wireless"]["token"] == 2
+
+    recovered = _post_sample(client, monitor_token, video.id, "wireless", start + timedelta(minutes=4), 90, 4, 0, True, 4)
+    assert recovered.status_code == 200, recovered.text
+    db.expire_all()
+    issue = db.scalar(select(Issue).where(Issue.monitor_id == monitor.id, Issue.root_cause_stage == "software"))
+    assert issue.status == IssueStatus.resolved
+
+    real = _post_sample(client, monitor_token, alone.id, "wired", start, 0, 0, 100, False, 1)
+    assert real.status_code == 200, real.text
+    db.expire_all()
+    wired = db.scalar(select(SyntheticSample).where(SyntheticSample.run_id == alone.id))
+    assert wired is not None and wired.verdict == "fail"
+
+    if db.scalar(select(User).where(User.username == "admin")) is None:
+        db.add(User(username="admin", password_hash=hash_password("admin-change-me"), role=UserRole.admin, is_active=True))
+        db.commit()
+    log = client.get(f"/api/v1/monitors/{monitor.id}/log?probe=rtnp:video-conference", headers=login(client))
+    assert log.status_code == 200, log.text
+    items = log.json()["items"]
+    assert any(item["network_slug"] == "wifi" and item["status"] == "software" for item in items)
+    assert any(item["network_slug"] == "wired" and item["status"] == "fail" for item in items)
+    assignment = client.get("/api/v1/synthetic/assignment", headers=_headers(monitor_token))
+    assert assignment.status_code == 200, assignment.text
+    job = next(item for item in assignment.json()["jobs"] if item["run_id"] == str(video.id))
+    assert job["restart_token"] == 2

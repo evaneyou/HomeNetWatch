@@ -10,6 +10,7 @@ const PRESENTATION: Record<string, { kind: StatusKind; label: string }> = {
   fail: { kind: "offline", label: "Offline" },
   offline: { kind: "offline", label: "Offline" },
   info: { kind: "info", label: "Notice" },
+  software: { kind: "info", label: "Software" },
   unknown: { kind: "unknown", label: "Unknown" },
 };
 

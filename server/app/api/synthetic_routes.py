@@ -17,8 +17,10 @@ from app.config import get_settings
 from app.db import get_db
 from app.models import Monitor, StressRun, SyntheticProfile, SyntheticRun, SyntheticSample, User
 from app.synthetic import (
+    SOFTWARE,
     apply_options,
     build_report,
+    classify_software,
     ensure_key,
     ensure_profiles,
     metrics_from_interval,
@@ -26,6 +28,7 @@ from app.synthetic import (
     profile_category,
     public_host,
     range_start,
+    restart_token_for,
 )
 from app import stress as stress_module
 from app.redact import redact
@@ -359,6 +362,7 @@ def assignment(
                 "profile_slug": run.profile_slug,
                 "options": run.options,
                 "duration_seconds": run.duration_seconds,
+                "restart_token": restart_token_for(run, link),
             }
             if run.mode == "stress":
                 job["ends_in_s"] = max(1, int((ends[run.stress_id] - _now()).total_seconds()))
@@ -388,7 +392,9 @@ def post_sample(
         raise HTTPException(status_code=404, detail="Run not found")
     if body.link not in run.links:
         raise HTTPException(status_code=400, detail="This run does not include that link")
-    extracted = metrics_from_interval(body.metrics)
+    extracted = classify_software(
+        db, monitor, run, body.link, body.recorded_at, metrics_from_interval(body.metrics)
+    )
     # A restarted sender begins its interval count again. The time keeps each report.
     key = f"{body.interval_index}:{int(body.recorded_at.timestamp())}"
     existing = db.scalar(
@@ -406,7 +412,7 @@ def post_sample(
                 sample_key=key,
                 interval_index=body.interval_index,
                 recorded_at=body.recorded_at,
-                metrics=body.metrics if run.mode == "stress" else {},
+                metrics=body.metrics if run.mode == "stress" else ({"impact": SOFTWARE} if extracted.get("verdict") == SOFTWARE else {}),
                 **extracted,
             )
         )

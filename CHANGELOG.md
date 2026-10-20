@@ -10,6 +10,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Added
+
+- **Software failures stay out of the KPI:** a continuous check that reports no packets and no round trip, while another check on the same link is still getting through, is marked as a software problem. The result log says so, an issue is opened, the KPI leaves those samples out, and the monitor is asked to restart that test (agent 0.8.1). A blackout of every check on the link is still a real failure. Migration `0044_software_impact`.
+
 ### Changed
 
 - **Server folder name:** the production checkout is now `~/Home-Net-Watch`. The docs, the backup cron example and `rtnp-allowlist.service` use that path, and `COMPOSE_PROJECT_NAME=home-sensor` stays pinned in `.env.example` so the containers and volumes keep their names.

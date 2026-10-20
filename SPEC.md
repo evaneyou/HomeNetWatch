@@ -89,7 +89,7 @@ Ping, MTR, Wi-Fi test runner, offline spool, Grafana, webhooks, full enrollment 
 
 - Health color is the primary signal (green / amber / red).
 - A continuous application check that reports no packets and no round trip, while another check on the same link is still getting through, is a software problem in the monitor. Those results are marked software, left out of the KPI, opened as an issue, and the monitor is asked to restart that test. A blackout of every check on the link stays a real failure.
-- Server Health, under Issues, is the machine running HomeNetWatch. An admin sees CPU, memory, the host interface, disk, and database size, a forecast of when the database would fill the disk, the retention rules, a weekly software and vulnerability check, and processes that look stuck. Guests and viewers are sent home.
+- Server Health, under Issues, is the machine running HomeNetWatch. An admin or a guest sees CPU, memory, the machine network interface and the app container interface, disk, and database size, a forecast of when the database would fill the disk, the retention rules, a weekly software and vulnerability check, and processes that look stuck. A viewer is sent home.
 - Stage waterfall on Test detail is the distinctive moment of the product.
 - Charts live in the React app via Recharts — not an external Grafana stack.
 - Dense but readable ops UI; real copy; no marketing fluff inside the product.

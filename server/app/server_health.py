@@ -171,6 +171,16 @@ def choose_iface(counters: dict[str, tuple[int, int]]) -> tuple[str, int, int]:
     return name, rx, tx
 
 
+def read_iface(text: str) -> tuple[str, Optional[int], Optional[int]]:
+    """The busiest real interface in a /proc/net/dev listing, or nothing when the file is empty."""
+    if not text.strip():
+        return "", None, None
+    name, rx, tx = choose_iface(parse_net(text))
+    if not name:
+        return "", None, None
+    return name, rx, tx
+
+
 def byte_rates(previous: Optional[tuple[datetime, int, int]], current: tuple[datetime, int, int]) -> tuple[Optional[float], Optional[float]]:
     if previous is None:
         return None, None
@@ -639,7 +649,10 @@ def read_machine(proc: Path, root: Path, previous_cpu: Optional[tuple[int, int]]
         disk = shutil.disk_usage(root if root.exists() else "/")
     except OSError:
         disk = shutil.disk_usage("/")
-    iface, rx, tx = choose_iface(parse_net(_read(proc / "net" / "dev")))
+    # proc/net follows this process, so inside the container it is the app's eth0.
+    # proc/1/net is the host init process, which sees the machine's real interface.
+    iface, rx, tx = read_iface(_read(proc / "net" / "dev"))
+    host_iface, host_rx, host_tx = read_iface(_read(proc / "1" / "net" / "dev"))
     return {
         "cpu_percent": cpu_percent(previous_cpu, counters),
         "cpu_counters": counters,
@@ -651,8 +664,11 @@ def read_machine(proc: Path, root: Path, previous_cpu: Optional[tuple[int, int]]
         "disk_used_mb": _mb(disk.used),
         "disk_total_mb": _mb(disk.total),
         "iface": iface,
-        "rx_bytes": rx,
-        "tx_bytes": tx,
+        "rx_bytes": rx or 0,
+        "tx_bytes": tx or 0,
+        "host_iface": host_iface,
+        "host_rx_bytes": host_rx,
+        "host_tx_bytes": host_tx,
     }
 
 
@@ -719,6 +735,9 @@ def record_sample(db: Session, now: Optional[datetime] = None, *, proc: Optional
         iface=machine["iface"],
         rx_bytes=machine["rx_bytes"],
         tx_bytes=machine["tx_bytes"],
+        host_iface=machine["host_iface"],
+        host_rx_bytes=machine["host_rx_bytes"],
+        host_tx_bytes=machine["host_tx_bytes"],
     )
     db.add(sample)
     day = now.astimezone(timezone.utc).date()
@@ -1255,10 +1274,28 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
     previous: Optional[tuple[datetime, int, int]] = (
         (earlier.recorded_at, earlier.rx_bytes, earlier.tx_bytes) if earlier is not None else None
     )
+    host_previous: Optional[tuple[datetime, int, int]] = None
+    if earlier is not None and earlier.host_rx_bytes is not None and earlier.host_tx_bytes is not None:
+        host_previous = (earlier.recorded_at, earlier.host_rx_bytes, earlier.host_tx_bytes)
     points = []
     for sample in samples:
         rx_bps, tx_bps = byte_rates(previous, (sample.recorded_at, sample.rx_bytes, sample.tx_bytes))
         previous = (sample.recorded_at, sample.rx_bytes, sample.tx_bytes)
+        host_rx_bps: Optional[float] = None
+        host_tx_bps: Optional[float] = None
+        if sample.host_rx_bytes is not None and sample.host_tx_bytes is not None:
+            host_rx_bps, host_tx_bps = byte_rates(
+                host_previous, (sample.recorded_at, sample.host_rx_bytes, sample.host_tx_bytes)
+            )
+            host_previous = (sample.recorded_at, sample.host_rx_bytes, sample.host_tx_bytes)
+        else:
+            host_previous = None
+        # The same name means both readings are one interface, so the machine line would repeat the app line.
+        host_iface = sample.host_iface or ""
+        if host_iface == (sample.iface or ""):
+            host_iface = ""
+            host_rx_bps = None
+            host_tx_bps = None
         points.append(
             {
                 "t": sample.recorded_at,
@@ -1272,6 +1309,9 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
                 "rx_bps": rx_bps,
                 "tx_bps": tx_bps,
                 "iface": sample.iface,
+                "host_rx_bps": host_rx_bps,
+                "host_tx_bps": host_tx_bps,
+                "host_iface": host_iface,
                 "connections": sample.connections,
             }
         )

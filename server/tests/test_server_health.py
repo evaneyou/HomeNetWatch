@@ -16,6 +16,7 @@ from app.server_health import (
     category_usage,
     check_due,
     choose_iface,
+    read_iface,
     cpu_counters,
     cpu_percent,
     disk_projection,
@@ -56,6 +57,8 @@ docker0: 9000 0 0 0 0 0 0 0 9000 0
     start = datetime(2026, 10, 20, tzinfo=timezone.utc)
     rates = byte_rates((start, rx, tx), (start + timedelta(seconds=2), rx + 1000, tx + 40))
     assert rates == (500.0, 20.0)
+    assert read_iface(" enp0s6: 100 0 0 0 0 0 0 0 40 0\n") == ("enp0s6", 100, 40)
+    assert read_iface("") == ("", None, None)
 
 
 def test_forecast_dates_a_rising_database():
@@ -196,6 +199,56 @@ def _user(db, username: str, role: UserRole) -> None:
     if db.scalar(select(User).where(User.username == username)) is None:
         db.add(User(username=username, password_hash=hash_password(username if role != UserRole.admin else "admin-change-me"), role=role, is_active=True))
         db.commit()
+
+
+def _sample(when: datetime, **extra) -> ServerSample:
+    return ServerSample(
+        recorded_at=when,
+        mem_used_mb=1,
+        mem_total_mb=2,
+        disk_used_mb=1,
+        disk_total_mb=2,
+        db_bytes=10,
+        connections=1,
+        **extra,
+    )
+
+
+def test_report_shows_the_machine_and_the_app_interface(client, db):
+    _user(db, "admin", UserRole.admin)
+    db.execute(delete(ServerSample))
+    db.commit()
+    start = datetime.now(timezone.utc).replace(microsecond=0)
+    db.add_all(
+        [
+            _sample(start, iface="eth0", rx_bytes=1000, tx_bytes=100, host_iface="enp0s6", host_rx_bytes=5000, host_tx_bytes=200),
+            _sample(
+                start + timedelta(seconds=60),
+                iface="eth0",
+                rx_bytes=7000,
+                tx_bytes=100,
+                host_iface="enp0s6",
+                host_rx_bytes=65000,
+                host_tx_bytes=200,
+            ),
+            _sample(start + timedelta(seconds=120), iface="eth0", rx_bytes=1, tx_bytes=1, host_iface="eth0", host_rx_bytes=9, host_tx_bytes=9),
+        ]
+    )
+    db.commit()
+    login(client)
+    points = client.get("/api/v1/server-health?range=1h").json()["points"]
+    assert len(points) == 3
+    both = points[1]
+    assert both["iface"] == "eth0"
+    assert both["rx_bps"] == 100
+    assert both["host_iface"] == "enp0s6"
+    assert both["host_rx_bps"] == 1000
+    assert both["host_tx_bps"] == 0
+    same = points[-1]
+    assert same["host_iface"] == ""
+    assert same["host_rx_bps"] is None
+    db.execute(delete(ServerSample))
+    db.commit()
 
 
 def test_viewer_is_refused_and_a_guest_can_read(client, db):

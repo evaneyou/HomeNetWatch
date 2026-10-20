@@ -31,6 +31,9 @@ type Point = {
   rx_bps: number | null;
   tx_bps: number | null;
   iface: string;
+  host_rx_bps: number | null;
+  host_tx_bps: number | null;
+  host_iface: string;
   connections: number;
 };
 type Advisory = { id: string; risk: string; summary: string };
@@ -688,7 +691,14 @@ function CardTabs({
       value: latest ? amount(latest.mem_used_mb * 1024 * 1024) : "—",
       note: latest ? `of ${amount(latest.mem_total_mb * 1024 * 1024)}` : "",
     },
-    { key: "interface", label: latest?.iface ? `Interface ${latest.iface}` : "Interface", value: perSecond(latest?.rx_bps), note: `out ${perSecond(latest?.tx_bps)}` },
+    latest?.host_iface
+      ? {
+          key: "interface",
+          label: "Network",
+          value: perSecond(latest.host_rx_bps),
+          note: `${latest.host_iface} in · ${latest.iface} ${perSecond(latest.rx_bps)} in`,
+        }
+      : { key: "interface", label: latest?.iface ? `Interface ${latest.iface}` : "Interface", value: perSecond(latest?.rx_bps), note: `out ${perSecond(latest?.tx_bps)}` },
     {
       key: "storage",
       label: "Storage",
@@ -759,6 +769,8 @@ export default function ServerHealthPage() {
         mem: point.mem_used_mb * 1024 * 1024,
         rx: point.rx_bps,
         tx: point.tx_bps,
+        host_rx: point.host_rx_bps,
+        host_tx: point.host_tx_bps,
         disk: point.disk_used_mb * 1024 * 1024,
         db: point.db_bytes,
         forecast: point.forecast_bytes,
@@ -785,20 +797,33 @@ export default function ServerHealthPage() {
             unit=""
           />
         );
-      case "interface":
+      case "interface": {
+        const machine = latest?.host_iface;
+        const app = latest?.iface || "app";
         return (
           <Chart
             key={key}
-            title={latest?.iface ? `Interface ${latest.iface}` : "Interface"}
+            title="Network"
+            note={machine ? `${machine} is the Oracle machine. ${app} is the app container.` : undefined}
             data={data}
             span={span}
-            lines={[
-              { key: "rx", name: "In" },
-              { key: "tx", name: "Out" },
-            ]}
+            lines={
+              machine
+                ? [
+                    { key: "host_rx", name: `${machine} in` },
+                    { key: "host_tx", name: `${machine} out`, dashed: true },
+                    { key: "rx", name: `${app} in` },
+                    { key: "tx", name: `${app} out`, dashed: true },
+                  ]
+                : [
+                    { key: "rx", name: "In" },
+                    { key: "tx", name: "Out" },
+                  ]
+            }
             unit="/s"
           />
         );
+      }
       case "storage":
         return (
           <div className="panel" key={key}>

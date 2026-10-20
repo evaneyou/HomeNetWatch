@@ -15,6 +15,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 - Remote Probe Status: CPU now shows the average and peak over the last hour instead of one
   sub-second reading that usually read 0.0%. Location and probe facts sit side by side, and four
   vital tiles (CPU, memory, disk, temperature) switch a single 24-hour chart.
+- Server Health network chart shows the Oracle machine interface and the app container interface.
 
 ## [0.4] - 2026-10-20
 

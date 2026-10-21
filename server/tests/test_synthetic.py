@@ -724,3 +724,60 @@ def test_health_uses_the_running_checks_limits(client, db):
     assert voice["limits"]["max_rtt_ms"] == 250
     assert voice["limits"]["max_jitter_ms"] == 20
     assert voice["limits"]["max_loss_pct"] == 0.5
+
+
+def test_rfc3550_jitter_and_remote_desktop_rtcp_and_cross_link_diagnosis(client, db, monitor_token):
+    from app.synthetic import PROFILES, metrics_from_interval
+
+    extracted = metrics_from_interval(
+        {
+            "flows": [
+                {
+                    "rx": {"jitter_ms": 48.2, "jitter_rfc3550_ms": 6.4, "loss_pct": 0.0},
+                    "rtt": {"avg_ms": 22.0, "jitter_ms": 19.5},
+                    "verdict": {"pass": True},
+                }
+            ]
+        }
+    )
+    assert extracted["jitter_ms"] == 6.4
+
+    rdp = next(item for item in PROFILES if item["slug"] == "remote-desktop")
+    assert rdp["options"]["wire"] == "rtp"
+    assert rdp["options"]["rtcp_interval_s"] == 5
+
+    monitor = _monitor(db)
+    if db.scalar(select(User).where(User.username == "admin")) is None:
+        db.add(User(username="admin", password_hash=hash_password("admin-change-me"), role=UserRole.admin, is_active=True))
+        db.commit()
+    run = SyntheticRun(
+        monitor_id=monitor.id,
+        profile_slug="voip-g711a",
+        mode="continuous",
+        links=["wired", "wireless"],
+        options={},
+        status="running",
+        finished_links=[],
+    )
+    db.add(run)
+    db.commit()
+    now = datetime.now(timezone.utc)
+    for idx in range(3):
+        _post_sample(client, monitor_token, run.id, "wired", now - timedelta(seconds=30 - idx * 10), 18, 2, 0, True, idx + 1)
+        _post_sample(client, monitor_token, run.id, "wireless", now - timedelta(seconds=30 - idx * 10), 45, 5, 2.5, False, idx + 1)
+
+    headers = login(client)
+    wifi_health = client.get(f"/api/v1/synthetic/health?monitor_id={monitor.id}&link=wireless", headers=headers)
+    assert wifi_health.status_code == 200
+    assert wifi_health.json()["diagnosis"]["cause"] == "wifi"
+
+    summary = client.get("/api/v1/summary", headers=headers)
+    assert summary.status_code == 200
+    data = summary.json()
+    assert data["diagnoses"][str(monitor.id)]["cause"] == "wifi"
+    wifi_apps = next(c for c in data["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wifi" and c["column"] == "apps")
+    wifi_inet = next(c for c in data["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wifi" and c["column"] == "internet")
+    assert wifi_apps["cause"] == "wifi"
+    assert wifi_inet["cause"] == "wifi"
+    assert wifi_inet["status"] in ("degraded", "fail")
+

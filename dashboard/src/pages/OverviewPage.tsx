@@ -80,8 +80,29 @@ function checkCells(cells: HealthCell[], monitorId: string, key: string, column:
 }
 
 function columnState(cells: HealthCell[], monitorId: string, key: string, column: string): CheckState {
-  const statuses = checkCells(cells, monitorId, key, column).map((cell) => mapState(cell.status));
+  const matches = checkCells(cells, monitorId, key, column);
+  if (key === "web" || key === "apps") {
+    // When degradation on one link is attributed to that physical link (Wi-Fi or Wired) while the sibling link is healthy,
+    // do not blame the Web or Apps service chip.
+    const serviceCells = matches.filter((cell) => cell.cause !== "wifi" && cell.cause !== "wired");
+    const pool = serviceCells.length > 0 ? serviceCells : matches;
+    const statuses = pool.map((cell) => (cell.cause === "wifi" || cell.cause === "wired" ? ("ok" as CheckState) : mapState(cell.status)));
+    return statuses.reduce<CheckState>((worst, state) => (STATE_RANK[state] > STATE_RANK[worst] ? state : worst), "unknown");
+  }
+  const statuses = matches.map((cell) => mapState(cell.status));
   return statuses.reduce<CheckState>((worst, state) => (STATE_RANK[state] > STATE_RANK[worst] ? state : worst), "unknown");
+}
+
+function columnDetail(cells: HealthCell[], monitorId: string, key: string, column: string, state: CheckState): string {
+  if (key === "wifi" && (state === "slow" || state === "down")) {
+    const wifiCell = checkCells(cells, monitorId, key, column).find((cell) => cell.cause === "wifi");
+    if (wifiCell) return state === "down" ? "Failing on Wi-Fi" : "Packet loss / slow";
+  }
+  if (key === "wired" && (state === "slow" || state === "down")) {
+    const wiredCell = checkCells(cells, monitorId, key, column).find((cell) => cell.cause === "wired");
+    if (wiredCell) return state === "down" ? "Failing on Wired" : "Packet loss / slow";
+  }
+  return DEFAULT_DETAIL[key][state];
 }
 
 function checkNetworkId(cells: HealthCell[], monitorId: string, key: string, column: string): string | null {
@@ -160,6 +181,7 @@ function Face({ mood }: { mood: Mood }) {
 
 function viewOf(data: Summary, regionById: Map<string, string | null>) {
   const locations = data.monitors.map((monitor) => {
+    const diag = data.diagnoses?.[monitor.id];
     const checks = CHECKS.map((check) => {
       const state = columnState(data.matrix, monitor.id, check.key, check.column);
       const wifiId = slugNetworkId(data.matrix, monitor.id, "wifi");
@@ -170,7 +192,7 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
       return {
         ...check,
         state,
-        detail: DEFAULT_DETAIL[check.key][state],
+        detail: columnDetail(data.matrix, monitor.id, check.key, check.column, state),
         href: checkHref(monitor.id, check.key, networkId),
       };
     });
@@ -189,14 +211,22 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
       blurb = "Remote probe is offline and has stopped checking in.";
       reason =
         "The face is coral red with a frown because the remote Raspberry Pi probe has stopped checking in for over 5 minutes, so live network health cannot be verified.";
+    } else if (diag?.cause === "wan" && (down.length > 0 || slow.length > 0)) {
+      mood = down.length > 0 ? "down" : "slow";
+      blurb = "All checks failing — possible ISP, remote agent, or server outage.";
+      reason = diag.summary;
+    } else if (diag?.cause === "server" && (down.length > 0 || slow.length > 0)) {
+      mood = down.length > 0 ? "down" : "slow";
+      blurb = "Server path or synthetic receiver issue (external Web is up).";
+      reason = diag.summary;
     } else if (down.length > 0) {
       mood = "down";
       blurb = `${join(down)} ${down.length === 1 ? "is" : "are"} down.`;
-      reason = `The face is coral red with a frown because ${join(down)} ${down.length === 1 ? "has" : "have"} sustained failures across recent test windows.`;
+      reason = diag?.summary ?? `The face is coral red with a frown because ${join(down)} ${down.length === 1 ? "has" : "have"} sustained failures across recent test windows.`;
     } else if (slow.length > 0) {
       mood = "slow";
       blurb = `${join(slow)} ${slow.length === 1 ? "is" : "are"} running slow.`;
-      reason = `The face is amber yellow with a flat expression because ${join(slow)} ${slow.length === 1 ? "is" : "are"} experiencing elevated latency, jitter, or packet loss.`;
+      reason = diag?.summary ?? `The face is amber yellow with a flat expression because ${join(slow)} ${slow.length === 1 ? "is" : "are"} experiencing elevated latency, jitter, or packet loss.`;
     } else if (unknown.length > 0) {
       const ok = labels("ok");
       mood = "curious";

@@ -188,6 +188,155 @@ def _fill_app_cells(db: Session, monitors: list[Monitor], networks: list[Network
                 cell.failing_tests += 1
 
 
+def _attribute_root_causes(
+    monitors: list[Monitor],
+    networks: list[Network],
+    cell_map: dict[tuple[UUID, UUID, str], HealthCell],
+    now_utc: datetime,
+) -> dict[str, dict[str, str]]:
+    """Correlate Wired vs Wi-Fi, ISP Path vs External Web vs Synthetic Apps, and probe check-in."""
+    rank = {"ok": 0, "degraded": 1, "fail": 2, "unknown": -1}
+    bad_states = {"degraded", "fail"}
+    net_by_slug = {(n.group_id, n.slug): n for n in networks}
+    diagnoses: dict[str, dict[str, str]] = {}
+
+    for monitor in monitors:
+        is_offline = (
+            monitor.last_seen_at is not None
+            and now_utc
+            - (
+                monitor.last_seen_at
+                if monitor.last_seen_at.tzinfo
+                else monitor.last_seen_at.replace(tzinfo=timezone.utc)
+            )
+            > timedelta(seconds=max(300, 3 * int(monitor.health_interval_seconds or 60)))
+        ) or monitor.status.value == "offline"
+
+        wired_net = net_by_slug.get((monitor.group_id, "wired"))
+        wifi_net = net_by_slug.get((monitor.group_id, "wifi"))
+
+        def _cell(net: Optional[Network], col: str) -> Optional[HealthCell]:
+            return cell_map.get((monitor.id, net.id, col)) if net is not None else None
+
+        w_inet, f_inet = _cell(wired_net, "internet"), _cell(wifi_net, "internet")
+        w_web, f_web = _cell(wired_net, "web"), _cell(wifi_net, "web")
+        w_apps, f_apps = _cell(wired_net, "apps"), _cell(wifi_net, "apps")
+
+        if is_offline:
+            diagnoses[str(monitor.id)] = {
+                "cause": "agent",
+                "title": "Remote probe offline",
+                "summary": "The remote agent has stopped checking in. Check power, local router, or the server tunnel.",
+            }
+            for cell in (w_inet, f_inet, w_web, f_web, w_apps, f_apps):
+                if cell is not None and cell.status in bad_states:
+                    cell.cause = "agent"
+            continue
+
+        both_inet_bad = (
+            w_inet is not None
+            and f_inet is not None
+            and w_inet.status in bad_states
+            and f_inet.status in bad_states
+        )
+        both_web_bad = (
+            w_web is not None
+            and f_web is not None
+            and w_web.status in bad_states
+            and f_web.status in bad_states
+        )
+        any_web_ok = (w_web is not None and w_web.status == "ok") or (
+            f_web is not None and f_web.status == "ok"
+        )
+        both_apps_bad = (
+            w_apps is not None
+            and f_apps is not None
+            and w_apps.status in bad_states
+            and f_apps.status in bad_states
+        )
+
+        # Case 1: All tests failing across both Wired and Wi-Fi (ISP/WAN + Web)
+        if both_inet_bad and both_web_bad:
+            diagnoses[str(monitor.id)] = {
+                "cause": "wan",
+                "title": "ISP / WAN or upstream outage",
+                "summary": "All checks across both Wired and Wi-Fi are failing simultaneously. This indicates an ISP outage, modem/router issue, or unreachable server rather than individual apps.",
+            }
+            for cell in (w_inet, f_inet, w_web, f_web, w_apps, f_apps):
+                if cell is not None and cell.status in bad_states:
+                    cell.cause = "wan"
+            continue
+
+        # Case 2: External Web is OK, but server-targeted checks (path or synthetic apps) fail on both links
+        if any_web_ok and (both_inet_bad or (both_apps_bad and not both_web_bad)):
+            if both_inet_bad or (
+                w_inet is not None
+                and f_inet is not None
+                and w_inet.status == "ok"
+                and f_inet.status == "ok"
+                and both_apps_bad
+            ):
+                diagnoses[str(monitor.id)] = {
+                    "cause": "server",
+                    "title": "Server or agent synthetic service issue",
+                    "summary": "External web services are reachable, but checks to the HomeNetWatch server are failing on both links. Check the server receiver or agent tunnel.",
+                }
+                for cell in (w_inet, f_inet, w_apps, f_apps):
+                    if cell is not None and cell.status in bad_states:
+                        cell.cause = "server"
+                continue
+
+        # Case 3: Symmetric Single-Link Degradation (Wi-Fi bad while Wired OK, or Wired bad while Wi-Fi OK)
+        link_pairs = [
+            ("wifi", f_inet, f_web, f_apps, w_inet, w_web, w_apps, "Local Wi-Fi network degradation", "Wi-Fi", "Wired Ethernet"),
+            ("wired", w_inet, w_web, w_apps, f_inet, f_web, f_apps, "Local Wired Ethernet degradation", "Wired Ethernet", "Wi-Fi"),
+        ]
+        for cause_key, a_inet, a_web, a_apps, b_inet, b_web, b_apps, title, a_label, b_label in link_pairs:
+            link_degraded = False
+            worst_promoted = "degraded"
+            for a_cell, b_cell in ((a_web, b_web), (a_apps, b_apps)):
+                if (
+                    a_cell is not None
+                    and b_cell is not None
+                    and a_cell.status in bad_states
+                    and b_cell.status == "ok"
+                ):
+                    a_cell.cause = cause_key
+                    link_degraded = True
+                    if a_cell.status == "fail" and a_web is not None and a_apps is not None and a_web.status == "fail" and a_apps.status == "fail":
+                        worst_promoted = "fail"
+            if (
+                a_inet is not None
+                and b_inet is not None
+                and a_inet.status in bad_states
+                and b_inet.status == "ok"
+            ):
+                a_inet.cause = cause_key
+                link_degraded = True
+
+            if link_degraded:
+                if a_inet is not None and rank[worst_promoted] > rank[a_inet.status]:
+                    a_inet.status = worst_promoted
+                    a_inet.cause = cause_key
+                    if a_inet.failing_tests == 0:
+                        a_inet.failing_tests = 1
+                elif a_inet is not None and a_inet.cause is None:
+                    a_inet.cause = cause_key
+                if str(monitor.id) not in diagnoses:
+                    diagnoses[str(monitor.id)] = {
+                        "cause": cause_key,
+                        "title": title,
+                        "summary": f"Checks on {a_label} experienced packet loss or elevated latency while {b_label} remained healthy.",
+                    }
+
+        # Case 4: Remaining bad service cells where ISP path is OK on that link -> service fault
+        for cell in (w_web, f_web, w_apps, f_apps):
+            if cell is not None and cell.status in bad_states and cell.cause is None:
+                cell.cause = "service"
+
+    return diagnoses
+
+
 @router.get("/summary", response_model=SummaryResponse)
 def summary(
     db: Annotated[Session, Depends(get_db)],
@@ -269,6 +418,8 @@ def summary(
 
     _fill_web_quorum(tests, latest_by_test, cell_map, stability_config(load_web_stability(db)))
     _fill_app_cells(db, monitors, networks, cell_map)
+    now_utc = datetime.now(timezone.utc)
+    diagnoses = _attribute_root_causes(monitors, networks, cell_map, now_utc)
 
     open_issues = db.scalars(
         select(Issue)
@@ -304,11 +455,11 @@ def summary(
             )
         )
 
-    now_utc = datetime.now(timezone.utc)
     return SummaryResponse(
         generated_at=now_utc,
         matrix=list(cell_map.values()),
         open_issues=issue_summaries,
+        diagnoses=diagnoses,
         monitors=[
             {
                 "id": str(s.id),

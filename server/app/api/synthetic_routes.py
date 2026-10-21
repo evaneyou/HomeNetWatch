@@ -15,7 +15,7 @@ from app.api.common import _resolve_monitor_identity
 from app.auth import get_current_user, require_admin_csrf
 from app.config import get_settings
 from app.db import get_db
-from app.models import Monitor, StressRun, SyntheticProfile, SyntheticRun, SyntheticSample, User
+from app.models import Monitor, Network, ResultStatus, StressRun, SyntheticProfile, SyntheticRun, SyntheticSample, Test, TestResult, User
 from app.synthetic import (
     SOFTWARE,
     apply_options,
@@ -262,6 +262,104 @@ def _limit(options: dict[str, Any], key: str, default: float) -> float:
         return float(default)
 
 
+def _diagnose_health(
+    db: Session,
+    monitor_id: uuid.UUID,
+    link: str,
+    all_runs: list[SyntheticRun],
+    link_samples: list[SyntheticSample],
+    since: datetime,
+) -> Optional[dict[str, str]]:
+    """Diagnose whether failures in this window are link-specific (wifi/wired), server/agent, or upstream WAN."""
+    failed_samples = [row for row in link_samples if row.verdict == "fail" and not row.sample_key.startswith(("hour:", "day:"))]
+    if not failed_samples:
+        return None
+    failed_slugs = {
+        run.profile_slug
+        for run in all_runs
+        for row in failed_samples
+        if row.run_id == run.id
+    }
+    sibling_link = "wired" if link == "wireless" else "wireless"
+    sibling_runs = [run for run in all_runs if sibling_link in (run.links or [])]
+    if not sibling_runs:
+        return None
+    sibling_samples = db.scalars(
+        select(SyntheticSample).where(
+            SyntheticSample.run_id.in_([run.id for run in sibling_runs]),
+            SyntheticSample.link == sibling_link,
+            SyntheticSample.recorded_at >= since,
+            ~SyntheticSample.sample_key.startswith("hour:"),
+            ~SyntheticSample.sample_key.startswith("day:"),
+        )
+    ).all()
+    if not sibling_samples:
+        return None
+
+    # Compare recent 15-minute window around the latest failure
+    latest_fail_at = max(row.recorded_at for row in failed_samples)
+    window_start = latest_fail_at - _now().__class__.resolution * 0  # keep type
+    from datetime import timedelta
+
+    w_start = latest_fail_at - timedelta(minutes=5)
+    w_end = latest_fail_at + timedelta(minutes=5)
+    sib_window = [row for row in sibling_samples if w_start <= row.recorded_at <= w_end]
+    sib_fails = [row for row in sib_window if row.verdict == "fail"]
+
+    if sib_window and not sib_fails:
+        if link == "wireless":
+            return {
+                "cause": "wifi",
+                "title": "Wireless network degradation",
+                "summary": (
+                    "Streams on Wi-Fi experienced packet loss or elevated latency while Wired Ethernet remained healthy "
+                    "during the same moments. This points to local Wi-Fi interference or signal quality rather than the applications."
+                ),
+            }
+        return {
+            "cause": "wired",
+            "title": "Wired Ethernet degradation",
+            "summary": (
+                "Streams on Wired Ethernet experienced packet loss or elevated latency while Wi-Fi remained healthy "
+                "during the same moments. This points to the local wired connection (cable, switch, or port) rather than the applications."
+            ),
+        }
+
+    if sib_fails and len(failed_slugs) >= 2:
+        # Both links failed around the same time. Check if external Web HTTP checks passed during that window.
+        web_ok = db.scalar(
+            select(TestResult.id)
+            .join(Test, TestResult.test_id == Test.id)
+            .where(
+                Test.monitor_id == monitor_id,
+                Test.slug.startswith("http-"),
+                Test.slug != "http-path",
+                TestResult.status == ResultStatus.ok,
+                TestResult.started_at >= w_start,
+                TestResult.started_at <= w_end,
+            )
+            .limit(1)
+        )
+        if web_ok is not None:
+            return {
+                "cause": "server",
+                "title": "Server or agent synthetic receiver issue",
+                "summary": (
+                    "Both Wired and Wi-Fi synthetic flows failed at the same time while external Web checks passed. "
+                    "This points to a temporary glitch in the HomeNetWatch synthetic receiver or remote agent sender."
+                ),
+            }
+        return {
+            "cause": "wan",
+            "title": "Upstream ISP, remote agent, or server outage",
+            "summary": (
+                "Multiple checks failed simultaneously across both Wired and Wi-Fi. "
+                "This indicates an upstream ISP issue, router drop, remote agent interruption, or server path outage."
+            ),
+        }
+    return None
+
+
 @router.get("/health")
 def health(
     monitor_id: uuid.UUID,
@@ -275,17 +373,16 @@ def health(
     _monitor(db, monitor_id)
     profiles = ensure_profiles(db)
     since = range_start(range, _now())
-    runs = [
-        run
-        for run in db.scalars(
+    all_runs = list(
+        db.scalars(
             select(SyntheticRun).where(
                 SyntheticRun.monitor_id == monitor_id,
                 SyntheticRun.mode == "continuous",
                 SyntheticRun.status == "running",
             )
         ).all()
-        if link in (run.links or [])
-    ]
+    )
+    runs = [run for run in all_runs if link in (run.links or [])]
     run_ids = [run.id for run in runs]
     samples = []
     if run_ids:
@@ -336,7 +433,8 @@ def health(
                 ],
             }
         )
-    return redact({"types": types}, _user.role)
+    diagnosis = _diagnose_health(db, monitor_id, link, all_runs, list(samples), since)
+    return redact({"types": types, "diagnosis": diagnosis}, _user.role)
 
 
 @router.get("/assignment")

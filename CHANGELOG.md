@@ -13,6 +13,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 ### Changed
 
 - Application health charts stack round-trip, jitter, and packet loss in three full-width rows on every app check.
+- Application checks and Internet Connection add a fourth chart, share of each limit. It keeps only the moments that crossed a limit, and each bar is that metric against its own limit, so 100% is the line and past it is a failure. Internet Connection stacks download, ping, and jitter the same way.
 - Remote Probe Status: CPU now shows the average and peak over the last hour instead of one
   sub-second reading that usually read 0.0%. Location and probe facts sit side by side, and four
   vital tiles (CPU, memory, disk, temperature) switch a single 24-hour chart.

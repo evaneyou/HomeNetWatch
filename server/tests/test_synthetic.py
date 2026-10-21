@@ -699,3 +699,28 @@ def test_a_blackout_beside_a_healthy_check_is_a_software_issue(client, db, monit
     assert assignment.status_code == 200, assignment.text
     job = next(item for item in assignment.json()["jobs"] if item["run_id"] == str(video.id))
     assert job["restart_token"] == 2
+
+
+def test_health_uses_the_running_checks_limits(client, db):
+    monitor = _monitor(db)
+    if db.scalar(select(User).where(User.username == "admin")) is None:
+        db.add(User(username="admin", password_hash=hash_password("admin-change-me"), role=UserRole.admin, is_active=True))
+        db.commit()
+    db.add(
+        SyntheticRun(
+            monitor_id=monitor.id,
+            profile_slug="voip-g711a",
+            mode="continuous",
+            links=["wired"],
+            options={"max_rtt_ms": 250, "max_jitter_ms": 20, "max_loss_pct": 0.5},
+            status="running",
+            finished_links=[],
+        )
+    )
+    db.commit()
+    body = client.get(f"/api/v1/synthetic/health?monitor_id={monitor.id}&link=wired", headers=login(client))
+    assert body.status_code == 200, body.text
+    voice = next(item for item in body.json()["types"] if item["slug"] == "voip-g711a")
+    assert voice["limits"]["max_rtt_ms"] == 250
+    assert voice["limits"]["max_jitter_ms"] == 20
+    assert voice["limits"]["max_loss_pct"] == 0.5

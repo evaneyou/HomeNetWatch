@@ -255,6 +255,13 @@ def run_report(
     return redact(report, _user.role)
 
 
+def _limit(options: dict[str, Any], key: str, default: float) -> float:
+    try:
+        return float(options.get(key, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
 @router.get("/health")
 def health(
     monitor_id: uuid.UUID,
@@ -300,10 +307,17 @@ def health(
             continue
         rows = sorted(by_slug.get(profile.slug, []), key=lambda sample: sample.recorded_at)
         latest = rows[-1] if rows else None
+        matched = [run for run in runs if run.profile_slug == profile.slug]
+        options = {**(profile.options or {}), **((matched[-1].options if matched else None) or {})}
         types.append(
             {
                 "slug": profile.slug,
                 "name": profile.name,
+                "limits": {
+                    "max_rtt_ms": _limit(options, "max_rtt_ms", 300),
+                    "max_jitter_ms": _limit(options, "max_jitter_ms", 30),
+                    "max_loss_pct": _limit(options, "max_loss_pct", 1),
+                },
                 "latest": {
                     "rtt_ms": latest.rtt_ms if latest else None,
                     "jitter_ms": latest.jitter_ms if latest else None,

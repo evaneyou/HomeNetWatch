@@ -152,10 +152,8 @@ function ChartBody({
   return (
     <>
       <MiniChart title="Round-trip" data={data} span={span} dataKey="rtt" unit=" ms" />
-      <div className="chart-pair">
-        <MiniChart title="Jitter" data={data} span={span} dataKey="jitter" unit=" ms" />
-        <MiniChart title="Packet loss" data={data} span={span} dataKey="loss" unit=" %" />
-      </div>
+      <MiniChart title="Jitter" data={data} span={span} dataKey="jitter" unit=" ms" />
+      <MiniChart title="Packet loss" data={data} span={span} dataKey="loss" unit=" %" />
     </>
   );
 }

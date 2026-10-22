@@ -169,28 +169,22 @@ function Delta({ now, before, better, unit = "pts" }: { now: number | null; befo
   );
 }
 
-function Spark({ data, field, color }: { data: Point[]; field: keyof Point; color: string }) {
+function Card({ label, value, tone, target, children }: { label: string; value: string; tone: Tone; target?: string; children?: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="kpi-spark" aria-hidden="true">
-      <ResponsiveContainer width="100%" height={40}>
-        <LineChart data={data} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
-          <Line type="monotone" dataKey={field} stroke={color} strokeWidth={1.8} dot={false} isAnimationActive={false} connectNulls />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-function Card({ label, value, tone, target, children, spark }: { label: string; value: string; tone: Tone; target?: string; children?: React.ReactNode; spark?: React.ReactNode }) {
-  return (
-    <article className={`kpi-card tone-${tone}`}>
-      <div className="kpi-card-top">
-        <span className="kpi-label">{label}</span>
-        {target ? <span className="kpi-target">{target}</span> : null}
-      </div>
+    <article
+      className={`kpi-card tone-${tone}${open ? " is-open" : ""}`}
+      tabIndex={0}
+      onClick={() => {
+        if (window.matchMedia("(hover: none)").matches) setOpen((value) => !value);
+      }}
+    >
+      <span className="kpi-label">{label}</span>
       <div className="kpi-value">{value}</div>
-      <div className="kpi-card-sub">{children}</div>
-      {spark}
+      <div className="kpi-card-more">
+        {target ? <span className="kpi-target">{target}</span> : null}
+        <div className="kpi-card-sub">{children}</div>
+      </div>
     </article>
   );
 }
@@ -684,11 +678,10 @@ export default function KpiPage() {
 
       <section className="kpi-cards" aria-label="Key indicators">
         <Card
-          label="Internet availability"
+          label="Internet"
           value={pct(internet.availability)}
           tone={availabilityTone(internet.availability, targets.internet)}
           target={`Target ${targets.internet}%`}
-          spark={<Spark data={series} field="internet" color={C.good} />}
         >
           <Delta now={internet.availability} before={previous.internet.availability} better="up" />
           <span className="kpi-split">
@@ -696,11 +689,10 @@ export default function KpiPage() {
           </span>
         </Card>
         <Card
-          label="Voice availability"
+          label="Voice"
           value={pct(voice.availability)}
           tone={availabilityTone(voice.availability, targets.voice)}
           target={`Target ${targets.voice}%`}
-          spark={<Spark data={series} field="voice" color={C.blue} />}
         >
           <Delta now={voice.availability} before={previous.voice.availability} better="up" />
           <span className="kpi-split">
@@ -710,11 +702,10 @@ export default function KpiPage() {
           </span>
         </Card>
         <Card
-          label="Video availability"
+          label="Video"
           value={pct(video.availability)}
           tone={availabilityTone(video.availability, targets.video)}
           target={`Target ${targets.video}%`}
-          spark={<Spark data={series} field="video" color={C.violet} />}
         >
           <Delta now={video.availability} before={previous.video.availability} better="up" />
           <span className="kpi-split">
@@ -724,11 +715,10 @@ export default function KpiPage() {
           </span>
         </Card>
         <Card
-          label="Web availability"
+          label="Web"
           value={pct(web?.availability)}
           tone={availabilityTone(web?.availability ?? null, webTarget)}
           target={`Target ${webTarget}%`}
-          spark={<Spark data={series} field="web" color={C.good} />}
         >
           <Delta now={web?.availability ?? null} before={previous.web?.availability ?? null} better="up" />
           <span className="kpi-split">
@@ -738,11 +728,10 @@ export default function KpiPage() {
           </span>
         </Card>
         <Card
-          label="Packet drop (voice and video)"
+          label="Packet drop"
           value={pct(report.app_loss_avg)}
           tone={lossTone(report.app_loss_avg, targets.loss_pct)}
           target={`Target ≤ ${targets.loss_pct}%`}
-          spark={<Spark data={series} field="loss_voice" color={C.warn} />}
         >
           <span className="kpi-split">
             Voice {pct(voice.loss_avg)} · Video {pct(video.loss_avg)}
@@ -762,10 +751,11 @@ export default function KpiPage() {
           </span>
           <span className="kpi-split">The Pi or the server was down. Not counted as internet downtime.</span>
         </Card>
-        <Card label="Latency to the server" value={internet.rtt_ms == null ? "—" : `${num(internet.rtt_ms)} ms`} tone="none" spark={<Spark data={series} field="rtt_ms" color={C.good} />}>
+        <Card label="Latency" value={internet.rtt_ms == null ? "—" : `${num(internet.rtt_ms)} ms`} tone="none">
+          <span className="kpi-split">To the server</span>
           <span className="kpi-split">Jitter {internet.jitter_ms == null ? "—" : `${num(internet.jitter_ms)} ms`}</span>
         </Card>
-        <Card label="Internet speed" value={speed.down_mbps == null && speed.up_mbps == null ? "—" : `${speed.down_mbps == null ? "—" : num(speed.down_mbps, 0)} / ${speed.up_mbps == null ? "—" : num(speed.up_mbps, 0)}`} tone="none" spark={<Spark data={series} field="down_mbps" color={C.blue} />}>
+        <Card label="Speed" value={speed.down_mbps == null && speed.up_mbps == null ? "—" : `${speed.down_mbps == null ? "—" : num(speed.down_mbps, 0)} / ${speed.up_mbps == null ? "—" : num(speed.up_mbps, 0)}`} tone="none">
           <span className="kpi-split">Download / upload, Mbit/s</span>
         </Card>
       </section>

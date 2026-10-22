@@ -88,6 +88,10 @@
   margin-bottom: 10px;
 }
 
+.app-shell.ui-compact .service-compare {
+  margin-bottom: 10px;
+}
+
 .app-shell.ui-compact .page-title,
 .app-shell.ui-compact .monitor-head {
   align-items: center;

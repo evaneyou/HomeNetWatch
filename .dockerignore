@@ -4,3 +4,10 @@
 !wireguard
 !wireguard/**
 webrtc-call/target
+!deploy
+deploy/**
+!deploy/rtnp-entrypoint.sh
+!rtnp
+!rtnp/**
+rtnp/target
+rtnp/.git

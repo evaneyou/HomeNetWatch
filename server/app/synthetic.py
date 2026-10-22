@@ -122,8 +122,6 @@ PROFILES: list[dict[str, Any]] = [
         "position": 5,
         "options": {
             "preset": "fortnite",
-            "wire": "rtp",
-            "rtcp_interval_s": 5,
             "report_interval_s": 10,
             "max_rtt_ms": 300,
             "max_jitter_ms": 30,
@@ -137,8 +135,6 @@ PROFILES: list[dict[str, Any]] = [
         "position": 6,
         "options": {
             "preset": "call-of-duty",
-            "wire": "rtp",
-            "rtcp_interval_s": 5,
             "report_interval_s": 10,
             "max_rtt_ms": 300,
             "max_jitter_ms": 30,
@@ -152,8 +148,6 @@ PROFILES: list[dict[str, Any]] = [
         "position": 7,
         "options": {
             "preset": "remote-desktop",
-            "wire": "rtp",
-            "rtcp_interval_s": 5,
             "report_interval_s": 10,
             "max_rtt_ms": 300,
             "max_jitter_ms": 30,
@@ -167,8 +161,6 @@ PROFILES: list[dict[str, Any]] = [
         "position": 8,
         "options": {
             "preset": "market-data",
-            "wire": "rtp",
-            "rtcp_interval_s": 5,
             "report_interval_s": 10,
             "max_rtt_ms": 300,
             "max_jitter_ms": 30,
@@ -312,8 +304,6 @@ def send_args(
         f"{int(options['report_interval_s'])}s",
         "--key-file",
         key_file,
-        "--srtp-key-file",
-        srtp_key_file,
         "--max-rtt",
         str(options["max_rtt_ms"]),
         "--max-jitter",
@@ -322,15 +312,14 @@ def send_args(
         str(options["max_loss_pct"]),
     ]
     if options.get("wire") == "rtp":
-        args.extend(["--wire", "rtp"])
+        args.extend(["--wire", "rtp", "--srtp-key-file", srtp_key_file])
     if options.get("rtp"):
         args.extend(["--rtp", str(options["rtp"])])
     if options.get("ptime_ms"):
         args.extend(["--ptime", str(options["ptime_ms"])])
-    if options.get("bidir"):
-        if preset not in VOICE_PRESETS:
-            raise ValueError("Two-way traffic is only for the voice profiles")
-        args.append("--bidir")
+    if options.get("bidir") and preset not in VOICE_PRESETS:
+        raise ValueError("Two-way traffic is only for the voice profiles")
+    # RTNP 0.2.0 rejects --bidir together with an SRTP key. Voice stays one-way.
     if options.get("video"):
         args.append("--video")
     if options.get("rtcp_interval_s") is not None:
@@ -369,8 +358,12 @@ def ensure_profiles(db: Session) -> list[SyntheticProfile]:
         current = dict(run.options or {})
         updated = False
         for key in ("wire", "rtcp_interval_s"):
-            if key in defaults and current.get(key) != defaults[key]:
-                current[key] = defaults[key]
+            if key in defaults:
+                if current.get(key) != defaults[key]:
+                    current[key] = defaults[key]
+                    updated = True
+            elif key in current:
+                current.pop(key)
                 updated = True
         if updated:
             run.options = current

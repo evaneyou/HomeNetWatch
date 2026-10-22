@@ -121,8 +121,6 @@ def send_args(
         f"{int(options['report_interval_s'])}s",
         "--key-file",
         key_file,
-        "--srtp-key-file",
-        srtp_key_file,
         "--max-rtt",
         str(int(options["max_rtt_ms"])),
         "--max-jitter",
@@ -131,17 +129,16 @@ def send_args(
         str(options["max_loss_pct"]),
     ]
     if options.get("wire") == "rtp":
-        args.extend(["--wire", "rtp"])
+        args.extend(["--wire", "rtp", "--srtp-key-file", srtp_key_file])
     if options.get("rtp"):
         args.extend(["--rtp", str(options["rtp"])])
     if options.get("ptime_ms"):
         args.extend(["--ptime", str(int(options["ptime_ms"]))])
     if options.get("video"):
         args.append("--video")
-    if options.get("bidir"):
-        if preset not in VOICE_PRESETS:
-            raise ValueError("Two-way traffic is only for the voice profiles")
-        args.append("--bidir")
+    if options.get("bidir") and preset not in VOICE_PRESETS:
+        raise ValueError("Two-way traffic is only for the voice profiles")
+    # RTNP 0.2.0 rejects --bidir together with an SRTP key. Voice stays one-way.
     if options.get("rtcp_interval_s") is not None:
         args.extend(["--rtcp-interval", f"{int(options['rtcp_interval_s'])}s"])
     if forever:
@@ -205,7 +202,7 @@ def stress_args(
     if proto == "icmp":
         args += ["-t", data_host, "-p", "icmp"]
     else:
-        args += ["-t", f"{data_host}:{UDP_PORT}", "-c", f"{control_host}:{CONTROL_PORT}", "--srtp-key-file", srtp_key_file]
+        args += ["-t", f"{data_host}:{UDP_PORT}", "-c", f"{control_host}:{CONTROL_PORT}"]
     preset = options.get("preset")
     if preset:
         if preset not in STRESS_PRESETS:
@@ -213,15 +210,14 @@ def stress_args(
         args += ["--preset", str(preset)]
     args += ["--name", f"stress-{kind}", "--json", "-i", "1s", "--key-file", key_file, "--forever"]
     if options.get("wire") == "rtp":
-        args += ["--wire", "rtp"]
+        args += ["--wire", "rtp", "--srtp-key-file", srtp_key_file]
     if options.get("rtp"):
         if options["rtp"] not in {"g711", "g711a", "g729", "g723"}:
             raise ValueError("Unknown codec")
         args += ["--rtp", str(options["rtp"])]
     if options.get("ptime_ms"):
         args += ["--ptime", str(_int_in(options["ptime_ms"], 10, 200, "Packet time"))]
-    if options.get("bidir"):
-        args.append("--bidir")
+    # RTNP 0.2.0 rejects --bidir together with an SRTP key.
     if options.get("vad"):
         args.append("--vad")
     if options.get("video"):
@@ -326,8 +322,9 @@ def _tunnel_text() -> str:
 
 
 def _write_srtp(hex_key: str) -> None:
-    text = hex_key.strip()
-    if not text:
+    """Store the SRTP master key as hex text. RTNP 0.2.0 refuses raw bytes."""
+    text = hex_key.strip().lower()
+    if len(text) != 60:
         return
     try:
         raw = bytes.fromhex(text)
@@ -335,8 +332,9 @@ def _write_srtp(hex_key: str) -> None:
         return
     if len(raw) != 30:
         return
+    body = (text + "\n").encode()
     try:
-        if SRTP_PATH.is_file() and SRTP_PATH.read_bytes() == raw:
+        if SRTP_PATH.is_file() and SRTP_PATH.read_bytes() == body:
             return
     except OSError:
         pass
@@ -344,7 +342,7 @@ def _write_srtp(hex_key: str) -> None:
     tmp = SRTP_PATH.with_name(f"{SRTP_PATH.name}.{os.getpid()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "wb") as handle:
-        handle.write(raw)
+        handle.write(body)
     try:
         os.chmod(tmp, 0o600)
     except OSError:

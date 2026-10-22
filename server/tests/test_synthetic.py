@@ -79,6 +79,24 @@ def test_public_target_uses_the_physical_nic():
     assert "--meter" not in args
     assert secret not in args
     assert "--srtp-key-file" in args
+    assert "--bidir" not in args
+    plain = send_args(
+        "rtnp-send",
+        {
+            "preset": "remote-desktop",
+            "report_interval_s": 10,
+            "max_rtt_ms": 300,
+            "max_jitter_ms": 30,
+            "max_loss_pct": 1,
+        },
+        "203.0.113.10",
+        control_host="10.7.0.1",
+        key_file="/tmp/rtnp.key",
+        srtp_key_file="/tmp/rtnp-srtp.key",
+        forever=True,
+    )
+    assert "--wire" not in plain
+    assert "--srtp-key-file" not in plain
     try:
         send_args(
             "rtnp-send",
@@ -207,6 +225,7 @@ def test_agent_key_writes_skip_unchanged_files(tmp_path: Path):
     srtp_hex = "ab" * 30
     module._write_srtp(srtp_hex)
     srtp_inode = module.SRTP_PATH.stat().st_ino
+    assert module.SRTP_PATH.read_text(encoding="utf-8") == srtp_hex + "\n"
     module._write_srtp(srtp_hex)
     assert module.SRTP_PATH.stat().st_ino == srtp_inode
 
@@ -743,8 +762,11 @@ def test_rfc3550_jitter_and_remote_desktop_rtcp_and_cross_link_diagnosis(client,
     assert extracted["jitter_ms"] == 6.4
 
     rdp = next(item for item in PROFILES if item["slug"] == "remote-desktop")
-    assert rdp["options"]["wire"] == "rtp"
-    assert rdp["options"]["rtcp_interval_s"] == 5
+    assert "wire" not in rdp["options"]
+    assert "rtcp_interval_s" not in rdp["options"]
+    video = next(item for item in PROFILES if item["slug"] == "video-conference")
+    assert video["options"]["wire"] == "rtp"
+    assert video["options"]["video"] is True
 
     monitor = _monitor(db)
     if db.scalar(select(User).where(User.username == "admin")) is None:

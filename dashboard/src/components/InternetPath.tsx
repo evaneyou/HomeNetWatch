@@ -196,8 +196,49 @@ function ServiceCompare({
   const wiredView = useAppStrips(wired, stripRange);
   const wirelessView = useAppStrips(wireless, stripRange);
 
+  const wiredBad = APPS.filter((app) => {
+    const s = wiredView.statusFor(app.key);
+    return s === "fail" || s === "degraded";
+  }).length;
+  const wifiBad = APPS.filter((app) => {
+    const s = wirelessView.statusFor(app.key);
+    return s === "fail" || s === "degraded";
+  }).length;
+
+  let diagnosisBanner: { title: string; summary: string } | null = null;
+  if (wifiBad >= 2 && wiredBad === 0) {
+    diagnosisBanner = {
+      title: "Wi-Fi link degradation",
+      summary: "Multiple Web services are experiencing slowdowns or failures on Wi-Fi while passing on Wired Ethernet. This indicates a local wireless network issue rather than a Web service outage.",
+    };
+  } else if (wiredBad >= 2 && wifiBad === 0) {
+    diagnosisBanner = {
+      title: "Wired Ethernet link degradation",
+      summary: "Multiple Web services are experiencing slowdowns or failures on Wired Ethernet while passing on Wi-Fi. This indicates a local wired connection issue rather than a Web service outage.",
+    };
+  } else if (wiredBad >= 4 && wifiBad >= 4) {
+    diagnosisBanner = {
+      title: "Upstream ISP, DNS, or remote agent issue",
+      summary: "Multiple Web services are failing across both Wired and Wi-Fi simultaneously, pointing to an upstream ISP, router, or DNS issue rather than individual Web services.",
+    };
+  }
+
   return (
     <div className="service-compare">
+      {diagnosisBanner ? (
+        <div
+          style={{
+            padding: "10px 14px",
+            marginBottom: 12,
+            borderRadius: 8,
+            border: "1px solid var(--degraded)",
+            background: "color-mix(in srgb, var(--degraded) 10%, var(--card))",
+            fontSize: "0.9rem",
+          }}
+        >
+          <strong>Root cause · {diagnosisBanner.title}:</strong> {diagnosisBanner.summary}
+        </div>
+      ) : null}
       <div className="svc-table">
         <div className="svc-head" aria-hidden="true">
           <span>Service</span>

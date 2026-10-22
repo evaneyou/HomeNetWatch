@@ -33,8 +33,8 @@ _MASK = {
     "wg_wireless_address",
     "hostname",
     "isp",
-    "location_label",
     "location",
+    "location_label",
     "region",
     "country",
     "latitude",
@@ -67,6 +67,11 @@ _MASK = {
 _ID_KEYS = {"bssid", "mac", "client_mac", "asn", "origin_asn"}
 
 
+# The probe's own place. It is a chosen pin, not the real home address, so a guest may see it.
+# A guest visitor's region and country are different records and stay masked.
+_PROBE_PLACE = {"location_label", "region", "country", "latitude", "longitude"}
+
+
 def redact(value, role: UserRole):
     if role != UserRole.guest:
         return value
@@ -77,11 +82,15 @@ def _scrub(value, ids: dict):
     if isinstance(value, dict):
         cleaned = {}
         token = None
+        probe = "monitor_id" in value and ("location_label" in value or "latitude" in value)
         for key, item in value.items():
             if key in _DROP:
                 continue
             if key in {"name", "label"} and any(marker in value for marker in ("asn", "bssid", "ssid")):
                 cleaned[key] = _masked(item, ids)
+                continue
+            if key in _PROBE_PLACE and probe:
+                cleaned[key] = _scrub(item, ids)
                 continue
             if key in _MASK:
                 cleaned[key] = _masked(item, ids)

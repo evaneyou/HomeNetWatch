@@ -23,10 +23,13 @@ from app.models import (
     IssueStatus,
     Network,
     NetworkKind,
+    ResultStatus,
     RtnpSecret,
     SyntheticProfile,
     SyntheticRun,
     SyntheticSample,
+    Test,
+    TestResult,
 )
 
 LINKS = ("wired", "wireless")
@@ -119,6 +122,8 @@ PROFILES: list[dict[str, Any]] = [
         "position": 5,
         "options": {
             "preset": "fortnite",
+            "wire": "rtp",
+            "rtcp_interval_s": 5,
             "report_interval_s": 10,
             "max_rtt_ms": 300,
             "max_jitter_ms": 30,
@@ -132,6 +137,8 @@ PROFILES: list[dict[str, Any]] = [
         "position": 6,
         "options": {
             "preset": "call-of-duty",
+            "wire": "rtp",
+            "rtcp_interval_s": 5,
             "report_interval_s": 10,
             "max_rtt_ms": 300,
             "max_jitter_ms": 30,
@@ -145,6 +152,8 @@ PROFILES: list[dict[str, Any]] = [
         "position": 7,
         "options": {
             "preset": "remote-desktop",
+            "wire": "rtp",
+            "rtcp_interval_s": 5,
             "report_interval_s": 10,
             "max_rtt_ms": 300,
             "max_jitter_ms": 30,
@@ -158,6 +167,8 @@ PROFILES: list[dict[str, Any]] = [
         "position": 8,
         "options": {
             "preset": "market-data",
+            "wire": "rtp",
+            "rtcp_interval_s": 5,
             "report_interval_s": 10,
             "max_rtt_ms": 300,
             "max_jitter_ms": 30,
@@ -335,6 +346,7 @@ def send_args(
 
 def ensure_profiles(db: Session) -> list[SyntheticProfile]:
     existing = {row.slug: row for row in db.scalars(select(SyntheticProfile)).all()}
+    by_slug = {item["slug"]: item["options"] for item in PROFILES}
     for item in PROFILES:
         row = existing.get(item["slug"])
         if row is None:
@@ -350,6 +362,18 @@ def ensure_profiles(db: Session) -> list[SyntheticProfile]:
             row.name = item["name"]
             row.position = item["position"]
             row.options = item["options"]
+    for run in db.scalars(select(SyntheticRun).where(SyntheticRun.mode == "continuous", SyntheticRun.status.in_(("running", "pending")))).all():
+        defaults = by_slug.get(run.profile_slug)
+        if not defaults:
+            continue
+        current = dict(run.options or {})
+        updated = False
+        for key in ("wire", "rtcp_interval_s"):
+            if key in defaults and current.get(key) != defaults[key]:
+                current[key] = defaults[key]
+                updated = True
+        if updated:
+            run.options = current
     db.flush()
     return [existing[item["slug"]] for item in PROFILES]
 
@@ -432,7 +456,7 @@ def _aware(value: datetime) -> datetime:
 
 
 def sibling_is_up(db: Session, monitor_id: Any, link: str, profile_slug: str, when: datetime) -> bool:
-    """True when another continuous check on this link got a real measurement nearby."""
+    """True when another check on this link (synthetic or path/web) got a real measurement nearby."""
     moment = _aware(when)
     rows = db.execute(
         select(
@@ -459,7 +483,22 @@ def sibling_is_up(db: Session, monitor_id: Any, link: str, profile_slug: str, wh
             continue
         if not is_blackout(rtt, jitter, loss):
             return True
-    return False
+    net_slug = "wifi" if link == "wireless" else "wired"
+    ok_test = db.scalar(
+        select(TestResult.id)
+        .join(Test, TestResult.test_id == Test.id)
+        .join(Network, Test.network_id == Network.id)
+        .where(
+            Test.monitor_id == monitor_id,
+            Network.slug == net_slug,
+            TestResult.status == ResultStatus.ok,
+            TestResult.started_at >= moment - SIBLING_WINDOW,
+            TestResult.started_at <= moment + SIBLING_WINDOW,
+            ~TestResult.external_id.startswith("rollup-"),
+        )
+        .limit(1)
+    )
+    return ok_test is not None
 
 
 def _restart_token(options: dict[str, Any], link: str, when: datetime) -> tuple[dict[str, Any], bool]:
@@ -583,9 +622,11 @@ def metrics_from_interval(payload: dict[str, Any]) -> dict[str, Any]:
         delay = _number(rx.get("delay_avg_ms"))
         if delay is not None and delay >= 0:
             rtt_ms = delay
-    jitter = rtt.get("jitter_ms")
+    jitter = rx.get("jitter_rfc3550_ms")
     if jitter is None:
-        jitter = rx.get("jitter_rfc3550_ms", rx.get("jitter_ms"))
+        jitter = rtt.get("jitter_ms")
+    if jitter is None:
+        jitter = rx.get("jitter_ms")
     loss = flow.get("loss_pct")
     if loss is None:
         loss = rx.get("loss_pct")

@@ -5,6 +5,7 @@ import { api } from "../api";
 import { CHART_COLORS } from "../chartTheme";
 import { chartWindow, formatChartTick, zoomedDomain } from "../chartTime";
 import { useChartZoom } from "../useChartZoom";
+import LimitShareChart from "./LimitShareChart";
 import { TimeAxis } from "./InternetDetail";
 
 const RANGES = ["1h", "6h", "12h", "24h", "7d", "30d"] as const;
@@ -18,12 +19,17 @@ type Point = {
   verdict: string | null;
 };
 
+type Limits = { max_rtt_ms: number; max_jitter_ms: number; max_loss_pct: number };
+
 type TrafficType = {
   slug: string;
   name: string;
+  limits?: Limits;
   latest: { rtt_ms: number | null; jitter_ms: number | null; loss_pct: number | null; verdict: string | null };
   points: Point[];
 };
+
+const DEFAULT_LIMITS: Limits = { max_rtt_ms: 300, max_jitter_ms: 30, max_loss_pct: 1 };
 
 function fmt(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return "—";
@@ -36,6 +42,8 @@ function statusOf(verdict: string | null): string {
   if (verdict === "software") return "software";
   return "unknown";
 }
+
+type Diagnosis = { cause: string; title: string; summary: string };
 
 export default function RealtimeHealth({
   monitorId,
@@ -54,10 +62,15 @@ export default function RealtimeHealth({
 }) {
   const healthQ = useQuery({
     queryKey: ["synthetic-health", monitorId, link, range],
-    queryFn: () => api.syntheticHealth(monitorId, link, range) as Promise<{ types: TrafficType[] }>,
+    queryFn: () =>
+      api.syntheticHealth(monitorId, link, range) as Promise<{
+        types: TrafficType[];
+        diagnosis?: Diagnosis | null;
+      }>,
     refetchInterval: 15000,
   });
   const types = healthQ.data?.types ?? [];
+  const diagnosis = healthQ.data?.diagnosis ?? null;
   const selected = slug ? types.find((item) => item.slug === slug) : null;
 
   if (slug) {
@@ -66,6 +79,20 @@ export default function RealtimeHealth({
         <h2 style={{ marginTop: 0, fontSize: "1.4rem" }}>
           {link === "wireless" ? "Wi-Fi" : "Wired"} · {selected?.name ?? "Real-Time Application Health"}
         </h2>
+        {diagnosis ? (
+          <div
+            style={{
+              padding: "10px 14px",
+              marginBottom: 14,
+              borderRadius: 8,
+              border: "1px solid var(--degraded)",
+              background: "color-mix(in srgb, var(--degraded) 10%, var(--card))",
+              fontSize: "0.9rem",
+            }}
+          >
+            <strong>Root cause · {diagnosis.title}:</strong> {diagnosis.summary}
+          </div>
+        ) : null}
         {selected?.latest.verdict === "software" ? (
           <p className="muted">Software problem in the monitor. These results are left out of the KPI, and a restart of this test was requested.</p>
         ) : null}
@@ -77,6 +104,20 @@ export default function RealtimeHealth({
   return (
     <div className="health-stack">
       <h2>{title ?? "Real-Time Application Health"}</h2>
+      {diagnosis ? (
+        <div
+          style={{
+            padding: "10px 14px",
+            marginBottom: 6,
+            borderRadius: 8,
+            border: "1px solid var(--degraded)",
+            background: "color-mix(in srgb, var(--degraded) 10%, var(--card))",
+            fontSize: "0.9rem",
+          }}
+        >
+          <strong>Root cause · {diagnosis.title}:</strong> {diagnosis.summary}
+        </div>
+      ) : null}
       {healthQ.isLoading ? <div className="muted">Loading real-time application health…</div> : null}
       {healthQ.isError ? <div className="muted">Could not load real-time application health.</div> : null}
       {!healthQ.isLoading && types.length === 0 ? (
@@ -146,16 +187,28 @@ function ChartBody({
     [item],
   );
   const span = chartWindow(range);
+  const limits = item?.limits ?? DEFAULT_LIMITS;
   if (loading) return <div className="muted">Loading real-time application health…</div>;
   if (failed) return <div className="muted">Could not load real-time application health.</div>;
   if (data.length === 0) return <div className="muted">No samples in this range.</div>;
   return (
     <>
       <MiniChart title="Round-trip" data={data} span={span} dataKey="rtt" unit=" ms" />
-      <div className="chart-pair">
-        <MiniChart title="Jitter" data={data} span={span} dataKey="jitter" unit=" ms" />
-        <MiniChart title="Packet loss" data={data} span={span} dataKey="loss" unit=" %" />
-      </div>
+      <MiniChart title="Jitter" data={data} span={span} dataKey="jitter" unit=" ms" />
+      <MiniChart title="Packet loss" data={data} span={span} dataKey="loss" unit=" %" />
+      <LimitShareChart
+        note={`Limits are ${fmt(limits.max_rtt_ms)} ms round-trip, ${fmt(limits.max_jitter_ms)} ms jitter, and ${fmt(limits.max_loss_pct)}% loss. 100% is that limit. A bar past it failed. Only moments that crossed a limit are shown.`}
+        range={range}
+        metrics={[
+          { key: "rtt", label: "Round-trip", limit: limits.max_rtt_ms, unit: " ms" },
+          { key: "jitter", label: "Jitter", limit: limits.max_jitter_ms, unit: " ms" },
+          { key: "loss", label: "Packet loss", limit: limits.max_loss_pct, unit: "%" },
+        ]}
+        samples={data.map((point) => ({
+          ts: point.ts,
+          values: { rtt: point.rtt, jitter: point.jitter, loss: point.loss },
+        }))}
+      />
     </>
   );
 }

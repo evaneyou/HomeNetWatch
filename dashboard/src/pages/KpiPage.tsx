@@ -30,7 +30,14 @@ type Point = {
   internet_wired: number | null;
   internet_wireless: number | null;
   voice: number | null;
+  voice_wired?: number | null;
+  voice_wireless?: number | null;
   video: number | null;
+  video_wired?: number | null;
+  video_wireless?: number | null;
+  web: number | null;
+  web_wired?: number | null;
+  web_wireless?: number | null;
   loss_internet: number | null;
   loss_voice: number | null;
   loss_video: number | null;
@@ -48,11 +55,12 @@ type Report = {
   to: string;
   generated_at: string;
   data_since: string | null;
-  targets: { internet: number; voice: number; video: number; loss_pct: number };
-  summary: Record<"internet" | "voice" | "video" | "apps" | "speed", Kind>;
-  previous: Record<"internet" | "voice" | "video" | "apps" | "speed", Kind>;
+  targets: { internet: number; voice: number; video: number; web?: number; loss_pct: number };
+  summary: Record<"internet" | "voice" | "video" | "web" | "apps" | "speed", Kind>;
+  previous: Record<"internet" | "voice" | "video" | "web" | "apps" | "speed", Kind>;
   app_loss_avg: number | null;
-  links: Record<"internet" | "voice" | "video", Record<string, Kind>>;
+  links: Record<"internet" | "voice" | "video" | "web", Record<string, Kind>>;
+  diagnosis?: { cause: string; title: string; summary: string } | null;
   series: Point[];
   incidents: { start: string; link: string; minutes: number; checks: number }[];
   gaps: { start: string; minutes: number; links: "wired" | "wireless" | "both"; ongoing: boolean }[];
@@ -177,13 +185,22 @@ type DailyRow = {
   internet_wired: number | null;
   internet_wireless: number | null;
   voice: number | null;
+  voice_wired?: number | null;
+  voice_wireless?: number | null;
   video: number | null;
+  video_wired?: number | null;
+  video_wireless?: number | null;
+  web: number | null;
+  web_wired?: number | null;
+  web_wireless?: number | null;
   loss: number | null;
   offline_minutes: number;
   gap_minutes: number;
   score: number | null;
   tone: Tone;
   score_parts: Record<string, number>;
+  root_cause?: string | null;
+  root_cause_title?: string | null;
   outages: number;
   rtt_ms: number | null;
 };
@@ -216,6 +233,7 @@ function missed(row: DailyRow, targets: Report["targets"]): string[] {
   if (availabilityTone(row.internet, targets.internet) !== "good" && row.internet != null) out.push("Internet");
   if (availabilityTone(row.voice, targets.voice) !== "good" && row.voice != null) out.push("Voice");
   if (availabilityTone(row.video, targets.video) !== "good" && row.video != null) out.push("Video");
+  if (availabilityTone(row.web, targets.web ?? 99.9) !== "good" && row.web != null) out.push("Web");
   if (lossTone(row.loss, targets.loss_pct) !== "good" && row.loss != null) out.push("Packet drop");
   return out;
 }
@@ -263,9 +281,9 @@ function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitor
   }, [cells, weeks]);
 
   function download() {
-    const head = ["Date", "Internet %", "Wired %", "Wi-Fi %", "Voice %", "Video %", "Packet drop %", "Offline min", "Outages", "Reporting gap min", "Health score"];
-    const cell = (value: number | null, digits = 2) => (value == null ? "" : value.toFixed(digits));
-    const lines = list.map((row) => [row.day, cell(row.internet), cell(row.internet_wired), cell(row.internet_wireless), cell(row.voice), cell(row.video), cell(row.loss), cell(row.offline_minutes, 1), String(row.outages), cell(row.gap_minutes, 1), cell(row.score, 1)].join(","));
+    const head = ["Date", "Internet %", "Wired %", "Wi-Fi %", "Voice %", "Video %", "Web %", "Packet drop %", "Offline min", "Outages", "Reporting gap min", "Health score", "Root cause"];
+    const cell = (value: number | null | undefined, digits = 2) => (value == null ? "" : value.toFixed(digits));
+    const lines = list.map((row) => [row.day, cell(row.internet), cell(row.internet_wired), cell(row.internet_wireless), cell(row.voice), cell(row.video), cell(row.web), cell(row.loss), cell(row.offline_minutes, 1), String(row.outages), cell(row.gap_minutes, 1), cell(row.score, 1), row.root_cause_title ?? ""].join(","));
     const blob = new Blob([[head.join(","), ...lines].join("\n")], { type: "text/csv" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -373,11 +391,43 @@ function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitor
                     {pct(tip.cell.row.internet)} <small>wired {pct(tip.cell.row.internet_wired)} · Wi-Fi {pct(tip.cell.row.internet_wireless)}</small>
                   </dd>
                   <dt>Voice</dt>
-                  <dd>{pct(tip.cell.row.voice)}</dd>
+                  <dd>
+                    {pct(tip.cell.row.voice)}
+                    {tip.cell.row.voice_wired != null || tip.cell.row.voice_wireless != null ? (
+                      <>
+                        {" "}
+                        <small>wired {pct(tip.cell.row.voice_wired)} · Wi-Fi {pct(tip.cell.row.voice_wireless)}</small>
+                      </>
+                    ) : null}
+                  </dd>
                   <dt>Video</dt>
-                  <dd>{pct(tip.cell.row.video)}</dd>
+                  <dd>
+                    {pct(tip.cell.row.video)}
+                    {tip.cell.row.video_wired != null || tip.cell.row.video_wireless != null ? (
+                      <>
+                        {" "}
+                        <small>wired {pct(tip.cell.row.video_wired)} · Wi-Fi {pct(tip.cell.row.video_wireless)}</small>
+                      </>
+                    ) : null}
+                  </dd>
+                  <dt>Web</dt>
+                  <dd>
+                    {pct(tip.cell.row.web)}
+                    {tip.cell.row.web_wired != null || tip.cell.row.web_wireless != null ? (
+                      <>
+                        {" "}
+                        <small>wired {pct(tip.cell.row.web_wired)} · Wi-Fi {pct(tip.cell.row.web_wireless)}</small>
+                      </>
+                    ) : null}
+                  </dd>
                   <dt>Packet drop</dt>
                   <dd>{pct(tip.cell.row.loss)}</dd>
+                  {tip.cell.row.root_cause_title ? (
+                    <>
+                      <dt>Diagnosis</dt>
+                      <dd>{tip.cell.row.root_cause_title}</dd>
+                    </>
+                  ) : null}
                   <dt>Offline</dt>
                   <dd>
                     {tip.cell.row.offline_minutes > 0 ? minutes(tip.cell.row.offline_minutes) : "none"}
@@ -455,17 +505,26 @@ export default function KpiPage() {
     internet_wireless_plot: plot(point.internet_wireless),
     voice_plot: plot(point.voice),
     video_plot: plot(point.video),
+    web_plot: plot(point.web),
     label: stamp(point.t, bucket),
     full: stamp(point.t, bucket, true),
   }));
   const under = (...values: (number | null)[]) => values.some((value) => value != null && value < AXIS_MIN);
   const internetClipped = series.some((point) => under(point.internet_wired, point.internet_wireless));
-  const appClipped = series.some((point) => under(point.voice, point.video));
+  const appClipped = series.some((point) => under(point.voice, point.video, point.web));
   const internet = summary.internet;
   const voice = summary.voice;
   const video = summary.video;
+  const web = summary.web;
+  const webTarget = targets.web ?? 99.9;
   const wired = report.links.internet.wired;
   const wifi = report.links.internet.wireless;
+  const voiceWired = report.links.voice?.wired;
+  const voiceWifi = report.links.voice?.wireless;
+  const videoWired = report.links.video?.wired;
+  const videoWifi = report.links.video?.wireless;
+  const webWired = report.links.web?.wired;
+  const webWifi = report.links.web?.wireless;
   const appLossPeak = Math.max(voice.loss_max ?? 0, video.loss_max ?? 0);
   const speed = summary.speed;
 
@@ -473,6 +532,7 @@ export default function KpiPage() {
     { name: "Internet availability", tone: availabilityTone(internet.availability, targets.internet) },
     { name: "Voice availability", tone: availabilityTone(voice.availability, targets.voice) },
     { name: "Video availability", tone: availabilityTone(video.availability, targets.video) },
+    { name: "Web availability", tone: availabilityTone(web?.availability ?? null, webTarget) },
     { name: "Packet drop", tone: lossTone(report.app_loss_avg, targets.loss_pct) },
   ];
   const measured = checks.filter((item) => item.tone !== "none");
@@ -482,8 +542,10 @@ export default function KpiPage() {
     verdict === "none"
       ? "Gathering the first measurements"
       : verdict === "good"
-        ? "All service levels are being met"
-        : `${missed.length} of ${measured.length} service levels below target`;
+        ? report.diagnosis?.cause === "wifi" || report.diagnosis?.cause === "wired"
+          ? `All service levels met · ${report.diagnosis.title}`
+          : "All service levels are being met"
+        : `${missed.length} of ${measured.length} service levels below target${report.diagnosis ? ` · ${report.diagnosis.title}` : ""}`;
 
   const minFloor = (values: (number | null)[], target: number) => {
     const real = values.filter((value): value is number => value != null);
@@ -491,7 +553,7 @@ export default function KpiPage() {
     return Math.max(AXIS_MIN, Math.floor(low - 0.3));
   };
   const availFloor = minFloor(data.flatMap((point) => [point.internet_wired_plot, point.internet_wireless_plot]), targets.internet);
-  const appFloor = minFloor(data.flatMap((point) => [point.voice_plot, point.video_plot]), Math.min(targets.voice, targets.video));
+  const appFloor = minFloor(data.flatMap((point) => [point.voice_plot, point.video_plot, point.web_plot]), Math.min(targets.voice, targets.video, webTarget));
   const axis = { stroke: C.axis, tick: { fontSize: 11 }, tickLine: false } as const;
   // `to` is the end of the last day, so step back a moment to name the last day itself.
   const lastMoment = new Date(new Date(report.to).getTime() - 1).toISOString();
@@ -579,7 +641,9 @@ export default function KpiPage() {
           <span>
             {measured.length === 0
               ? "The report fills in as measurements arrive."
-              : `Targets: internet ${targets.internet}%, voice and video ${targets.voice}%, packet drop at or under ${targets.loss_pct}%.`}
+              : report.diagnosis
+                ? `${report.diagnosis.summary} Targets: internet ${targets.internet}%, voice, video and web ${targets.voice}%, packet drop ≤ ${targets.loss_pct}%.`
+                : `Targets: internet ${targets.internet}%, voice, video and web ${targets.voice}%, packet drop at or under ${targets.loss_pct}%.`}
           </span>
         </div>
         <ul>
@@ -612,7 +676,11 @@ export default function KpiPage() {
           spark={<Spark data={series} field="voice" color={C.blue} />}
         >
           <Delta now={voice.availability} before={previous.voice.availability} better="up" />
-          <span className="kpi-split">{voice.samples.toLocaleString()} quality checks</span>
+          <span className="kpi-split">
+            {voiceWired || voiceWifi
+              ? `Wired ${pct(voiceWired?.availability)} · Wi-Fi ${pct(voiceWifi?.availability)}`
+              : `${voice.samples.toLocaleString()} quality checks`}
+          </span>
         </Card>
         <Card
           label="Video availability"
@@ -622,7 +690,25 @@ export default function KpiPage() {
           spark={<Spark data={series} field="video" color={C.violet} />}
         >
           <Delta now={video.availability} before={previous.video.availability} better="up" />
-          <span className="kpi-split">{video.samples.toLocaleString()} quality checks</span>
+          <span className="kpi-split">
+            {videoWired || videoWifi
+              ? `Wired ${pct(videoWired?.availability)} · Wi-Fi ${pct(videoWifi?.availability)}`
+              : `${video.samples.toLocaleString()} quality checks`}
+          </span>
+        </Card>
+        <Card
+          label="Web availability"
+          value={pct(web?.availability)}
+          tone={availabilityTone(web?.availability ?? null, webTarget)}
+          target={`Target ${webTarget}%`}
+          spark={<Spark data={series} field="web" color={C.good} />}
+        >
+          <Delta now={web?.availability ?? null} before={previous.web?.availability ?? null} better="up" />
+          <span className="kpi-split">
+            {webWired || webWifi
+              ? `Wired ${pct(webWired?.availability)} · Wi-Fi ${pct(webWifi?.availability)}`
+              : `${(web?.samples ?? 0).toLocaleString()} web checks`}
+          </span>
         </Card>
         <Card
           label="Packet drop (voice and video)"
@@ -673,7 +759,7 @@ export default function KpiPage() {
           </ResponsiveContainer>
         </Panel>
 
-        <Panel title="Voice and video availability" note={`Dashed line is the ${targets.voice}% target${appClipped ? `. Anything under ${AXIS_MIN}% sits on the bottom edge.` : ""}`}>
+        <Panel title="Voice, video and web availability" note={`Dashed line is the ${targets.voice}% target${appClipped ? `. Anything under ${AXIS_MIN}% sits on the bottom edge.` : ""}`}>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid stroke={C.grid} vertical={false} />
@@ -684,6 +770,7 @@ export default function KpiPage() {
               <ReferenceLine y={targets.voice} stroke={C.warn} strokeDasharray="5 4" />
               <Line name="Voice" type="monotone" dataKey="voice_plot" stroke={C.blue} strokeWidth={2.2} dot={false} isAnimationActive={false} />
               <Line name="Video" type="monotone" dataKey="video_plot" stroke={C.violet} strokeWidth={2.2} dot={false} isAnimationActive={false} />
+              <Line name="Web" type="monotone" dataKey="web_plot" stroke={C.good} strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </Panel>
@@ -754,6 +841,7 @@ export default function KpiPage() {
                 <tr>
                   <th>Link</th>
                   <th>Internet</th>
+                  <th>Web</th>
                   <th>Voice</th>
                   <th>Voice drop</th>
                   <th>Video</th>
@@ -765,6 +853,7 @@ export default function KpiPage() {
                   <tr key={link}>
                     <th scope="row">{LINKS[link]}</th>
                     <td className={`tone-${availabilityTone(report.links.internet[link]?.availability ?? null, targets.internet)}`}>{pct(report.links.internet[link]?.availability)}</td>
+                    <td className={`tone-${availabilityTone(report.links.web?.[link]?.availability ?? null, webTarget)}`}>{pct(report.links.web?.[link]?.availability)}</td>
                     <td className={`tone-${availabilityTone(report.links.voice[link]?.availability ?? null, targets.voice)}`}>{pct(report.links.voice[link]?.availability)}</td>
                     <td className={`tone-${lossTone(report.links.voice[link]?.loss_avg ?? null, targets.loss_pct)}`}>{pct(report.links.voice[link]?.loss_avg)}</td>
                     <td className={`tone-${availabilityTone(report.links.video[link]?.availability ?? null, targets.video)}`}>{pct(report.links.video[link]?.availability)}</td>

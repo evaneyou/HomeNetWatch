@@ -787,7 +787,7 @@ class SystemLog(Base):
 
 
 class ServerSample(Base):
-    """One minute of the HomeNetWatch server: CPU, memory, disk, database, and the host NIC."""
+    """One minute of the HomeNetWatch server: CPU, memory, disk, database, the app NIC, and the machine NIC."""
 
     __tablename__ = "server_samples"
 
@@ -803,6 +803,9 @@ class ServerSample(Base):
     iface: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     rx_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     tx_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    host_iface: Mapped[Optional[str]] = mapped_column(String(32))
+    host_rx_bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
+    host_tx_bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
 
     __table_args__ = (Index("ix_server_samples_recorded", "recorded_at"),)
 

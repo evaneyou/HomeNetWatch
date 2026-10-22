@@ -17,6 +17,7 @@ export type HealthCell = {
   last_test_at: string | null;
   failing_tests: number;
   quorum?: { bad: number; total: number } | null;
+  cause?: "wifi" | "wired" | "wan" | "server" | "agent" | "service" | null;
 };
 
 export type IssueSummary = {
@@ -37,6 +38,7 @@ export type Summary = {
   generated_at: string;
   matrix: HealthCell[];
   open_issues: IssueSummary[];
+  diagnoses?: Record<string, { cause: string; title: string; summary: string }>;
   monitors: {
     id: string;
     slug: string;

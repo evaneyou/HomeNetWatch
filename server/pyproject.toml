@@ -1,6 +1,6 @@
 [project]
 name = "hns-server"
-version = "0.3"
+version = "0.4"
 description = "HomeNetWatch central server"
 readme = "README.md"
 license = "MIT"

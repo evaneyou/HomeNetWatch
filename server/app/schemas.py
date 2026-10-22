@@ -347,6 +347,7 @@ class HealthCell(BaseModel):
     last_test_at: Optional[datetime] = None
     failing_tests: int = 0
     quorum: Optional[dict[str, int]] = None
+    cause: Optional[str] = None
 
 
 class IssueSummary(BaseModel):
@@ -369,6 +370,7 @@ class SummaryResponse(BaseModel):
     open_issues: list[IssueSummary]
     monitors: list[dict[str, Any]]
     networks: list[dict[str, Any]]
+    diagnoses: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class ResultOut(BaseModel):

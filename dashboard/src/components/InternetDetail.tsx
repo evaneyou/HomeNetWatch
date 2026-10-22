@@ -1,5 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { api } from "../api";
+import type { InternetServiceSetting } from "../types";
 import {
   Area,
   AreaChart,
@@ -14,6 +17,7 @@ import {
 import { isAnonymized } from "../anonymized";
 import { chartTicks, chartWindow, formatChartTick, zoomedDomain } from "../chartTime";
 import { useChartZoom } from "../useChartZoom";
+import LimitShareChart, { type LimitMetric } from "./LimitShareChart";
 import RealtimeHealth from "./RealtimeHealth";
 import {
   APPS,
@@ -56,6 +60,11 @@ export function InternetDetail({
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [localRange, setLocalRange] = useState<ChartRange>("1h");
+  const settingsQ = useQuery({
+    queryKey: ["internet-service"],
+    queryFn: () => api.internetService() as Promise<InternetServiceSetting>,
+    enabled: detail === "isp",
+  });
   const range = rangeProp ?? localRange;
   const setRange = onRangeChange ?? setLocalRange;
   const bySlug = useMemo(() => new Map(tests.map((test) => [test.slug, test])), [tests]);
@@ -136,6 +145,7 @@ export function InternetDetail({
           up: sample.up,
           ping: point.rtt_ms,
           jitter: point.jitter_ms,
+          status: point.status,
         };
       }),
     [points],
@@ -245,10 +255,9 @@ export function InternetDetail({
               ]}
               unit=" Mbps"
             />
-            <div className="chart-pair">
-              <PathChart title="Ping" data={transferChart} span={span} dataKey="ping" label="Ping" unit=" ms" />
-              <PathChart title="Jitter" data={transferChart} span={span} dataKey="jitter" label="Jitter" unit=" ms" />
-            </div>
+            <PathChart title="Ping" data={transferChart} span={span} dataKey="ping" label="Ping" unit=" ms" />
+            <PathChart title="Jitter" data={transferChart} span={span} dataKey="jitter" label="Jitter" unit=" ms" />
+            <ConnectionLimitChart points={transferChart} range={range} variancePct={settingsQ.data?.librespeed_variance_pct ?? 25} />
           </>
         )}
       </div>
@@ -447,6 +456,58 @@ export function TimeAxis({ domain }: { domain: [number, number] }) {
       angle={-28}
       textAnchor="end"
       height={40}
+    />
+  );
+}
+
+function median(values: Array<number | null>, allowZero = false): number | null {
+  const real = values.filter((value): value is number => (
+    value != null && Number.isFinite(value) && (allowZero ? value >= 0 : value > 0)
+  ));
+  if (real.length < 3) return null;
+  const ordered = [...real].sort((a, b) => a - b);
+  const mid = Math.floor(ordered.length / 2);
+  return ordered.length % 2 ? ordered[mid] : (ordered[mid - 1] + ordered[mid]) / 2;
+}
+
+function ConnectionLimitChart({
+  points,
+  range,
+  variancePct,
+}: {
+  points: { ts: number; down: number | null; up: number | null; ping: number | null; jitter: number | null; status: string }[];
+  range: ChartRange;
+  variancePct: number;
+}) {
+  const steady = points.filter((point) => point.status === "ok");
+  const room = 1 + variancePct / 100;
+  const floorRatio = Math.max(0, 1 - variancePct / 100);
+  const down = median(steady.map((point) => point.down));
+  const up = median(steady.map((point) => point.up));
+  const ping = median(steady.map((point) => point.ping));
+  const jitter = median(steady.map((point) => point.jitter), true);
+  const metrics: LimitMetric[] = [];
+  if (down != null && floorRatio > 0) metrics.push({ key: "down", label: "Download", limit: down * floorRatio, unit: " Mbps", floor: true });
+  if (up != null && floorRatio > 0) metrics.push({ key: "up", label: "Upload", limit: up * floorRatio, unit: " Mbps", floor: true });
+  if (ping != null) metrics.push({ key: "ping", label: "Ping", limit: ping * room, unit: " ms" });
+  if (jitter != null && jitter > 0) metrics.push({ key: "jitter", label: "Jitter", limit: jitter * room, unit: " ms" });
+  if (metrics.length === 0) {
+    return (
+      <div>
+        <h3 className="wifi-heading">Share of each limit</h3>
+        <p className="muted">Not enough steady results yet to compare against the limits.</p>
+      </div>
+    );
+  }
+  return (
+    <LimitShareChart
+      note={`100% is the limit from the recent normal and the ${variancePct}% tolerance. A bar past it failed: download or upload fell below the floor, or ping or jitter rose above the tolerance. Only those moments are shown.`}
+      range={range}
+      metrics={metrics}
+      samples={points.map((point) => ({
+        ts: point.ts,
+        values: { down: point.down, up: point.up, ping: point.ping, jitter: point.jitter },
+      }))}
     />
   );
 }

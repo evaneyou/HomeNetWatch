@@ -31,6 +31,9 @@ type Point = {
   rx_bps: number | null;
   tx_bps: number | null;
   iface: string;
+  host_rx_bps: number | null;
+  host_tx_bps: number | null;
+  host_iface: string;
   connections: number;
 };
 type Advisory = { id: string; risk: string; summary: string };
@@ -68,6 +71,13 @@ type PackageDetail = {
   checked_at: string;
   package: PackageRow;
 };
+type BackupCopy = { taken_at: string; bytes: number };
+type BackupReport = {
+  available: boolean;
+  fresh: boolean;
+  newest: string | null;
+  kinds: { key: string; title: string; count: number; copies: BackupCopy[] }[];
+};
 type Report = {
   latest: Point | null;
   points: Point[];
@@ -84,7 +94,10 @@ type Report = {
     groups?: SoftwareGroup[];
   } | null;
   stuck: { pid: number; name: string; state: string; reason: string; since: string }[];
+  processes: { pid: number; name: string; cpu: number }[];
+  memory: { pid: number; name: string; bytes: number; share: number | null }[];
   storage: StorageReport;
+  backups: BackupReport;
 };
 
 const RANGES: Range[] = ["1h", "6h", "24h", "7d"];
@@ -660,7 +673,7 @@ export function ServerHealthPackagePage() {
   );
 }
 
-const SECTIONS = ["cpu", "memory", "interface", "storage", "database", "software", "stuck"] as const;
+const SECTIONS = ["cpu", "memory", "interface", "storage", "database", "backup", "software", "stuck"] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
 /** The figures are the buttons. Software and Processes get tiles of their own. */
@@ -688,7 +701,14 @@ function CardTabs({
       value: latest ? amount(latest.mem_used_mb * 1024 * 1024) : "—",
       note: latest ? `of ${amount(latest.mem_total_mb * 1024 * 1024)}` : "",
     },
-    { key: "interface", label: latest?.iface ? `Interface ${latest.iface}` : "Interface", value: perSecond(latest?.rx_bps), note: `out ${perSecond(latest?.tx_bps)}` },
+    latest?.host_iface
+      ? {
+          key: "interface",
+          label: "Network",
+          value: perSecond(latest.host_rx_bps),
+          note: `${latest.host_iface} in · ${latest.iface} ${perSecond(latest.rx_bps)} in`,
+        }
+      : { key: "interface", label: latest?.iface ? `Interface ${latest.iface}` : "Interface", value: perSecond(latest?.rx_bps), note: `out ${perSecond(latest?.tx_bps)}` },
     {
       key: "storage",
       label: "Storage",
@@ -696,6 +716,15 @@ function CardTabs({
       note: latest ? `${amount(latest.disk_used_mb * 1024 * 1024)} of ${amount(latest.disk_total_mb * 1024 * 1024)}` : "",
     },
     { key: "database", label: "Database", value: amount(latest?.db_bytes), note: `${latest?.connections ?? 0} connections` },
+    report.backups.available && report.backups.newest
+      ? {
+          key: "backup",
+          label: "Backup",
+          value: ago(report.backups.newest),
+          note: report.backups.fresh ? "newest copy" : "a daily copy is late",
+          warn: !report.backups.fresh,
+        }
+      : { key: "backup", label: "Backup", value: report.backups.available ? "None yet" : "Not visible", note: "daily at 3:15 AM UTC", warn: true },
     {
       key: "software",
       label: "Software",
@@ -759,6 +788,8 @@ export default function ServerHealthPage() {
         mem: point.mem_used_mb * 1024 * 1024,
         rx: point.rx_bps,
         tx: point.tx_bps,
+        host_rx: point.host_rx_bps,
+        host_tx: point.host_tx_bps,
         disk: point.disk_used_mb * 1024 * 1024,
         db: point.db_bytes,
         forecast: point.forecast_bytes,
@@ -772,33 +803,105 @@ export default function ServerHealthPage() {
   function section(key: SectionKey, current: Report) {
     switch (key) {
       case "cpu":
-        return <Chart key={key} title="CPU" data={data} span={span} lines={[{ key: "cpu", name: "Busy" }]} unit=" %" domain={[0, 100]} />;
+        return (
+          <div key={key}>
+            <Chart title="CPU" data={data} span={span} lines={[{ key: "cpu", name: "Busy" }]} unit=" %" domain={[0, 100]} />
+            <div className="panel">
+              <h2 className="server-health-heading">Busiest processes</h2>
+              <p className="muted server-health-note">Share of the whole machine since the last sample. Anything under 0.5% is left out.</p>
+              {(current.processes ?? []).length === 0 ? (
+                <div className="state-box">Nothing is using much CPU right now.</div>
+              ) : (
+                <table className="server-health-table">
+                  <thead>
+                    <tr>
+                      <th>Process</th>
+                      <th>PID</th>
+                      <th>CPU</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(current.processes ?? []).map((row) => (
+                      <tr key={row.pid}>
+                        <td>{row.name}</td>
+                        <td>{row.pid}</td>
+                        <td>{row.cpu.toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        );
       case "memory":
         return (
-          <Chart
-            key={key}
-            title="Memory"
-            note={latest ? `Total ${amount(latest.mem_total_mb * 1024 * 1024)}` : undefined}
-            data={data}
-            span={span}
-            lines={[{ key: "mem", name: "Used" }]}
-            unit=""
-          />
+          <div key={key}>
+            <Chart
+              title="Memory"
+              note={latest ? `Total ${amount(latest.mem_total_mb * 1024 * 1024)}` : undefined}
+              data={data}
+              span={span}
+              lines={[{ key: "mem", name: "Used" }]}
+              unit=""
+            />
+            <div className="panel">
+              <h2 className="server-health-heading">Largest processes</h2>
+              <p className="muted server-health-note">Resident memory right now, as a share of the machine. Anything under 1 MB is left out.</p>
+              {(current.memory ?? []).length === 0 ? (
+                <div className="state-box">Nothing is using much memory right now.</div>
+              ) : (
+                <table className="server-health-table">
+                  <thead>
+                    <tr>
+                      <th>Process</th>
+                      <th>PID</th>
+                      <th>Memory</th>
+                      <th>Share</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(current.memory ?? []).map((row) => (
+                      <tr key={row.pid}>
+                        <td>{row.name}</td>
+                        <td>{row.pid}</td>
+                        <td>{amount(row.bytes)}</td>
+                        <td>{row.share == null ? "—" : `${row.share.toFixed(1)}%`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
         );
-      case "interface":
+      case "interface": {
+        const machine = latest?.host_iface;
+        const app = latest?.iface || "app";
         return (
           <Chart
             key={key}
-            title={latest?.iface ? `Interface ${latest.iface}` : "Interface"}
+            title="Network"
+            note={machine ? `${machine} is the Oracle machine. ${app} is the app container.` : undefined}
             data={data}
             span={span}
-            lines={[
-              { key: "rx", name: "In" },
-              { key: "tx", name: "Out" },
-            ]}
+            lines={
+              machine
+                ? [
+                    { key: "host_rx", name: `${machine} in` },
+                    { key: "host_tx", name: `${machine} out`, dashed: true },
+                    { key: "rx", name: `${app} in` },
+                    { key: "tx", name: `${app} out`, dashed: true },
+                  ]
+                : [
+                    { key: "rx", name: "In" },
+                    { key: "tx", name: "Out" },
+                  ]
+            }
             unit="/s"
           />
         );
+      }
       case "storage":
         return (
           <div className="panel" key={key}>
@@ -854,6 +957,47 @@ export default function ServerHealthPage() {
             </div>
           </div>
         );
+      case "backup":
+        return (
+          <div className="panel" key={key}>
+            <h2 className="server-health-heading">Backup</h2>
+            <p className="muted server-health-note">
+              A copy is taken every day at 3:15 AM UTC. The newest 14 of each kind stay on this machine, and a copy should
+              live somewhere else too. The files themselves are not shown here.
+            </p>
+            {!current.backups.available ? <div className="state-box">The server cannot see the backup folder.</div> : null}
+            {current.backups.available && current.backups.kinds.every((kind) => kind.count === 0) ? (
+              <div className="state-box">No backups yet.</div>
+            ) : null}
+            {current.backups.kinds
+              .filter((kind) => kind.count > 0)
+              .map((kind) => (
+                <div key={kind.key}>
+                  <h3 className="server-health-heading">
+                    {kind.title} <span className="muted">{kind.count} saved</span>
+                  </h3>
+                  <table className="server-health-table">
+                    <thead>
+                      <tr>
+                        <th>Taken</th>
+                        <th>Size</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kind.copies.map((copy) => (
+                        <tr key={copy.taken_at}>
+                          <td>
+                            {when(copy.taken_at)} <span className="muted">({ago(copy.taken_at)})</span>
+                          </td>
+                          <td>{amount(copy.bytes)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+          </div>
+        );
       case "software":
         return (
           <div className="panel" key={key}>
@@ -900,7 +1044,7 @@ export default function ServerHealthPage() {
     }
   }
 
-  const graphTab = active !== "software" && active !== "stuck" && active !== "storage";
+  const graphTab = active !== "software" && active !== "stuck" && active !== "storage" && active !== "backup";
 
   return (
     <div className="server-health">

@@ -527,12 +527,29 @@ def test_guest_redaction_drops_markings_and_leaves_admin_results():
     hidden = redact(payload, UserRole.guest)
     assert hidden["public_ip"] == "###.#.###.#"
     assert hidden["lan_ip"] == ""
-    assert hidden["latitude"] == "##.#"
+    assert hidden["latitude"] == "##.#"  # no monitor_id, so this is not the probe's own place
     assert hidden["hostname"] == "######-####"
     assert hidden["metrics"] == {"rtt_ms": 20}
     assert hidden["aps"][0]["ssid"] == "####"
     assert hidden["aps"][0]["bssid"] == "##:##"
     assert hidden["aps"][0]["anon_key"] != hidden["aps"][1]["anon_key"]
+    probe = {
+        "monitor_id": "m1",
+        "location_label": "Living room",
+        "region": "New York",
+        "country": "United States",
+        "latitude": 40.75,
+        "longitude": -73.98,
+        "public_ip": "203.0.113.9",
+    }
+    shown = redact(probe, UserRole.guest)
+    assert shown["location_label"] == "Living room"
+    assert shown["region"] == "New York"
+    assert shown["latitude"] == 40.75
+    assert shown["public_ip"] == "###.#.###.#"
+    visitor = redact({"country": "Canada", "region": "Ontario", "city": "Toronto"}, UserRole.guest)
+    assert visitor["country"] == "######"
+    assert visitor["region"] == "#######"
     visible = redact(payload, UserRole.admin)
     assert visible["metrics"]["tos"] == 184
     assert visible["public_ip"] == "203.0.113.9"
@@ -682,3 +699,85 @@ def test_a_blackout_beside_a_healthy_check_is_a_software_issue(client, db, monit
     assert assignment.status_code == 200, assignment.text
     job = next(item for item in assignment.json()["jobs"] if item["run_id"] == str(video.id))
     assert job["restart_token"] == 2
+
+
+def test_health_uses_the_running_checks_limits(client, db):
+    monitor = _monitor(db)
+    if db.scalar(select(User).where(User.username == "admin")) is None:
+        db.add(User(username="admin", password_hash=hash_password("admin-change-me"), role=UserRole.admin, is_active=True))
+        db.commit()
+    db.add(
+        SyntheticRun(
+            monitor_id=monitor.id,
+            profile_slug="voip-g711a",
+            mode="continuous",
+            links=["wired"],
+            options={"max_rtt_ms": 250, "max_jitter_ms": 20, "max_loss_pct": 0.5},
+            status="running",
+            finished_links=[],
+        )
+    )
+    db.commit()
+    body = client.get(f"/api/v1/synthetic/health?monitor_id={monitor.id}&link=wired", headers=login(client))
+    assert body.status_code == 200, body.text
+    voice = next(item for item in body.json()["types"] if item["slug"] == "voip-g711a")
+    assert voice["limits"]["max_rtt_ms"] == 250
+    assert voice["limits"]["max_jitter_ms"] == 20
+    assert voice["limits"]["max_loss_pct"] == 0.5
+
+
+def test_rfc3550_jitter_and_remote_desktop_rtcp_and_cross_link_diagnosis(client, db, monitor_token):
+    from app.synthetic import PROFILES, metrics_from_interval
+
+    extracted = metrics_from_interval(
+        {
+            "flows": [
+                {
+                    "rx": {"jitter_ms": 48.2, "jitter_rfc3550_ms": 6.4, "loss_pct": 0.0},
+                    "rtt": {"avg_ms": 22.0, "jitter_ms": 19.5},
+                    "verdict": {"pass": True},
+                }
+            ]
+        }
+    )
+    assert extracted["jitter_ms"] == 6.4
+
+    rdp = next(item for item in PROFILES if item["slug"] == "remote-desktop")
+    assert rdp["options"]["wire"] == "rtp"
+    assert rdp["options"]["rtcp_interval_s"] == 5
+
+    monitor = _monitor(db)
+    if db.scalar(select(User).where(User.username == "admin")) is None:
+        db.add(User(username="admin", password_hash=hash_password("admin-change-me"), role=UserRole.admin, is_active=True))
+        db.commit()
+    run = SyntheticRun(
+        monitor_id=monitor.id,
+        profile_slug="voip-g711a",
+        mode="continuous",
+        links=["wired", "wireless"],
+        options={},
+        status="running",
+        finished_links=[],
+    )
+    db.add(run)
+    db.commit()
+    now = datetime.now(timezone.utc)
+    for idx in range(3):
+        _post_sample(client, monitor_token, run.id, "wired", now - timedelta(seconds=30 - idx * 10), 18, 2, 0, True, idx + 1)
+        _post_sample(client, monitor_token, run.id, "wireless", now - timedelta(seconds=30 - idx * 10), 45, 5, 2.5, False, idx + 1)
+
+    headers = login(client)
+    wifi_health = client.get(f"/api/v1/synthetic/health?monitor_id={monitor.id}&link=wireless", headers=headers)
+    assert wifi_health.status_code == 200
+    assert wifi_health.json()["diagnosis"]["cause"] == "wifi"
+
+    summary = client.get("/api/v1/summary", headers=headers)
+    assert summary.status_code == 200
+    data = summary.json()
+    assert data["diagnoses"][str(monitor.id)]["cause"] == "wifi"
+    wifi_apps = next(c for c in data["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wifi" and c["column"] == "apps")
+    wifi_inet = next(c for c in data["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wifi" and c["column"] == "internet")
+    assert wifi_apps["cause"] == "wifi"
+    assert wifi_inet["cause"] == "wifi"
+    assert wifi_inet["status"] in ("degraded", "fail")
+

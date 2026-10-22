@@ -396,7 +396,7 @@ def test_the_new_endpoints(client: TestClient, db):
 
 
 def test_the_targets_are_strict_and_reach_the_report(db):
-    assert kpi.TARGETS == {"internet": 99.95, "voice": 99.9, "video": 99.9, "loss_pct": 0.1}
+    assert kpi.TARGETS == {"internet": 99.95, "voice": 99.9, "video": 99.9, "web": 99.9, "loss_pct": 0.1}
     assert kpi.report(db, "week", now=NOW)["targets"] == kpi.TARGETS
 
 
@@ -483,7 +483,7 @@ def test_daily_history_carries_the_gap_minutes(db):
 
 
 def test_the_daily_health_score_weights_internet_most():
-    assert kpi.SCORE_WEIGHTS == {"internet": 60, "voice": 20, "video": 10, "loss": 10}
+    assert kpi.SCORE_WEIGHTS == {"internet": 60, "voice": 20, "video": 10, "web": 10, "loss": 10}
     perfect = kpi.health_score(100.0, 100.0, 100.0, 0.0)
     assert perfect["score"] == 100.0 and perfect["tone"] == "good"
 
@@ -528,3 +528,43 @@ def test_the_daily_history_carries_the_score_and_the_colour(db):
     assert row["score"] == 100.0 and row["tone"] == "good" and set(row["score_parts"]) == {"internet", "voice", "loss"}
     empty = kpi.daily_history(db, date(2020, 1, 1), date(2020, 1, 2), monitor.id)
     assert empty == []
+
+
+def test_single_link_wifi_degradation_keeps_service_kpi_green_and_flags_wifi(db):
+    monitor = _pi(db)
+    wired, wifi = _two_links(db, monitor)
+    for minute in range(10):
+        _ping(db, wired, minute, ResultStatus.ok)
+        _ping(db, wifi, minute, ResultStatus.ok)
+    voice = _run(db, monitor, "voip-g711a", ("wired", "wireless"))
+    for minute in range(10):
+        _sample(db, voice, minute, "pass", loss=0.0, link="wired")
+        # Wi-Fi drops packets on 2 of 10 intervals
+        _sample(db, voice, minute, "fail" if minute < 2 else "pass", loss=2.5 if minute < 2 else 0.0, link="wireless")
+    # Also add a web check on wired and wifi
+    wired_web = Test(monitor_id=monitor.id, network_id=wired.network_id, slug="http-youtube", name="YouTube", kind=TestKind.http, target="https://youtube.com")
+    wifi_web = Test(monitor_id=monitor.id, network_id=wifi.network_id, slug="http-youtube", name="YouTube", kind=TestKind.http, target="https://youtube.com")
+    db.add_all([wired_web, wifi_web])
+    db.flush()
+    for minute in range(10):
+        _ping(db, wired_web, minute, ResultStatus.ok)
+        _ping(db, wifi_web, minute, ResultStatus.fail if minute == 0 else ResultStatus.ok)
+    db.commit()
+
+    kpi.rebuild(db, HOUR, HOUR + timedelta(hours=1))
+    kpi.rebuild_days(db, HOUR.date(), HOUR.date())
+    db.commit()
+
+    rep = kpi.report(db, "day", now=NOW, monitor_id=monitor.id)
+    # Headline service availability reflects the healthy wired link (100%), while per-link split shows Wi-Fi degradation
+    assert rep["summary"]["voice"]["availability"] == pytest.approx(100.0)
+    assert rep["links"]["voice"]["wired"]["availability"] == pytest.approx(100.0)
+    assert rep["links"]["voice"]["wireless"]["availability"] == pytest.approx(80.0)
+    assert rep["summary"]["web"]["availability"] == pytest.approx(100.0)
+    assert rep["links"]["web"]["wired"]["availability"] == pytest.approx(100.0)
+    assert rep["links"]["web"]["wireless"]["availability"] == pytest.approx(90.0)
+    assert rep["diagnosis"] is not None and rep["diagnosis"]["cause"] == "wifi"
+    history = kpi.daily_history(db, NOW.date(), NOW.date(), monitor.id)
+    assert history[0]["root_cause"] == "wifi"
+    assert history[0]["score"] == pytest.approx(100.0)
+

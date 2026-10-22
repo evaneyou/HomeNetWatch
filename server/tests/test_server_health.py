@@ -14,13 +14,18 @@ from app.server_health import (
     cvss3_score,
     byte_rates,
     category_usage,
+    cpu_cores,
     check_due,
     choose_iface,
+    read_iface,
     cpu_counters,
     cpu_percent,
     disk_projection,
     forecast,
+    busiest_processes,
+    largest_processes,
     judge_stuck,
+    list_backups,
     maybe_refresh_advisories,
     measure_storage,
     parse_net,
@@ -56,6 +61,8 @@ docker0: 9000 0 0 0 0 0 0 0 9000 0
     start = datetime(2026, 10, 20, tzinfo=timezone.utc)
     rates = byte_rates((start, rx, tx), (start + timedelta(seconds=2), rx + 1000, tx + 40))
     assert rates == (500.0, 20.0)
+    assert read_iface(" enp0s6: 100 0 0 0 0 0 0 0 40 0\n") == ("enp0s6", 100, 40)
+    assert read_iface("") == ("", None, None)
 
 
 def test_forecast_dates_a_rising_database():
@@ -198,11 +205,107 @@ def _user(db, username: str, role: UserRole) -> None:
         db.commit()
 
 
-def test_viewer_is_refused(client, db):
+def _sample(when: datetime, **extra) -> ServerSample:
+    return ServerSample(
+        recorded_at=when,
+        mem_used_mb=1,
+        mem_total_mb=2,
+        disk_used_mb=1,
+        disk_total_mb=2,
+        db_bytes=10,
+        connections=1,
+        **extra,
+    )
+
+
+def test_report_shows_the_machine_and_the_app_interface(client, db):
+    _user(db, "admin", UserRole.admin)
+    db.execute(delete(ServerSample))
+    db.commit()
+    start = datetime.now(timezone.utc).replace(microsecond=0)
+    db.add_all(
+        [
+            _sample(start, iface="eth0", rx_bytes=1000, tx_bytes=100, host_iface="enp0s6", host_rx_bytes=5000, host_tx_bytes=200),
+            _sample(
+                start + timedelta(seconds=60),
+                iface="eth0",
+                rx_bytes=7000,
+                tx_bytes=100,
+                host_iface="enp0s6",
+                host_rx_bytes=65000,
+                host_tx_bytes=200,
+            ),
+            _sample(start + timedelta(seconds=120), iface="eth0", rx_bytes=1, tx_bytes=1, host_iface="eth0", host_rx_bytes=9, host_tx_bytes=9),
+        ]
+    )
+    db.commit()
+    login(client)
+    points = client.get("/api/v1/server-health?range=1h").json()["points"]
+    assert len(points) == 3
+    both = points[1]
+    assert both["iface"] == "eth0"
+    assert both["rx_bps"] == 100
+    assert both["host_iface"] == "enp0s6"
+    assert both["host_rx_bps"] == 1000
+    assert both["host_tx_bps"] == 0
+    same = points[-1]
+    assert same["host_iface"] == ""
+    assert same["host_rx_bps"] is None
+    db.execute(delete(ServerSample))
+    db.commit()
+
+
+def test_backup_listing_reports_time_and_size_only(tmp_path):
+    now = datetime(2026, 10, 20, 16, 0, tzinfo=timezone.utc)
+    (tmp_path / "db-20261020T155300Z.sql.gz").write_bytes(b"db")
+    (tmp_path / "wireguard-20261020T155300Z.tar.gz").write_bytes(b"wg-keys")
+    (tmp_path / "tls-20261019T031500Z.tar.gz").write_bytes(b"tls")
+    (tmp_path / "db-not-a-stamp.sql.gz").write_bytes(b"skip")
+    (tmp_path / "notes.txt").write_bytes(b"skip")
+    found = list_backups(tmp_path, now)
+    assert found["available"] is True
+    assert found["fresh"] is False
+    database, wireguard, tls = found["kinds"]
+    assert database["count"] == 1
+    assert database["copies"] == [{"taken_at": "2026-10-20T15:53:00+00:00", "bytes": 2}]
+    assert wireguard["copies"][0]["bytes"] == 7
+    assert tls["copies"][0]["taken_at"].startswith("2026-10-19T03:15:00")
+    assert "name" not in database["copies"][0]
+    (tmp_path / "tls-20261020T031500Z.tar.gz").write_bytes(b"tls")
+    assert list_backups(tmp_path, datetime(2026, 10, 20, 16, 0, tzinfo=timezone.utc))["fresh"] is True
+    assert list_backups(tmp_path / "missing", now)["available"] is False
+
+
+def test_busiest_processes_are_a_share_of_the_machine():
+    now = datetime(2026, 10, 20, tzinfo=timezone.utc)
+    previous = {7: {"name": "postgres", "cpu_ticks": 100, "seen_at": now - timedelta(seconds=60)}}
+    processes = [
+        {"pid": 7, "name": "postgres", "command": "postgres: checkpointer", "ticks": 220, "userland": True},
+        {"pid": 8, "name": "idle", "command": "idle", "ticks": 5, "userland": True},
+        {"pid": 3, "name": "ksoftirqd", "command": "", "ticks": 9000, "userland": False},
+    ]
+    rows = busiest_processes(previous, processes, now, clk_tck=100, cores=2)
+    assert rows == [{"pid": 7, "name": "postgres: checkpointer", "cpu": 1.0}]
+    assert cpu_cores("cpu  1 0 0 1\ncpu0 1 0 0 1\ncpu1 0 0 0 0\n") == 2
+
+
+def test_largest_processes_are_a_share_of_memory():
+    processes = [
+        {"pid": 1, "name": "postgres", "command": "postgres: checkpointer", "userland": True, "rss_bytes": 400 * 1024 * 1024},
+        {"pid": 2, "name": "tiny", "command": "tiny", "userland": True, "rss_bytes": 1000},
+        {"pid": 3, "name": "kthread", "command": "", "userland": False, "rss_bytes": 9 * 1024 * 1024 * 1024},
+    ]
+    rows = largest_processes(processes, 8 * 1024 * 1024 * 1024)
+    assert rows == [{"pid": 1, "name": "postgres: checkpointer", "bytes": 400 * 1024 * 1024, "share": 4.9}]
+
+
+def test_viewer_is_refused_and_a_guest_can_read(client, db):
     _user(db, "viewer-health", UserRole.viewer)
     login(client, "viewer-health", "viewer-health")
-    response = client.get("/api/v1/server-health")
-    assert response.status_code == 403
+    assert client.get("/api/v1/server-health").status_code == 403
+    _user(db, "guest-health", UserRole.guest)
+    login(client, "guest-health", "guest-health")
+    assert client.get("/api/v1/server-health").status_code == 200
 
 
 def test_samples_are_stored_and_pruned(client, db):

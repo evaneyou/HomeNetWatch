@@ -21,18 +21,23 @@ from uuid import UUID
 from sqlalchemy import Date, DateTime, case, cast, delete, func, select
 from sqlalchemy.orm import Session
 
+from app.internet_tests import WEB_SERVICES
 from app.models import KpiDaily, KpiHourly, Network, ResultStatus, SyntheticRun, SyntheticSample, Test, TestKind, TestResult
 from app.synthetic import SOFTWARE, is_blackout
 
 log = logging.getLogger(__name__)
 
-TARGETS = {"internet": 99.95, "voice": 99.9, "video": 99.9, "loss_pct": 0.1}
-KINDS = ("internet", "voice", "video", "apps", "speed")
+TARGETS = {"internet": 99.95, "voice": 99.9, "video": 99.9, "web": 99.9, "loss_pct": 0.1}
+KINDS = ("internet", "voice", "video", "web", "apps", "speed")
+WEB_SLUGS = frozenset(
+    [*(f"http-{key}" for key, _, _, _ in WEB_SERVICES), *(f"icmp-{key}" for key, _, _, _ in WEB_SERVICES)]
+)
+WEB_HTTP_SLUGS = frozenset(f"http-{key}" for key, _, _, _ in WEB_SERVICES)
 
 # The daily health score: how much each service counts, and where a result is worth 0 points.
 # At or better than its target a service scores 100; at its zero point or worse, 0; in between, in proportion.
-SCORE_WEIGHTS = {"internet": 60, "voice": 20, "video": 10, "loss": 10}
-SCORE_ZERO = {"internet": 99.0, "voice": 98.0, "video": 98.0}  # availability (%) that scores 0
+SCORE_WEIGHTS = {"internet": 60, "voice": 20, "video": 10, "web": 10, "loss": 10}
+SCORE_ZERO = {"internet": 99.0, "voice": 98.0, "video": 98.0, "web": 98.0}  # availability (%) that scores 0
 SCORE_ZERO_LOSS = 1.0  # packet drop (%) that scores 0
 SCORE_GREEN = 95.0
 SCORE_AMBER = 80.0
@@ -49,8 +54,15 @@ def _scaled(value: Optional[float], good: float, zero: float) -> Optional[float]
     return 100.0 * (value - zero) / (good - zero)
 
 
-def health_score(internet: Optional[float], voice: Optional[float], video: Optional[float], loss: Optional[float], targets: Optional[dict[str, float]] = None) -> dict[str, Any]:
-    """One 0 to 100 score for a day: internet 60, voice 20, video 10, packet drop 10.
+def health_score(
+    internet: Optional[float],
+    voice: Optional[float],
+    video: Optional[float],
+    loss: Optional[float],
+    targets: Optional[dict[str, float]] = None,
+    web: Optional[float] = None,
+) -> dict[str, Any]:
+    """One 0 to 100 score for a day: internet 60, voice 20, video 10, packet drop 10 (plus web when present).
 
     A service with no data that day is left out and the others share its weight. With no internet figure
     there is no score, because internet is most of it.
@@ -60,6 +72,7 @@ def health_score(internet: Optional[float], voice: Optional[float], video: Optio
         "internet": _scaled(internet, goals["internet"], SCORE_ZERO["internet"]),
         "voice": _scaled(voice, goals["voice"], SCORE_ZERO["voice"]),
         "video": _scaled(video, goals["video"], SCORE_ZERO["video"]),
+        "web": _scaled(web, goals.get("web", 99.9), SCORE_ZERO["web"]),
         "loss": _scaled(loss, goals["loss_pct"], SCORE_ZERO_LOSS),
     }
     if parts["internet"] is None:
@@ -211,6 +224,41 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
             acc.up_sum += up
             acc.up_n += 1
 
+    # Web applications: SaaS HTTP and ICMP checks on each link.
+    web_rows = db.execute(
+        select(TestResult.started_at, TestResult.status, TestResult.metrics, Test.slug, Test.monitor_id, Network.kind)
+        .join(Test, TestResult.test_id == Test.id)
+        .join(Network, Test.network_id == Network.id)
+        .where(
+            Test.slug.in_(list(WEB_SLUGS)),
+            Test.enabled.is_(True),
+            TestResult.started_at >= start,
+            TestResult.started_at < end,
+            ~TestResult.external_id.startswith("rollup-"),
+        )
+    ).all()
+    healthy_link_times: dict[tuple[UUID, str], list[datetime]] = defaultdict(list)
+    if path_tests:
+        for test_id, started, status, _metrics in rows:
+            if status.value == "ok":
+                mon_id, lnk = path_tests[test_id]
+                healthy_link_times[(mon_id, lnk)].append(started)
+    for started, status, metrics, slug, monitor_id, kind in web_rows:
+        link = _link(kind.value)
+        if status.value == "ok":
+            healthy_link_times[(monitor_id, link)].append(started)
+        acc = out[(hour_of(started), monitor_id, link, "web")]
+        data = metrics or {}
+        if slug in WEB_HTTP_SLUGS:
+            acc.n += 1
+            if status.value == "fail":
+                acc.failed += 1
+            elif status.value == "degraded":
+                acc.degraded += 1
+            acc.add_metrics(_number(data.get("rtt_ms")), None, None)
+        else:
+            acc.add_metrics(_number(data.get("rtt_ms")), _number(data.get("jitter_ms")), _number(data.get("loss_pct")))
+
     # Applications: the checks that run all the time. Manual and stress runs are left out.
     sample_rows = db.execute(
         select(SyntheticSample, SyntheticRun.profile_slug, SyntheticRun.monitor_id)
@@ -232,7 +280,7 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
     window = timedelta(minutes=3)
     for sample, slug, monitor_id in rows:
         # A total blackout while another check on the link is fine is a monitor problem, not the service.
-        if sample.verdict == SOFTWARE or _software_blackout(sample, slug, monitor_id, healthy, window):
+        if sample.verdict == SOFTWARE or _software_blackout(sample, slug, monitor_id, healthy, healthy_link_times, window):
             continue
         kind = "voice" if slug.startswith("voip-") else "video" if slug == "video-conference" else "apps"
         acc = out[(hour_of(sample.recorded_at), monitor_id, sample.link, kind)]
@@ -244,12 +292,22 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
     return out
 
 
-def _software_blackout(sample: SyntheticSample, slug: str, monitor_id: UUID, healthy: dict, window: timedelta) -> bool:
+def _software_blackout(
+    sample: SyntheticSample,
+    slug: str,
+    monitor_id: UUID,
+    healthy: dict,
+    healthy_link_times: dict[tuple[UUID, str], list[datetime]],
+    window: timedelta,
+) -> bool:
     if not is_blackout(sample.rtt_ms, sample.jitter_ms, sample.loss_pct):
         return False
     moment = sample.recorded_at
     for recorded, other in healthy.get((monitor_id, sample.link), ()):
         if other != slug and abs(recorded - moment) <= window:
+            return True
+    for recorded in healthy_link_times.get((monitor_id, sample.link), ()):
+        if abs(recorded - moment) <= window:
             return True
     return False
 
@@ -515,6 +573,92 @@ def _by_link(rows: list[dict[str, Any]], kind: str) -> dict[str, dict[str, Any]]
     return {link: _summary([row for row in rows if row["link"] == link], kind) for link in ("wired", "wireless") if any(row["link"] == link and row["kind"] == kind for row in rows)}
 
 
+def _service_summary(rows: list[dict[str, Any]], kind: str) -> dict[str, Any]:
+    """Service-attributed summary: when both Wired and Wi-Fi have comparable check counts (>= 5) and one link
+    is healthy while the other degraded, the service itself was reachable and healthy, so headline availability
+    and loss reflect the healthier link while `links` keeps the exact per-link breakdown.
+    """
+    blended = _summary(rows, kind)
+    if kind not in ("voice", "video", "web", "apps"):
+        return blended
+    by_link = _by_link(rows, kind)
+    wired = by_link.get("wired")
+    wireless = by_link.get("wireless")
+    if wired is None or wireless is None:
+        return blended
+    if wired["samples"] < 5 or wireless["samples"] < 5:
+        return blended
+    w_avail = wired["availability"]
+    f_avail = wireless["availability"]
+    if w_avail is None or f_avail is None:
+        return blended
+    if w_avail == f_avail and (wired["loss_avg"] or 0.0) == (wireless["loss_avg"] or 0.0):
+        return blended
+    # Pick the healthier link for headline service health, while keeping total sample count
+    best = wired if (w_avail > f_avail or (w_avail == f_avail and (wired["loss_avg"] or 0.0) <= (wireless["loss_avg"] or 0.0))) else wireless
+    return {
+        **blended,
+        "availability": best["availability"],
+        "loss_avg": best["loss_avg"],
+        "rtt_ms": best["rtt_ms"],
+        "jitter_ms": best["jitter_ms"],
+    }
+
+
+def _diagnose_kpi(
+    summary: dict[str, dict[str, Any]],
+    links: dict[str, dict[str, dict[str, Any]]],
+    targets: dict[str, float],
+) -> Optional[dict[str, str]]:
+    """Diagnose whether KPI degradation in the period is Wi-Fi-only, Wired-only, ISP/WAN, or Server/Agent."""
+    def _link_missed(lnk: str) -> list[str]:
+        missed_list = []
+        for k in ("internet", "voice", "video", "web"):
+            avail = links.get(k, {}).get(lnk, {}).get("availability")
+            if avail is not None and avail < targets.get(k, 99.9):
+                missed_list.append(k)
+        for k in ("voice", "video"):
+            loss = links.get(k, {}).get(lnk, {}).get("loss_avg")
+            if loss is not None and loss > targets["loss_pct"] and f"{k}_loss" not in missed_list:
+                missed_list.append("loss")
+        return missed_list
+
+    wired_missed = _link_missed("wired")
+    wifi_missed = _link_missed("wireless")
+    has_both = any("wired" in links.get(k, {}) and "wireless" in links.get(k, {}) for k in ("internet", "voice", "video", "web"))
+
+    if has_both and wifi_missed and not wired_missed:
+        return {
+            "cause": "wifi",
+            "title": "Local Wi-Fi network degradation",
+            "summary": "All service targets were met on Wired Ethernet; packet loss or availability dips occurred only on the Wi-Fi link.",
+        }
+    if has_both and wired_missed and not wifi_missed:
+        return {
+            "cause": "wired",
+            "title": "Local Wired Ethernet degradation",
+            "summary": "All service targets were met on Wi-Fi; packet loss or availability dips occurred only on the Wired Ethernet link.",
+        }
+    if wired_missed and wifi_missed:
+        w_inet = links.get("internet", {}).get("wired", {}).get("availability")
+        f_inet = links.get("internet", {}).get("wireless", {}).get("availability")
+        w_web = links.get("web", {}).get("wired", {}).get("availability")
+        f_web = links.get("web", {}).get("wireless", {}).get("availability")
+        if (w_inet is not None and w_inet < targets["internet"]) and (f_inet is not None and f_inet < targets["internet"]):
+            if (w_web is None or w_web >= targets["web"]) and (f_web is None or f_web >= targets["web"]) and (w_web is not None or f_web is not None):
+                return {
+                    "cause": "server",
+                    "title": "Server path or receiver issue",
+                    "summary": "External Web checks met target on both links while checks to the HomeNetWatch server dipped.",
+                }
+            return {
+                "cause": "wan",
+                "title": "Upstream ISP, remote agent, or WAN outage",
+                "summary": "Checks across both Wired and Wi-Fi dipped during the period, indicating an upstream ISP or connectivity outage rather than individual application faults.",
+            }
+    return None
+
+
 def incidents(db: Session, start: datetime, end: datetime, monitor_id: Optional[UUID], limit: int = 10) -> list[dict[str, Any]]:
     """Internet outages in the period: runs of failed pings, newest first. Raw data only, so within six months."""
     query = (
@@ -624,8 +768,15 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
         internet = _summary(rows, "internet")
         wired = _summary([r for r in rows if r["link"] == "wired"], "internet")
         wireless = _summary([r for r in rows if r["link"] == "wireless"], "internet")
-        voice = _summary(rows, "voice")
-        video = _summary(rows, "video")
+        voice = _service_summary(rows, "voice")
+        voice_wired = _summary([r for r in rows if r["link"] == "wired"], "voice")
+        voice_wireless = _summary([r for r in rows if r["link"] == "wireless"], "voice")
+        video = _service_summary(rows, "video")
+        video_wired = _summary([r for r in rows if r["link"] == "wired"], "video")
+        video_wireless = _summary([r for r in rows if r["link"] == "wireless"], "video")
+        web = _service_summary(rows, "web")
+        web_wired = _summary([r for r in rows if r["link"] == "wired"], "web")
+        web_wireless = _summary([r for r in rows if r["link"] == "wireless"], "web")
         speed = _summary(rows, "speed")
         series.append(
             {
@@ -634,7 +785,14 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
                 "internet_wired": wired["availability"],
                 "internet_wireless": wireless["availability"],
                 "voice": voice["availability"],
+                "voice_wired": voice_wired["availability"],
+                "voice_wireless": voice_wireless["availability"],
                 "video": video["availability"],
+                "video_wired": video_wired["availability"],
+                "video_wireless": video_wireless["availability"],
+                "web": web["availability"],
+                "web_wired": web_wired["availability"],
+                "web_wireless": web_wireless["availability"],
                 "loss_internet": internet["loss_avg"],
                 "loss_voice": voice["loss_avg"],
                 "loss_video": video["loss_avg"],
@@ -650,8 +808,8 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
 
     data_since = db.scalar(select(func.min(KpiDaily.day)).where(*([KpiDaily.monitor_id == monitor_id] if monitor_id else [])))
     data_since = datetime(data_since.year, data_since.month, data_since.day, tzinfo=timezone.utc) if data_since else None
-    summary = {kind: _summary(current, kind) for kind in ("internet", "voice", "video", "apps", "speed")}
-    before = {kind: _summary(previous, kind) for kind in ("internet", "voice", "video", "apps", "speed")}
+    summary = {kind: _service_summary(current, kind) for kind in ("internet", "voice", "video", "web", "apps", "speed")}
+    before = {kind: _service_summary(previous, kind) for kind in ("internet", "voice", "video", "web", "apps", "speed")}
     internet = summary["internet"]
     internet["mttr_minutes"] = round(internet["outage_minutes"] / internet["incidents"], 1) if internet["incidents"] else None
     gaps = gap_log(db, start, min(end, now), monitor_id)
@@ -663,6 +821,8 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
     loss_parts = [(summary[k]["loss_avg"], summary[k]["samples"]) for k in ("voice", "video") if summary[k]["loss_avg"] is not None]
     weight = sum(count for _value, count in loss_parts)
     app_loss = sum(value * count for value, count in loss_parts) / weight if weight else None
+    links = {kind: _by_link(current, kind) for kind in ("internet", "voice", "video", "web")}
+    diagnosis = _diagnose_kpi(summary, links, TARGETS)
     return {
         "period": period,
         "day": day,
@@ -675,7 +835,8 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
         "summary": summary,
         "previous": before,
         "app_loss_avg": app_loss,
-        "links": {kind: _by_link(current, kind) for kind in ("internet", "voice", "video")},
+        "links": links,
+        "diagnosis": diagnosis,
         "series": series,
         "incidents": incidents(db, start, min(end, now), monitor_id),
         "gaps": gaps,
@@ -701,12 +862,15 @@ def daily_history(db: Session, first: date, last: date, monitor_id: Optional[UUI
     for day in sorted(by_day, reverse=True)[:limit]:
         rows = by_day[day]
         internet = _summary(rows, "internet")
-        voice = _summary(rows, "voice")
-        video = _summary(rows, "video")
+        voice = _service_summary(rows, "voice")
+        video = _service_summary(rows, "video")
+        web = _service_summary(rows, "web")
         parts = [(item["loss_avg"], item["samples"]) for item in (voice, video) if item["loss_avg"] is not None]
         weight = sum(count for _value, count in parts)
         loss = sum(value * count for value, count in parts) / weight if weight else None
-        health = health_score(internet["availability"], voice["availability"], video["availability"], loss)
+        health = health_score(internet["availability"], voice["availability"], video["availability"], loss, web=web["availability"])
+        day_links = {kind: _by_link(rows, kind) for kind in ("internet", "voice", "video", "web")}
+        diag = _diagnose_kpi({"internet": internet, "voice": voice, "video": video, "web": web}, day_links, TARGETS)
         out.append(
             {
                 "day": day,
@@ -714,11 +878,20 @@ def daily_history(db: Session, first: date, last: date, monitor_id: Optional[UUI
                 "internet_wired": _summary([r for r in rows if r["link"] == "wired"], "internet")["availability"],
                 "internet_wireless": _summary([r for r in rows if r["link"] == "wireless"], "internet")["availability"],
                 "voice": voice["availability"],
+                "voice_wired": _summary([r for r in rows if r["link"] == "wired"], "voice")["availability"],
+                "voice_wireless": _summary([r for r in rows if r["link"] == "wireless"], "voice")["availability"],
                 "video": video["availability"],
+                "video_wired": _summary([r for r in rows if r["link"] == "wired"], "video")["availability"],
+                "video_wireless": _summary([r for r in rows if r["link"] == "wireless"], "video")["availability"],
+                "web": web["availability"],
+                "web_wired": _summary([r for r in rows if r["link"] == "wired"], "web")["availability"],
+                "web_wireless": _summary([r for r in rows if r["link"] == "wireless"], "web")["availability"],
                 "loss": loss,
                 "score": health["score"],
                 "tone": health["tone"],
                 "score_parts": health["parts"],
+                "root_cause": diag["cause"] if diag else None,
+                "root_cause_title": diag["title"] if diag else None,
                 "offline_minutes": internet["outage_minutes"],
                 "gap_minutes": internet["gap_minutes"],
                 "outages": internet["incidents"],

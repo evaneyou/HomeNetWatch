@@ -191,7 +191,7 @@ function Shell({ role, onLogout }: { role: User["role"]; onLogout: () => void })
   const links = [
     { to: "/airwaves", label: "Airwaves", icon: "airwaves" as const },
     { to: "/issues", label: "Issues", icon: "issues" as const },
-    ...(role === "admin" ? [{ to: "/server-health", label: "Server Health", icon: "server" as const }] : []),
+    ...(role === "admin" || role === "guest" ? [{ to: "/server-health", label: "Server Health", icon: "server" as const }] : []),
     ...(role === "admin" || role === "guest"
       ? [{ to: "/settings/onboarding", label: "Settings", icon: "settings" as const }]
       : []),
@@ -352,10 +352,13 @@ function Shell({ role, onLogout }: { role: User["role"]; onLogout: () => void })
           <Route path="/tests/:id" element={<TestPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/about/history" element={<VersionHistoryPage />} />
-          <Route path="/server-health" element={role === "admin" ? <ServerHealthPage /> : <Navigate to="/" replace />} />
+          <Route
+            path="/server-health"
+            element={role === "admin" || role === "guest" ? <ServerHealthPage /> : <Navigate to="/" replace />}
+          />
           <Route
             path="/server-health/software"
-            element={role === "admin" ? <ServerHealthPackagePage /> : <Navigate to="/" replace />}
+            element={role === "admin" || role === "guest" ? <ServerHealthPackagePage /> : <Navigate to="/" replace />}
           />
           <Route path="/issues" element={<IssuesPage />} />
           <Route path="/issues/:id" element={<IssueDetailPage />} />

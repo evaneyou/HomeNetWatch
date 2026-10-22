@@ -151,7 +151,8 @@ docker compose exec agent-api python -m app.tls pins
 ```
 
 This writes a database dump plus the WireGuard and TLS state to `backups/`, keeping the newest
-14 of each. Run it daily from cron and copy `backups/` somewhere else (your PC, object storage):
+14 of each. Server Health shows the time and size of those copies, and does not serve the files.
+Run it daily from cron and copy `backups/` somewhere else (your PC, object storage):
 
 ```bash
 crontab -e

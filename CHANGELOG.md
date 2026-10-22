@@ -10,6 +10,20 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Changed
+
+- Application health charts stack round-trip, jitter, and packet loss in three full-width rows on every app check.
+- Application checks and Internet Connection add a fourth chart, share of each limit. It keeps only the moments that crossed a limit, and each bar is that metric against its own limit, so 100% is the line and past it is a failure. Internet Connection stacks download, ping, and jitter the same way.
+- Remote Probe Status: CPU now shows the average and peak over the last hour instead of one
+  sub-second reading that usually read 0.0%. Location and probe facts sit side by side, and four
+  vital tiles (CPU, memory, disk, temperature) switch a single 24-hour chart.
+- Server Health network chart shows the Oracle machine interface and the app container interface.
+- Server Health has a Backup tab with the time and size of each database, WireGuard, and agent TLS copy. The files are not offered for download.
+- Server Health CPU tab lists the processes using the machine since the last sample.
+- Server Health Memory tab lists the processes holding the most memory.
+
+## [0.4] - 2026-10-20
+
 ### Added
 
 - **Server Health:** a kebab item under Issues for an admin. It graphs the server's CPU, memory, host interface, disk, and database, forecasts when the database would fill the disk, lists how long each kind of row is kept, and shows a weekly software and vulnerability check plus processes that look stuck. Migration `0045_server_health`.
@@ -28,7 +42,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 - **Path View header:** the "Traced today at ... · hops · networks" line under the title is gone. The line still appears while tracing and when a trace fails or does not exist yet.
 - **Path View, AS number:** the AS badge in the details panel (for example AS7922) stays on one line; a long network name is cut short instead.
 - **Top bar buttons:** Back, Home and the three dots are drawn in the same 15 by 15 box with the white, round-ended stroke of the menu icons, so they match each other and the menu. The Back button is a plain chevron without a tail.
-- **Landing page figures:** updated to 109 merged pull requests, 172 automated tests and 25 fixes as of October 19, and the release line now says release 0.2 is published on GitHub (0.3 is in the changelog and `VERSION` but has no GitHub release yet).
+- **Landing page figures:** updated to 116 merged pull requests, 172 automated tests and 28 fixes as of October 20, and the release line now says release 0.2 is published on GitHub (0.4 is in the changelog and `VERSION` but has no GitHub release yet).
 - **KPI toolbar:** the jump back to the current day says Today. The "Viewing history" label and the Print / Save PDF button are gone.
 
 ## [0.3] - 2026-10-18
@@ -122,6 +136,7 @@ First release.
 
 - iperf3 bandwidth checks. Bandwidth Test is the throughput check.
 
+[0.4]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.4
 [0.3]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.3
 [0.2]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.2
 [0.1]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.1

@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/v1/kpi")
 def get_report(
     db: Annotated[Session, Depends(get_db)],
     _user: Annotated[User, Depends(get_current_user)],
-    period: Annotated[str, Query(pattern="^(day|week|month|year)$")] = "week",
+    period: Annotated[str, Query(pattern="^(day|week|month|year)$")] = "day",
     day: Annotated[Optional[date], Query(description="End the report on this UTC day. Leave out for the latest.")] = None,
     monitor_id: Optional[uuid.UUID] = None,
 ) -> dict[str, Any]:

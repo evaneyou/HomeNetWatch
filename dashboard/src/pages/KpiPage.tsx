@@ -74,6 +74,8 @@ const PERIODS: { key: Period; label: string; text: string }[] = [
 ];
 
 const C = { good: "#4fd1b5", warn: "#ffc24d", bad: "#ff8a7a", blue: "#6aa8ff", violet: "#a78bfa", grid: "#232d49", axis: "#9aa6c4" };
+/** Eastern Time, so the clock follows EST and EDT. */
+const EASTERN = "America/New_York";
 const LINKS = { wired: "Wired", wireless: "Wi-Fi" } as const;
 /** An availability chart never starts lower than this, so the small differences stay readable. */
 const AXIS_MIN = 95;
@@ -120,9 +122,37 @@ function lossTone(value: number | null, target: number): Tone {
   return value <= target * 3 ? "warn" : "bad";
 }
 
+function easternParts(date: Date): { monthDay: string; hm: string; year: string } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: EASTERN,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+  const hour = part("hour") === "24" ? "00" : part("hour");
+  return { monthDay: `${part("month")} ${part("day")}`, hm: `${hour}:${part("minute")}`, year: part("year") };
+}
+
+function easternWhen(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: EASTERN,
+  });
+}
+
 function stamp(iso: string, bucket: Report["bucket"], full = false): string {
   const date = new Date(iso);
-  if (bucket === "hour") return full ? `${date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })} ${String(date.getUTCHours()).padStart(2, "0")}:00` : `${String(date.getUTCHours()).padStart(2, "0")}:00`;
+  if (bucket === "hour") {
+    const eastern = easternParts(date);
+    return full ? `${eastern.monthDay} ${eastern.hm}` : eastern.hm;
+  }
   if (bucket === "month") return date.toLocaleDateString(undefined, { month: "short", year: full ? "numeric" : undefined, timeZone: "UTC" });
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 }
@@ -459,7 +489,7 @@ function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitor
 
 export default function KpiPage() {
   const [params, setParams] = useSearchParams();
-  const period = (PERIODS.find((item) => item.key === params.get("period"))?.key ?? "week") as Period;
+  const period = (PERIODS.find((item) => item.key === params.get("period"))?.key ?? "day") as Period;
   const picked = params.get("date") ?? "";
   const day = ISO_DAY.test(picked) && picked < isoToday() ? picked : null;
   const monitorsQ = useQuery({ queryKey: ["monitors"], queryFn: () => api.monitors() as Promise<MonitorAdmin[]> });
@@ -557,8 +587,11 @@ export default function KpiPage() {
   const axis = { stroke: C.axis, tick: { fontSize: 11 }, tickLine: false } as const;
   // `to` is the end of the last day, so step back a moment to name the last day itself.
   const lastMoment = new Date(new Date(report.to).getTime() - 1).toISOString();
-  const first = stamp(report.from, "day", true);
-  const last = stamp(lastMoment, "day", true);
+  const fromEastern = easternParts(new Date(report.from));
+  const toEastern = easternParts(new Date(lastMoment));
+  const first = report.bucket === "hour" ? fromEastern.monthDay : stamp(report.from, "day", true);
+  const last = report.bucket === "hour" ? toEastern.monthDay : stamp(lastMoment, "day", true);
+  const rangeYear = report.bucket === "hour" ? toEastern.year : String(new Date(lastMoment).getUTCFullYear());
   const range = report.bucket === "month" || first === last ? first : `${first} – ${last}`;
   const periodText = day
     ? period === "day"
@@ -574,7 +607,7 @@ export default function KpiPage() {
           <p className="kpi-eyebrow">Home network · Service report</p>
           <h1>Network health report</h1>
           <p className="kpi-range">
-            {range}, {new Date(lastMoment).getUTCFullYear()} · {periodText} · times in UTC
+            {range}, {rangeYear} · {periodText} · times in ET
           </p>
         </div>
         {monitors.length > 0 ? (
@@ -606,7 +639,7 @@ export default function KpiPage() {
             </button>
             <input
               type="date"
-              aria-label="Report day (UTC)"
+              aria-label="Report day"
               value={day ?? latest}
               max={latest}
               onChange={(event) => {
@@ -623,12 +656,6 @@ export default function KpiPage() {
               </button>
             ) : null}
           </div>
-          {!day ? (
-            <span className="kpi-live" title="This page refreshes every 30 seconds">
-              <i aria-hidden="true" />
-              Live · updated {new Date(query.dataUpdatedAt || report.generated_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}
-            </span>
-          ) : null}
         </div>
       </header>
 
@@ -877,7 +904,7 @@ export default function KpiPage() {
                   <span>
                     <b>{LINKS[item.link as keyof typeof LINKS] ?? item.link}</b> offline for {minutes(item.minutes)}
                   </span>
-                  <time>{new Date(item.start).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time>
+                  <time>{easternWhen(item.start)}</time>
                 </li>
               ))}
             </ul>
@@ -896,7 +923,7 @@ export default function KpiPage() {
                     {item.ongoing ? " so far" : ""}
                     {item.links === "both" ? "" : ` on ${LINKS[item.links]}`}
                   </span>
-                  <time>{new Date(item.start).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time>
+                  <time>{easternWhen(item.start)}</time>
                 </li>
               ))}
             </ul>
@@ -922,7 +949,7 @@ export default function KpiPage() {
           drop is the average loss those checks reported. Time offline is counted from failed internet checks. A reporting gap is time with no results at all, because the Pi or the server was down; it is shown
           separately and is not counted as internet downtime. A period with no measurements shows a gap, never 100%. Each day in the history gets a health score from 0 to 100 (internet 60%, voice 20%, video 10%, packet drop 10%): green is 95 or more, amber 80 to 94, red below 80. Figures are cut off, not rounded up, at two decimals. Each day is stored as a daily record, and weeks, months and years are added up from those records.
         </p>
-        <p>{report.data_since ? `Measurements since ${new Date(report.data_since).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}. ` : ""}Home network, report generated {new Date(report.generated_at).toLocaleString()}.</p>
+        <p>{report.data_since ? `Measurements since ${new Date(report.data_since).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}. ` : ""}Home network, report generated {new Date(report.generated_at).toLocaleString("en-US", { timeZone: EASTERN })} ET.</p>
       </footer>
     </div>
   );

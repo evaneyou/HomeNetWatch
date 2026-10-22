@@ -136,9 +136,10 @@ def send_args(
         args.extend(["--ptime", str(int(options["ptime_ms"]))])
     if options.get("video"):
         args.append("--video")
-    if options.get("bidir") and preset not in VOICE_PRESETS:
-        raise ValueError("Two-way traffic is only for the voice profiles")
-    # RTNP 0.2.0 rejects --bidir together with an SRTP key. Voice stays one-way.
+    if options.get("bidir"):
+        if preset not in VOICE_PRESETS:
+            raise ValueError("Two-way traffic is only for the voice profiles")
+        args.append("--bidir")
     if options.get("rtcp_interval_s") is not None:
         args.extend(["--rtcp-interval", f"{int(options['rtcp_interval_s'])}s"])
     if forever:
@@ -217,7 +218,8 @@ def stress_args(
         args += ["--rtp", str(options["rtp"])]
     if options.get("ptime_ms"):
         args += ["--ptime", str(_int_in(options["ptime_ms"], 10, 200, "Packet time"))]
-    # RTNP 0.2.0 rejects --bidir together with an SRTP key.
+    if options.get("bidir"):
+        args.append("--bidir")
     if options.get("vad"):
         args.append("--vad")
     if options.get("video"):
@@ -322,7 +324,7 @@ def _tunnel_text() -> str:
 
 
 def _write_srtp(hex_key: str) -> None:
-    """Store the SRTP master key as hex text. RTNP 0.2.0 refuses raw bytes."""
+    """Store the SRTP master key as hex text. RTNP 0.2 refuses raw bytes."""
     text = hex_key.strip().lower()
     if len(text) != 60:
         return

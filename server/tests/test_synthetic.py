@@ -79,7 +79,7 @@ def test_public_target_uses_the_physical_nic():
     assert "--meter" not in args
     assert secret not in args
     assert "--srtp-key-file" in args
-    assert "--bidir" not in args
+    assert "--bidir" in args
     plain = send_args(
         "rtnp-send",
         {

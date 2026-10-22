@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 # Data is UDP 8998 on the public IPv4 address. Port 8999 is not published on
-# the host. RTNP 0.2.0 listens for control on the bind address (every address
+# the host. RTNP 0.2.1 listens for control on the bind address (every address
 # in this network namespace) and reads one hex SRTP key, not a directory.
 while [ ! -s /var/lib/hns-rtnp/key ]; do
   echo "waiting for the RTNP control key"
@@ -20,10 +20,10 @@ for candidate in /var/lib/hns-rtnp/keys/*; do
   fi
 done
 if [ "$count" -ne 1 ]; then
-  echo "RTNP 0.2.0 supports one SRTP key; found $count" >&2
+  echo "RTNP 0.2.1 supports one SRTP key; found $count" >&2
   exit 1
 fi
-# The server publishes a raw 30-byte key. 0.2.0 wants 60 hex characters.
+# The server publishes a raw 30-byte key. 0.2.1 wants 60 hex characters.
 # Do not print the key.
 od -An -tx1 -v "$keyfile" | tr -d ' \n' > /tmp/rtnp-srtp.key
 printf '\n' >> /tmp/rtnp-srtp.key

@@ -317,9 +317,10 @@ def send_args(
         args.extend(["--rtp", str(options["rtp"])])
     if options.get("ptime_ms"):
         args.extend(["--ptime", str(options["ptime_ms"])])
-    if options.get("bidir") and preset not in VOICE_PRESETS:
-        raise ValueError("Two-way traffic is only for the voice profiles")
-    # RTNP 0.2.0 rejects --bidir together with an SRTP key. Voice stays one-way.
+    if options.get("bidir"):
+        if preset not in VOICE_PRESETS:
+            raise ValueError("Two-way traffic is only for the voice profiles")
+        args.append("--bidir")
     if options.get("video"):
         args.append("--video")
     if options.get("rtcp_interval_s") is not None:

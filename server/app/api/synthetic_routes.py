@@ -271,62 +271,73 @@ def _diagnose_health(
     since: datetime,
 ) -> Optional[dict[str, str]]:
     """Diagnose whether failures in this window are link-specific (wifi/wired), server/agent, or upstream WAN."""
-    failed_samples = [row for row in link_samples if row.verdict == "fail" and not row.sample_key.startswith(("hour:", "day:"))]
+    raw_link = [row for row in link_samples if not row.sample_key.startswith(("hour:", "day:"))]
+    failed_samples = [row for row in raw_link if row.verdict == "fail"]
     if not failed_samples:
         return None
-    failed_slugs = {
-        run.profile_slug
-        for run in all_runs
-        for row in failed_samples
-        if row.run_id == run.id
-    }
     sibling_link = "wired" if link == "wireless" else "wireless"
     sibling_runs = [run for run in all_runs if sibling_link in (run.links or [])]
     if not sibling_runs:
         return None
-    sibling_samples = db.scalars(
-        select(SyntheticSample).where(
-            SyntheticSample.run_id.in_([run.id for run in sibling_runs]),
-            SyntheticSample.link == sibling_link,
-            SyntheticSample.recorded_at >= since,
-            ~SyntheticSample.sample_key.startswith("hour:"),
-            ~SyntheticSample.sample_key.startswith("day:"),
-        )
-    ).all()
+    sibling_samples = list(
+        db.scalars(
+            select(SyntheticSample).where(
+                SyntheticSample.run_id.in_([run.id for run in sibling_runs]),
+                SyntheticSample.link == sibling_link,
+                SyntheticSample.recorded_at >= since,
+                ~SyntheticSample.sample_key.startswith("hour:"),
+                ~SyntheticSample.sample_key.startswith("day:"),
+            )
+        ).all()
+    )
     if not sibling_samples:
         return None
 
-    # Compare recent 15-minute window around the latest failure
-    latest_fail_at = max(row.recorded_at for row in failed_samples)
-    window_start = latest_fail_at - _now().__class__.resolution * 0  # keep type
-    from datetime import timedelta
+    sib_failed = [row for row in sibling_samples if row.verdict == "fail"]
+    my_fails = len(failed_samples)
+    sib_fails = len(sib_failed)
 
-    w_start = latest_fail_at - timedelta(minutes=5)
-    w_end = latest_fail_at + timedelta(minutes=5)
-    sib_window = [row for row in sibling_samples if w_start <= row.recorded_at <= w_end]
-    sib_fails = [row for row in sib_window if row.verdict == "fail"]
+    # If the sibling link has far more failures across the window (>= 3x), the dominant issue is on the sibling link,
+    # not this link. Do not show a misleading banner on the clean link.
+    if sib_fails >= max(5, my_fails * 3):
+        return None
 
-    if sib_window and not sib_fails:
+    # If this link has far more failures than the sibling link (>= 3x, or sibling had 0), attribute to this physical link.
+    if my_fails >= 3 and (sib_fails == 0 or my_fails >= sib_fails * 3):
         if link == "wireless":
             return {
                 "cause": "wifi",
                 "title": "Wireless network degradation",
                 "summary": (
-                    "Streams on Wi-Fi experienced packet loss or elevated latency while Wired Ethernet remained healthy "
-                    "during the same moments. This points to local Wi-Fi interference or signal quality rather than the applications."
+                    f"Wi-Fi recorded {my_fails} failed intervals in this range compared with {sib_fails} on Wired Ethernet. "
+                    "This points to local Wi-Fi interference or signal quality rather than the applications."
                 ),
             }
         return {
             "cause": "wired",
             "title": "Wired Ethernet degradation",
             "summary": (
-                "Streams on Wired Ethernet experienced packet loss or elevated latency while Wi-Fi remained healthy "
-                "during the same moments. This points to the local wired connection (cable, switch, or port) rather than the applications."
+                f"Wired Ethernet recorded {my_fails} failed intervals in this range compared with {sib_fails} on Wi-Fi. "
+                "This points to the local wired connection (cable, switch, or port) rather than the applications."
             ),
         }
 
-    if sib_fails and len(failed_slugs) >= 2:
-        # Both links failed around the same time. Check if external Web HTTP checks passed during that window.
+    # Check if both links had a simultaneous multi-stream failure in the same 2-minute window
+    from datetime import timedelta
+
+    latest_fail_at = max(row.recorded_at for row in failed_samples)
+    w_start = latest_fail_at - timedelta(minutes=1)
+    w_end = latest_fail_at + timedelta(minutes=1)
+    my_window_fails = [row for row in failed_samples if w_start <= row.recorded_at <= w_end]
+    sib_window_fails = [row for row in sib_failed if w_start <= row.recorded_at <= w_end]
+    my_window_slugs = {run.profile_slug for run in all_runs for row in my_window_fails if row.run_id == run.id}
+    sib_window_slugs = {run.profile_slug for run in all_runs for row in sib_window_fails if row.run_id == run.id}
+
+    if len(my_window_slugs) >= 2 and len(sib_window_slugs) >= 2:
+        all_blackout = all(
+            (row.loss_pct or 0) >= 99.0 and not row.rtt_ms and not row.jitter_ms
+            for row in (*my_window_fails, *sib_window_fails)
+        )
         web_ok = db.scalar(
             select(TestResult.id)
             .join(Test, TestResult.test_id == Test.id)
@@ -335,26 +346,26 @@ def _diagnose_health(
                 Test.slug.startswith("http-"),
                 Test.slug != "http-path",
                 TestResult.status == ResultStatus.ok,
-                TestResult.started_at >= w_start,
-                TestResult.started_at <= w_end,
+                TestResult.started_at >= latest_fail_at - timedelta(minutes=5),
+                TestResult.started_at <= latest_fail_at + timedelta(minutes=5),
             )
             .limit(1)
         )
-        if web_ok is not None:
+        if all_blackout and web_ok is not None:
             return {
                 "cause": "server",
                 "title": "Server or agent synthetic receiver issue",
                 "summary": (
-                    "Both Wired and Wi-Fi synthetic flows failed at the same time while external Web checks passed. "
-                    "This points to a temporary glitch in the HomeNetWatch synthetic receiver or remote agent sender."
+                    "Both Wired and Wi-Fi synthetic flows had a simultaneous blackout while external Web checks passed. "
+                    "This points to a temporary restart in the HomeNetWatch synthetic receiver or remote agent sender."
                 ),
             }
         return {
             "cause": "wan",
-            "title": "Upstream ISP, remote agent, or server outage",
+            "title": "Upstream ISP or shared network spike",
             "summary": (
-                "Multiple checks failed simultaneously across both Wired and Wi-Fi. "
-                "This indicates an upstream ISP issue, router drop, remote agent interruption, or server path outage."
+                "Multiple streams experienced packet loss or latency simultaneously across both Wired and Wi-Fi, "
+                "indicating an upstream ISP blip, router congestion, or shared path issue."
             ),
         }
     return None

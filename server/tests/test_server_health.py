@@ -268,8 +268,10 @@ def test_backup_listing_reports_time_and_size_only(tmp_path):
     assert found["fresh"] is False
     database, wireguard, tls = found["kinds"]
     assert database["count"] == 2
-    assert database["copies"][0] == {"taken_at": "2026-10-20T15:53:00+00:00", "bytes": 2}
+    assert database["copies"][0] == {"taken_at": "2026-10-20T15:53:00+00:00", "bytes": 2, "encrypted": True}
+    assert database["copies"][1]["encrypted"] is False
     assert wireguard["copies"][0]["bytes"] == 7
+    assert wireguard["copies"][0]["encrypted"] is False
     assert tls["copies"][0]["taken_at"].startswith("2026-10-19T03:15:00")
     assert "name" not in database["copies"][0]
     (tmp_path / "tls-20261020T031500Z.tar.gz").write_bytes(b"tls")

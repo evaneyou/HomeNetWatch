@@ -110,21 +110,23 @@ BACKUP_STALE = timedelta(hours=26)
 _BACKUP_STAMP = re.compile(r"^\d{8}T\d{6}Z$")
 
 
-def _backup_stamp(name: str, key: str, suffix: str) -> Optional[str]:
-    """The UTC stamp in a backup filename, or None when the name is not one of ours."""
+def _backup_stamp(name: str, key: str, suffix: str) -> Optional[tuple[str, bool]]:
+    """The UTC stamp and whether the file is age-encrypted, or None when the name is not one of ours."""
     prefix = f"{key}-"
     if not name.startswith(prefix):
         return None
     rest = name[len(prefix) :]
     if rest.endswith(suffix + ".age"):
         stamp = rest[: -(len(suffix) + 4)]
+        encrypted = True
     elif rest.endswith(suffix):
         stamp = rest[: -len(suffix)]
+        encrypted = False
     else:
         return None
     if _BACKUP_STAMP.fullmatch(stamp) is None:
         return None
-    return stamp
+    return stamp, encrypted
 
 
 def backup_directory() -> Optional[Path]:
@@ -150,15 +152,16 @@ def list_backups(root: Optional[Path], now: Optional[datetime] = None) -> dict[s
     for key, title, suffix in BACKUP_KINDS:
         copies = []
         for name in names:
-            stamp = _backup_stamp(name, key, suffix)
-            if stamp is None:
+            found = _backup_stamp(name, key, suffix)
+            if found is None:
                 continue
+            stamp, encrypted = found
             try:
                 taken = datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
                 size = (root / name).stat().st_size
             except (OSError, ValueError):
                 continue
-            copies.append({"taken_at": taken, "bytes": size})
+            copies.append({"taken_at": taken, "bytes": size, "encrypted": encrypted})
         copies.sort(key=lambda item: item["taken_at"], reverse=True)
         copies = copies[:BACKUP_KEEP]
         latest = copies[0]["taken_at"] if copies else None
@@ -171,7 +174,10 @@ def list_backups(root: Optional[Path], now: Optional[datetime] = None) -> dict[s
                 "key": key,
                 "title": title,
                 "count": len(copies),
-                "copies": [{"taken_at": item["taken_at"].isoformat(), "bytes": item["bytes"]} for item in copies],
+                "copies": [
+                    {"taken_at": item["taken_at"].isoformat(), "bytes": item["bytes"], "encrypted": item["encrypted"]}
+                    for item in copies
+                ],
             }
         )
     return {

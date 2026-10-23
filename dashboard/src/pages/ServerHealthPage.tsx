@@ -71,7 +71,7 @@ type PackageDetail = {
   checked_at: string;
   package: PackageRow;
 };
-type BackupCopy = { taken_at: string; bytes: number };
+type BackupCopy = { taken_at: string; bytes: number; encrypted?: boolean };
 type BackupReport = {
   available: boolean;
   fresh: boolean;
@@ -981,15 +981,17 @@ export default function ServerHealthPage() {
                       <tr>
                         <th>Taken</th>
                         <th>Size</th>
+                        <th>Encrypted</th>
                       </tr>
                     </thead>
                     <tbody>
                       {kind.copies.map((copy) => (
-                        <tr key={copy.taken_at}>
+                        <tr key={`${copy.taken_at}-${copy.encrypted ? "enc" : "open"}`}>
                           <td>
                             {when(copy.taken_at)} <span className="muted">({ago(copy.taken_at)})</span>
                           </td>
                           <td>{amount(copy.bytes)}</td>
+                          <td className={copy.encrypted ? "backup-yes" : "backup-no"}>{copy.encrypted ? "Yes" : "No"}</td>
                         </tr>
                       ))}
                     </tbody>

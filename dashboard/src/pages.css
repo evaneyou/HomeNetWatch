@@ -1986,6 +1986,16 @@
   vertical-align: top;
 }
 
+.server-health-table .backup-yes {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.server-health-table .backup-no {
+  color: var(--degraded);
+  font-weight: 700;
+}
+
 .risk-critical,
 .risk-high {
   color: var(--fail);

@@ -12,6 +12,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- New logo: a rounded house with a heartbeat line replaces the house with the magnifying glass. The lettering is unchanged. It is used in the dashboard top bar, the landing page header, the README banner, and as the browser tab icon on the dashboard and the landing page (the dashboard had none).
 - Backups are encrypted with age before they are saved. The server keeps the public key only. The private key stays off the machine. Server Health lists Yes or No in an Encrypted column on each copy.
 - Application health charts stack round-trip, jitter, and packet loss in three full-width rows on every app check.
 - Application checks and Internet Connection add a fourth chart, share of each limit. It keeps only the moments that crossed a limit, and each bar is that metric against its own limit, so 100% is the line and past it is a failure. Internet Connection stacks download, ping, and jitter the same way.

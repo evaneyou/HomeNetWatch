@@ -1872,3 +1872,96 @@ h3 {
   margin-left: 0;
   text-decoration: underline;
 }
+
+/* ---- Header: the logo never squeezes, the text never wraps. ----
+   The single row needs about 1060px. Below that the section links leave the sticky header and
+   sit in a quiet strip under it that scrolls away, so the header is only the logo and the button. */
+.brand {
+  flex: none;
+}
+
+.brand img {
+  display: block;
+  width: 152px;
+  height: 35px;
+  max-width: none;
+}
+
+.nav nav a,
+.nav .btn {
+  white-space: nowrap;
+}
+
+.nav .btn {
+  flex: none;
+}
+
+.nav .btn .short {
+  display: none;
+}
+
+.strip {
+  display: none;
+}
+
+@media (max-width: 1080px) {
+  .nav nav {
+    display: none;
+  }
+
+  .nav .btn {
+    margin-left: auto;
+  }
+
+  .strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 0;
+    padding: 10px 0 0;
+  }
+
+  .strip a {
+    padding: 4px 0;
+    color: var(--soft);
+    font-size: 14px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .strip a:hover {
+    color: var(--text);
+    text-decoration: underline;
+  }
+
+  .strip a + a::before {
+    content: "\00b7";
+    content: "\00b7" / "";
+    padding: 0 10px;
+    color: #3a4770;
+    text-decoration: none;
+    display: inline-block;
+  }
+}
+
+@media (max-width: 560px) {
+  .nav-row {
+    gap: 12px;
+  }
+
+  .nav .btn .long {
+    display: none;
+  }
+
+  .nav .btn .short {
+    display: inline;
+  }
+
+  .strip {
+    gap: 2px 16px;
+  }
+
+  .strip a + a::before {
+    content: none;
+  }
+}

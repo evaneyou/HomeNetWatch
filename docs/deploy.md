@@ -114,25 +114,31 @@ docker compose exec agent-api python -m app.tls pins
 ./scripts/backup.sh
 ```
 
-This writes a database dump plus the WireGuard and TLS state to `backups/`, keeping the newest 14 of each. Server Health shows the time and size of those copies, and does not serve the files. Run it daily from cron and copy `backups/` somewhere else:
+This writes a database dump plus the WireGuard and TLS state to `backups/`, keeping the newest 14 of each. Each file is encrypted with [age](https://github.com/FiloSottile/age) to the public key at `~/.config/homenetwatch/backup.pub` (override the path with `BACKUP_PUBKEY`). The private key is not on the server. Server Health shows the time and size of those copies, and does not serve the files. Run it daily from cron and copy `backups/` somewhere else:
 
 ```bash
+# On a machine other than the server, once:
+age-keygen -o backup.key
+age-keygen -y backup.key > backup.pub
+# Copy only backup.pub to the server's ~/.config/homenetwatch/backup.pub
+# Keep backup.key somewhere you can get it back. Without it the copies cannot be read.
+
 crontab -e
 # 15 3 * * * cd /home/ubuntu/Home-Net-Watch && ./scripts/backup.sh
 ```
 
 The TLS and WireGuard archives matter as much as the database: they hold the keys your Pis trust. Without them every Pi has to be re-enrolled.
 
-**Restore** on a fresh server after the stack is up:
+**Restore** on a fresh server after the stack is up. Decrypt on a machine that has `backup.key`, then load the plaintext into the stack. The database file is gzip inside age. The other two are tar gzip inside age:
 
 ```bash
-gunzip -c backups/db-<stamp>.sql.gz | docker compose exec -T db psql -U hns -d hns
-docker compose cp backups/tls-<stamp>.tar.gz agent-api:/tmp/tls.tar.gz
-docker compose exec agent-api tar -C /var/lib/hns-tls -xzf /tmp/tls.tar.gz
-docker compose cp backups/wireguard-<stamp>.tar.gz server:/tmp/wg.tar.gz
-docker compose exec server tar -C /var/lib/hns-wireguard -xzf /tmp/wg.tar.gz
+age -d -i backup.key backups/db-<stamp>.sql.gz.age | gunzip | docker compose exec -T db psql -U hns -d hns
+age -d -i backup.key backups/tls-<stamp>.tar.gz.age | docker compose exec -T agent-api tar -C /var/lib/hns-tls -xz
+age -d -i backup.key backups/wireguard-<stamp>.tar.gz.age | docker compose exec server tar -C /var/lib/hns-wireguard -xz
 docker compose restart
 ```
+
+A copy from before encryption has no `.age` suffix. Restore that one with `gunzip` and `tar` directly.
 
 ## Security headers
 

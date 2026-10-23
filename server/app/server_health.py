@@ -98,7 +98,8 @@ def host_root() -> Path:
     return Path("/")
 
 
-# backup.sh names files db-<stamp>.sql.gz, wireguard-<stamp>.tar.gz, and tls-<stamp>.tar.gz.
+# backup.sh names files db-<stamp>.sql.gz.age, wireguard-<stamp>.tar.gz.age, and
+# tls-<stamp>.tar.gz.age. Older copies without .age are still listed.
 BACKUP_KINDS = (
     ("db", "Database", ".sql.gz"),
     ("wireguard", "WireGuard", ".tar.gz"),
@@ -107,6 +108,23 @@ BACKUP_KINDS = (
 BACKUP_KEEP = 14
 BACKUP_STALE = timedelta(hours=26)
 _BACKUP_STAMP = re.compile(r"^\d{8}T\d{6}Z$")
+
+
+def _backup_stamp(name: str, key: str, suffix: str) -> Optional[str]:
+    """The UTC stamp in a backup filename, or None when the name is not one of ours."""
+    prefix = f"{key}-"
+    if not name.startswith(prefix):
+        return None
+    rest = name[len(prefix) :]
+    if rest.endswith(suffix + ".age"):
+        stamp = rest[: -(len(suffix) + 4)]
+    elif rest.endswith(suffix):
+        stamp = rest[: -len(suffix)]
+    else:
+        return None
+    if _BACKUP_STAMP.fullmatch(stamp) is None:
+        return None
+    return stamp
 
 
 def backup_directory() -> Optional[Path]:
@@ -132,11 +150,8 @@ def list_backups(root: Optional[Path], now: Optional[datetime] = None) -> dict[s
     for key, title, suffix in BACKUP_KINDS:
         copies = []
         for name in names:
-            prefix = f"{key}-"
-            if not name.startswith(prefix) or not name.endswith(suffix):
-                continue
-            stamp = name[len(prefix) : -len(suffix)]
-            if _BACKUP_STAMP.fullmatch(stamp) is None:
+            stamp = _backup_stamp(name, key, suffix)
+            if stamp is None:
                 continue
             try:
                 taken = datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)

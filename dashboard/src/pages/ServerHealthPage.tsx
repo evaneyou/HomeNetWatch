@@ -71,7 +71,7 @@ type PackageDetail = {
   checked_at: string;
   package: PackageRow;
 };
-type BackupCopy = { taken_at: string; bytes: number };
+type BackupCopy = { taken_at: string; bytes: number; encrypted?: boolean };
 type BackupReport = {
   available: boolean;
   fresh: boolean;
@@ -962,8 +962,8 @@ export default function ServerHealthPage() {
           <div className="panel" key={key}>
             <h2 className="server-health-heading">Backup</h2>
             <p className="muted server-health-note">
-              A copy is taken every day at 3:15 AM UTC. The newest 14 of each kind stay on this machine, and a copy should
-              live somewhere else too. The files themselves are not shown here.
+              A copy is taken every day at 3:15 AM UTC and encrypted before it is saved. The newest 14 of each kind stay
+              on this machine. The private key is not on this machine, and the files themselves are not shown here.
             </p>
             {!current.backups.available ? <div className="state-box">The server cannot see the backup folder.</div> : null}
             {current.backups.available && current.backups.kinds.every((kind) => kind.count === 0) ? (
@@ -981,15 +981,17 @@ export default function ServerHealthPage() {
                       <tr>
                         <th>Taken</th>
                         <th>Size</th>
+                        <th>Encrypted</th>
                       </tr>
                     </thead>
                     <tbody>
                       {kind.copies.map((copy) => (
-                        <tr key={copy.taken_at}>
+                        <tr key={`${copy.taken_at}-${copy.encrypted ? "enc" : "open"}`}>
                           <td>
                             {when(copy.taken_at)} <span className="muted">({ago(copy.taken_at)})</span>
                           </td>
                           <td>{amount(copy.bytes)}</td>
+                          <td className={copy.encrypted ? "backup-yes" : "backup-no"}>{copy.encrypted ? "Yes" : "No"}</td>
                         </tr>
                       ))}
                     </tbody>

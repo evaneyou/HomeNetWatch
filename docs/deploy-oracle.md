@@ -151,25 +151,27 @@ docker compose exec agent-api python -m app.tls pins
 ```
 
 This writes a database dump plus the WireGuard and TLS state to `backups/`, keeping the newest
-14 of each. Server Health shows the time and size of those copies, and does not serve the files.
-Run it daily from cron and copy `backups/` somewhere else (your PC, object storage):
+14 of each. Each file is encrypted with age to `~/.config/homenetwatch/backup.pub`. The private
+key stays off the server. Server Health shows the time and size of those copies, and does not
+serve the files. Run it daily from cron and copy `backups/` somewhere else (your PC, object storage):
 
 ```bash
 crontab -e
 # 15 3 * * * cd /home/ubuntu/Home-Net-Watch && ./scripts/backup.sh
 ```
 
+Create the key pair once, on a machine other than the server, and copy only `backup.pub` to
+`~/.config/homenetwatch/backup.pub`. See [deploy.md](deploy.md) for the commands.
+
 The TLS and WireGuard archives matter as much as the database: they hold the keys your Pis
 trust. Without them every Pi has to be re-enrolled.
 
-**Restore** on a fresh server after steps 1 to 6:
+**Restore** on a fresh server after steps 1 to 6. Decrypt with the private key first:
 
 ```bash
-gunzip -c backups/db-<stamp>.sql.gz | docker compose exec -T db psql -U hns -d hns
-docker compose cp backups/tls-<stamp>.tar.gz agent-api:/tmp/tls.tar.gz
-docker compose exec agent-api tar -C /var/lib/hns-tls -xzf /tmp/tls.tar.gz
-docker compose cp backups/wireguard-<stamp>.tar.gz server:/tmp/wg.tar.gz
-docker compose exec server tar -C /var/lib/hns-wireguard -xzf /tmp/wg.tar.gz
+age -d -i backup.key backups/db-<stamp>.sql.gz.age | gunzip | docker compose exec -T db psql -U hns -d hns
+age -d -i backup.key backups/tls-<stamp>.tar.gz.age | docker compose exec -T agent-api tar -C /var/lib/hns-tls -xz
+age -d -i backup.key backups/wireguard-<stamp>.tar.gz.age | docker compose exec server tar -C /var/lib/hns-wireguard -xz
 docker compose restart
 ```
 

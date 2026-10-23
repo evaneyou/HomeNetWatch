@@ -11,11 +11,11 @@ import {
   LineChart,
   ResponsiveContainer,
   Tooltip,
-  XAxis,
   YAxis,
 } from "recharts";
 import { isAnonymized } from "../anonymized";
-import { chartTicks, chartWindow, formatChartTick, zoomedDomain } from "../chartTime";
+import { chartWindow, formatChartTick, zoomedDomain } from "../chartTime";
+import { TimeAxis } from "./TimeAxis";
 import { useChartZoom } from "../useChartZoom";
 import LimitShareChart, { type LimitMetric } from "./LimitShareChart";
 import RealtimeHealth from "./RealtimeHealth";
@@ -257,7 +257,7 @@ export function InternetDetail({
             />
             <PathChart title="Ping" data={transferChart} span={span} dataKey="ping" label="Ping" unit=" ms" />
             <PathChart title="Jitter" data={transferChart} span={span} dataKey="jitter" label="Jitter" unit=" ms" />
-            <ConnectionLimitChart points={transferChart} range={range} variancePct={settingsQ.data?.librespeed_variance_pct ?? 25} />
+            <ConnectionLimitChart points={transferChart} range={range} domain={span} variancePct={settingsQ.data?.librespeed_variance_pct ?? 25} />
           </>
         )}
       </div>
@@ -440,25 +440,7 @@ function HttpAreaChart({
   );
 }
 
-export function TimeAxis({ domain }: { domain: [number, number] }) {
-  const span = domain[1] - domain[0];
-  return (
-    <XAxis
-      dataKey="ts"
-      type="number"
-      scale="time"
-      domain={domain}
-      allowDataOverflow
-      ticks={chartTicks(domain)}
-      tickFormatter={(value) => formatChartTick(value, span)}
-      tick={{ fontSize: 10, fill: "var(--muted)" }}
-      minTickGap={56}
-      angle={-28}
-      textAnchor="end"
-      height={40}
-    />
-  );
-}
+export { TimeAxis } from "./TimeAxis";
 
 function median(values: Array<number | null>, allowZero = false): number | null {
   const real = values.filter((value): value is number => (
@@ -473,10 +455,12 @@ function median(values: Array<number | null>, allowZero = false): number | null 
 function ConnectionLimitChart({
   points,
   range,
+  domain,
   variancePct,
 }: {
   points: { ts: number; down: number | null; up: number | null; ping: number | null; jitter: number | null; status: string }[];
   range: ChartRange;
+  domain: [number, number];
   variancePct: number;
 }) {
   const steady = points.filter((point) => point.status === "ok");
@@ -501,8 +485,9 @@ function ConnectionLimitChart({
   }
   return (
     <LimitShareChart
-      note={`100% is the limit from the recent normal and the ${variancePct}% tolerance. A bar past it failed: download or upload fell below the floor, or ping or jitter rose above the tolerance. Only those moments are shown.`}
+      note={`100% is the limit from the recent normal and the ${variancePct}% tolerance. A bar is drawn only for the measurement that crossed its limit, at that time: download or upload fell below the floor, or ping or jitter rose above the tolerance.`}
       range={range}
+      domain={domain}
       metrics={metrics}
       samples={points.map((point) => ({
         ts: point.ts,

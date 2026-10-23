@@ -197,8 +197,9 @@ function ChartBody({
       <MiniChart title="Jitter" data={data} span={span} dataKey="jitter" unit=" ms" />
       <MiniChart title="Packet loss" data={data} span={span} dataKey="loss" unit=" %" />
       <LimitShareChart
-        note={`Limits are ${fmt(limits.max_rtt_ms)} ms round-trip, ${fmt(limits.max_jitter_ms)} ms jitter, and ${fmt(limits.max_loss_pct)}% loss. 100% is that limit. A bar past it failed. Only moments that crossed a limit are shown.`}
+        note={`Limits are ${fmt(limits.max_rtt_ms)} ms round-trip, ${fmt(limits.max_jitter_ms)} ms jitter, and ${fmt(limits.max_loss_pct)}% loss. 100% is that limit. A bar is drawn only for the measurement that crossed its own limit, at that time.`}
         range={range}
+        domain={span}
         metrics={[
           { key: "rtt", label: "Round-trip", limit: limits.max_rtt_ms, unit: " ms" },
           { key: "jitter", label: "Jitter", limit: limits.max_jitter_ms, unit: " ms" },
@@ -241,7 +242,7 @@ function MiniChart({
           >
             <CartesianGrid stroke="var(--line)" strokeDasharray="3 3" />
             <TimeAxis domain={domain} />
-            <YAxis tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} width={64} />
             <Tooltip
               labelFormatter={(value) => formatChartTick(Number(value), domain[1] - domain[0])}
               formatter={(value) => `${value ?? ""}${unit}`}

@@ -74,6 +74,8 @@ const PERIODS: { key: Period; label: string; text: string }[] = [
 ];
 
 const C = { good: "#4fd1b5", warn: "#ffc24d", bad: "#ff8a7a", blue: "#6aa8ff", violet: "#a78bfa", grid: "#232d49", axis: "#9aa6c4" };
+/** Eastern Time, so the clock follows EST and EDT. */
+const EASTERN = "America/New_York";
 const LINKS = { wired: "Wired", wireless: "Wi-Fi" } as const;
 /** An availability chart never starts lower than this, so the small differences stay readable. */
 const AXIS_MIN = 95;
@@ -120,9 +122,37 @@ function lossTone(value: number | null, target: number): Tone {
   return value <= target * 3 ? "warn" : "bad";
 }
 
+function easternParts(date: Date): { monthDay: string; hm: string; year: string } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: EASTERN,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+  const hour = part("hour") === "24" ? "00" : part("hour");
+  return { monthDay: `${part("month")} ${part("day")}`, hm: `${hour}:${part("minute")}`, year: part("year") };
+}
+
+function easternWhen(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: EASTERN,
+  });
+}
+
 function stamp(iso: string, bucket: Report["bucket"], full = false): string {
   const date = new Date(iso);
-  if (bucket === "hour") return full ? `${date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })} ${String(date.getUTCHours()).padStart(2, "0")}:00` : `${String(date.getUTCHours()).padStart(2, "0")}:00`;
+  if (bucket === "hour") {
+    const eastern = easternParts(date);
+    return full ? `${eastern.monthDay} ${eastern.hm}` : eastern.hm;
+  }
   if (bucket === "month") return date.toLocaleDateString(undefined, { month: "short", year: full ? "numeric" : undefined, timeZone: "UTC" });
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 }
@@ -139,28 +169,22 @@ function Delta({ now, before, better, unit = "pts" }: { now: number | null; befo
   );
 }
 
-function Spark({ data, field, color }: { data: Point[]; field: keyof Point; color: string }) {
+function Card({ label, value, tone, target, children }: { label: string; value: string; tone: Tone; target?: string; children?: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="kpi-spark" aria-hidden="true">
-      <ResponsiveContainer width="100%" height={40}>
-        <LineChart data={data} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
-          <Line type="monotone" dataKey={field} stroke={color} strokeWidth={1.8} dot={false} isAnimationActive={false} connectNulls />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-function Card({ label, value, tone, target, children, spark }: { label: string; value: string; tone: Tone; target?: string; children?: React.ReactNode; spark?: React.ReactNode }) {
-  return (
-    <article className={`kpi-card tone-${tone}`}>
-      <div className="kpi-card-top">
-        <span className="kpi-label">{label}</span>
-        {target ? <span className="kpi-target">{target}</span> : null}
-      </div>
+    <article
+      className={`kpi-card tone-${tone}${open ? " is-open" : ""}`}
+      tabIndex={0}
+      onClick={() => {
+        if (window.matchMedia("(hover: none)").matches) setOpen((value) => !value);
+      }}
+    >
+      <span className="kpi-label">{label}</span>
       <div className="kpi-value">{value}</div>
-      <div className="kpi-card-sub">{children}</div>
-      {spark}
+      <div className="kpi-card-more">
+        {target ? <span className="kpi-target">{target}</span> : null}
+        <div className="kpi-card-sub">{children}</div>
+      </div>
     </article>
   );
 }
@@ -459,7 +483,7 @@ function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitor
 
 export default function KpiPage() {
   const [params, setParams] = useSearchParams();
-  const period = (PERIODS.find((item) => item.key === params.get("period"))?.key ?? "week") as Period;
+  const period = (PERIODS.find((item) => item.key === params.get("period"))?.key ?? "day") as Period;
   const picked = params.get("date") ?? "";
   const day = ISO_DAY.test(picked) && picked < isoToday() ? picked : null;
   const monitorsQ = useQuery({ queryKey: ["monitors"], queryFn: () => api.monitors() as Promise<MonitorAdmin[]> });
@@ -557,8 +581,11 @@ export default function KpiPage() {
   const axis = { stroke: C.axis, tick: { fontSize: 11 }, tickLine: false } as const;
   // `to` is the end of the last day, so step back a moment to name the last day itself.
   const lastMoment = new Date(new Date(report.to).getTime() - 1).toISOString();
-  const first = stamp(report.from, "day", true);
-  const last = stamp(lastMoment, "day", true);
+  const fromEastern = easternParts(new Date(report.from));
+  const toEastern = easternParts(new Date(lastMoment));
+  const first = report.bucket === "hour" ? fromEastern.monthDay : stamp(report.from, "day", true);
+  const last = report.bucket === "hour" ? toEastern.monthDay : stamp(lastMoment, "day", true);
+  const rangeYear = report.bucket === "hour" ? toEastern.year : String(new Date(lastMoment).getUTCFullYear());
   const range = report.bucket === "month" || first === last ? first : `${first} – ${last}`;
   const periodText = day
     ? period === "day"
@@ -574,7 +601,7 @@ export default function KpiPage() {
           <p className="kpi-eyebrow">Home network · Service report</p>
           <h1>Network health report</h1>
           <p className="kpi-range">
-            {range}, {new Date(lastMoment).getUTCFullYear()} · {periodText} · times in UTC
+            {range}, {rangeYear} · {periodText} · times in ET
           </p>
         </div>
         {monitors.length > 0 ? (
@@ -606,7 +633,7 @@ export default function KpiPage() {
             </button>
             <input
               type="date"
-              aria-label="Report day (UTC)"
+              aria-label="Report day"
               value={day ?? latest}
               max={latest}
               onChange={(event) => {
@@ -623,12 +650,6 @@ export default function KpiPage() {
               </button>
             ) : null}
           </div>
-          {!day ? (
-            <span className="kpi-live" title="This page refreshes every 30 seconds">
-              <i aria-hidden="true" />
-              Live · updated {new Date(query.dataUpdatedAt || report.generated_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}
-            </span>
-          ) : null}
         </div>
       </header>
 
@@ -657,11 +678,10 @@ export default function KpiPage() {
 
       <section className="kpi-cards" aria-label="Key indicators">
         <Card
-          label="Internet availability"
+          label="Internet"
           value={pct(internet.availability)}
           tone={availabilityTone(internet.availability, targets.internet)}
           target={`Target ${targets.internet}%`}
-          spark={<Spark data={series} field="internet" color={C.good} />}
         >
           <Delta now={internet.availability} before={previous.internet.availability} better="up" />
           <span className="kpi-split">
@@ -669,11 +689,10 @@ export default function KpiPage() {
           </span>
         </Card>
         <Card
-          label="Voice availability"
+          label="Voice"
           value={pct(voice.availability)}
           tone={availabilityTone(voice.availability, targets.voice)}
           target={`Target ${targets.voice}%`}
-          spark={<Spark data={series} field="voice" color={C.blue} />}
         >
           <Delta now={voice.availability} before={previous.voice.availability} better="up" />
           <span className="kpi-split">
@@ -683,11 +702,10 @@ export default function KpiPage() {
           </span>
         </Card>
         <Card
-          label="Video availability"
+          label="Video"
           value={pct(video.availability)}
           tone={availabilityTone(video.availability, targets.video)}
           target={`Target ${targets.video}%`}
-          spark={<Spark data={series} field="video" color={C.violet} />}
         >
           <Delta now={video.availability} before={previous.video.availability} better="up" />
           <span className="kpi-split">
@@ -697,11 +715,10 @@ export default function KpiPage() {
           </span>
         </Card>
         <Card
-          label="Web availability"
+          label="Web"
           value={pct(web?.availability)}
           tone={availabilityTone(web?.availability ?? null, webTarget)}
           target={`Target ${webTarget}%`}
-          spark={<Spark data={series} field="web" color={C.good} />}
         >
           <Delta now={web?.availability ?? null} before={previous.web?.availability ?? null} better="up" />
           <span className="kpi-split">
@@ -711,11 +728,10 @@ export default function KpiPage() {
           </span>
         </Card>
         <Card
-          label="Packet drop (voice and video)"
+          label="Packet drop"
           value={pct(report.app_loss_avg)}
           tone={lossTone(report.app_loss_avg, targets.loss_pct)}
           target={`Target ≤ ${targets.loss_pct}%`}
-          spark={<Spark data={series} field="loss_voice" color={C.warn} />}
         >
           <span className="kpi-split">
             Voice {pct(voice.loss_avg)} · Video {pct(video.loss_avg)}
@@ -735,10 +751,11 @@ export default function KpiPage() {
           </span>
           <span className="kpi-split">The Pi or the server was down. Not counted as internet downtime.</span>
         </Card>
-        <Card label="Latency to the server" value={internet.rtt_ms == null ? "—" : `${num(internet.rtt_ms)} ms`} tone="none" spark={<Spark data={series} field="rtt_ms" color={C.good} />}>
+        <Card label="Latency" value={internet.rtt_ms == null ? "—" : `${num(internet.rtt_ms)} ms`} tone="none">
+          <span className="kpi-split">To the server</span>
           <span className="kpi-split">Jitter {internet.jitter_ms == null ? "—" : `${num(internet.jitter_ms)} ms`}</span>
         </Card>
-        <Card label="Internet speed" value={speed.down_mbps == null && speed.up_mbps == null ? "—" : `${speed.down_mbps == null ? "—" : num(speed.down_mbps, 0)} / ${speed.up_mbps == null ? "—" : num(speed.up_mbps, 0)}`} tone="none" spark={<Spark data={series} field="down_mbps" color={C.blue} />}>
+        <Card label="Speed" value={speed.down_mbps == null && speed.up_mbps == null ? "—" : `${speed.down_mbps == null ? "—" : num(speed.down_mbps, 0)} / ${speed.up_mbps == null ? "—" : num(speed.up_mbps, 0)}`} tone="none">
           <span className="kpi-split">Download / upload, Mbit/s</span>
         </Card>
       </section>
@@ -877,7 +894,7 @@ export default function KpiPage() {
                   <span>
                     <b>{LINKS[item.link as keyof typeof LINKS] ?? item.link}</b> offline for {minutes(item.minutes)}
                   </span>
-                  <time>{new Date(item.start).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time>
+                  <time>{easternWhen(item.start)}</time>
                 </li>
               ))}
             </ul>
@@ -896,7 +913,7 @@ export default function KpiPage() {
                     {item.ongoing ? " so far" : ""}
                     {item.links === "both" ? "" : ` on ${LINKS[item.links]}`}
                   </span>
-                  <time>{new Date(item.start).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time>
+                  <time>{easternWhen(item.start)}</time>
                 </li>
               ))}
             </ul>
@@ -922,7 +939,7 @@ export default function KpiPage() {
           drop is the average loss those checks reported. Time offline is counted from failed internet checks. A reporting gap is time with no results at all, because the Pi or the server was down; it is shown
           separately and is not counted as internet downtime. A period with no measurements shows a gap, never 100%. Each day in the history gets a health score from 0 to 100 (internet 60%, voice 20%, video 10%, packet drop 10%): green is 95 or more, amber 80 to 94, red below 80. Figures are cut off, not rounded up, at two decimals. Each day is stored as a daily record, and weeks, months and years are added up from those records.
         </p>
-        <p>{report.data_since ? `Measurements since ${new Date(report.data_since).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}. ` : ""}Home network, report generated {new Date(report.generated_at).toLocaleString()}.</p>
+        <p>{report.data_since ? `Measurements since ${new Date(report.data_since).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}. ` : ""}Home network, report generated {new Date(report.generated_at).toLocaleString("en-US", { timeZone: EASTERN })} ET.</p>
       </footer>
     </div>
   );

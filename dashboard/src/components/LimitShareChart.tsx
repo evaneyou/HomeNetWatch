@@ -1,6 +1,7 @@
-import { Bar, BarChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { CHART_COLORS } from "../chartTheme";
 import { chartWindow, formatChartTick } from "../chartTime";
+import { TimeAxis } from "./TimeAxis";
 
 export type LimitMetric = {
   key: string;
@@ -41,36 +42,45 @@ function sharesFor(sample: LimitSample, metrics: LimitMetric[]): Record<string, 
   return shares;
 }
 
-function peak(shares: Record<string, number | null>): number {
-  const values = Object.values(shares).filter((value): value is number => value != null);
-  return values.length === 0 ? 0 : Math.max(...values);
-}
-
-/** Worst moment in each time bucket, kept only when some metric crossed its limit. */
-export function limitMoments(samples: LimitSample[], metrics: LimitMetric[], range: string): LimitSample[] {
+/**
+ * One row per moment, on the sample's own timestamp. A metric is filled in only when
+ * that metric crossed its limit, so a round-trip failure does not appear as packet loss.
+ */
+export function limitMoments(samples: LimitSample[], metrics: LimitMetric[], range: string, now = Date.now()): LimitSample[] {
   const usable = metrics.filter((metric) => metric.limit > 0);
   if (usable.length === 0) return [];
-  const span = chartWindow(range);
+  const span = chartWindow(range, now);
   let size = BUCKET_MS[range] ?? 60 * 1000;
-  let picked: LimitSample[] = [];
+  let rows: LimitSample[] = [];
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const groups = new Map<number, LimitSample>();
-    for (const sample of samples) {
-      if (!Number.isFinite(sample.ts)) continue;
-      const start = Math.floor(sample.ts / size) * size;
-      const current = groups.get(start);
-      if (!current || peak(sharesFor(sample, usable)) > peak(sharesFor(current, usable))) {
-        groups.set(start, sample);
+    const byTime = new Map<number, LimitSample>();
+    for (const metric of usable) {
+      const groups = new Map<number, { sample: LimitSample; share: number }>();
+      for (const sample of samples) {
+        if (!Number.isFinite(sample.ts)) continue;
+        const share = shareOf(metric, sample.values[metric.key] ?? null);
+        if (share == null || share <= 100) continue;
+        const start = Math.floor(sample.ts / size) * size;
+        const current = groups.get(start);
+        if (!current || share > current.share) groups.set(start, { sample, share });
+      }
+      for (const { sample } of groups.values()) {
+        const existing = byTime.get(sample.ts);
+        if (existing) {
+          existing.values[metric.key] = sample.values[metric.key] ?? null;
+          continue;
+        }
+        const values: Record<string, number | null> = {};
+        for (const item of usable) values[item.key] = null;
+        values[metric.key] = sample.values[metric.key] ?? null;
+        byTime.set(sample.ts, { ts: sample.ts, values });
       }
     }
-    picked = [...groups.entries()]
-      .sort((left, right) => left[0] - right[0])
-      .map(([, sample]) => sample)
-      .filter((sample) => peak(sharesFor(sample, usable)) > 100);
-    if (picked.length <= 16 || size * 2 > span[1] - span[0]) break;
+    rows = [...byTime.values()].sort((left, right) => left.ts - right.ts);
+    if (rows.length <= 16 || size * 2 > span[1] - span[0]) break;
     size *= 2;
   }
-  return picked;
+  return rows;
 }
 
 function formatRaw(value: number, unit: string): string {
@@ -84,13 +94,17 @@ export default function LimitShareChart({
   samples,
   metrics,
   range,
+  domain,
 }: {
   note: string;
   samples: LimitSample[];
   metrics: LimitMetric[];
   range: string;
+  /** Same window the line charts above use, so the time labels sit on the same marks. */
+  domain?: [number, number];
 }) {
-  const moments = limitMoments(samples, metrics, range);
+  const span = domain ?? chartWindow(range);
+  const moments = limitMoments(samples, metrics, range, span[1]);
   const rows = moments.map((sample) => {
     const shares = sharesFor(sample, metrics);
     const row: Record<string, number | string | null | Record<string, number | null>> = {
@@ -107,8 +121,6 @@ export default function LimitShareChart({
     }, 0);
     return Math.max(max, here);
   }, 100);
-  const span = chartWindow(range);
-  const tilt = rows.length > 6;
   return (
     <div>
       <h3 className="wifi-heading">Share of each limit</h3>
@@ -118,21 +130,12 @@ export default function LimitShareChart({
       ) : (
         <div className="chart-zoom" style={{ width: "100%", height: 240 }}>
           <ResponsiveContainer>
-            <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }} barGap={2} barCategoryGap="22%">
+            <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }} barGap={2} barSize={12}>
               <CartesianGrid stroke="var(--line)" strokeDasharray="3 3" />
-              <XAxis
-                dataKey="ts"
-                tickFormatter={(value) => formatChartTick(value, span[1] - span[0])}
-                tick={{ fontSize: 10, fill: "var(--muted)" }}
-                interval="preserveStartEnd"
-                angle={tilt ? -28 : 0}
-                textAnchor={tilt ? "end" : "middle"}
-                height={tilt ? 48 : 30}
-              />
+              <TimeAxis domain={span} />
               <YAxis
                 domain={[0, Math.ceil(tallest * 1.08)]}
                 tick={{ fontSize: 11 }}
-                unit="%"
                 width={64}
               />
               <Tooltip

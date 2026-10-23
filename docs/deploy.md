@@ -76,7 +76,13 @@ docker compose exec server python -m app.seed --users-only
 
 The `rtnp` image builds from a copy of the [RTN_PackGen](https://github.com/evaneyou/RTN_PackGen)
 project in `rtnp/`. It is a separate repository, so clone it there first; it is not
-part of this one.
+part of this one. Use the same release for the receiver and the Pi `rtnp-send`
+(currently `v0.2.1`). 0.2 speaks real SRTP, so a 0.1 sender cannot talk to a 0.2 receiver.
+0.2.1 encrypts the return stream of a two-way call with the same key.
+
+```bash
+git clone --branch v0.2.1 --depth 1 https://github.com/evaneyou/RTN_PackGen.git rtnp
+```
 
 The first build compiles the dashboard and takes a few minutes. Migrations run automatically on start. `--users-only` creates the admin and viewer accounts **without demo data**, and refuses to run with the default passwords. Do not run the plain seed on this server.
 

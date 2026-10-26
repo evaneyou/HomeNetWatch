@@ -9,6 +9,7 @@ from urllib.parse import quote
 from sqlalchemy import select
 
 from app.auth import hash_password
+from app.internet_tests import ensure_internet_tests
 from app.models import Issue, IssueStatus, Monitor, SyntheticRun, SyntheticSample, User, UserRole
 from app.synthetic import build_report, is_blackout, is_tunnel_target, launch_plan, public_host, send_args
 from conftest import login
@@ -769,6 +770,9 @@ def test_rfc3550_jitter_and_remote_desktop_rtcp_and_cross_link_diagnosis(client,
     assert video["options"]["video"] is True
 
     monitor = _monitor(db)
+    # The Wired and Wi-Fi networks only exist once the monitor's Internet tests are set up.
+    ensure_internet_tests(db, monitor)
+    db.commit()
     if db.scalar(select(User).where(User.username == "admin")) is None:
         db.add(User(username="admin", password_hash=hash_password("admin-change-me"), role=UserRole.admin, is_active=True))
         db.commit()

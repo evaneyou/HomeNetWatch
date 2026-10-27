@@ -10,6 +10,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Fixed
+
+- Pi agent: the Apps checks no longer stop for the rest of the day. The agent had a 20 GiB daily traffic cap. At the current load (four continuous profiles on two links) the Pi reached it around 15:35 UTC each day, stopped every continuous flow, and the Apps tiles read "Not running" until midnight UTC. The daily cap is removed. The packet-rate limit and the per-run limit stay, and a stopped flow is relaunched on the next sync. The Pi needs the updated agent package (`monitor/README.md`, Update).
+
 ### Changed
 
 - New logo: a rounded house with a heartbeat line replaces the house with the magnifying glass. The lettering is unchanged. It is used in the dashboard top bar, the landing page header, the README banner, and as the browser tab icon on the dashboard and the landing page (the dashboard had none).

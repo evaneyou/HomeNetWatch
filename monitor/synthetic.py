@@ -38,7 +38,9 @@ CONTROL_HOST = {"wired": "10.7.0.1", "wireless": "10.7.1.1"}
 MAX_PPS = 200
 MAX_DURATION = 3600
 MAX_RUN_BYTES = 2 * 1024 * 1024 * 1024
-DAILY_BYTES = 20 * 1024 * 1024 * 1024
+# There is no daily cap. One that stopped every continuous flow for the rest of the UTC day once ran out
+# about 15:35 UTC each day, leaving the Apps tiles on "Not running" until midnight. The packet-rate and
+# per-run limits below still stop a runaway sender, and a stopped flow is relaunched on the next sync.
 
 _lock = threading.Lock()
 _running: dict[tuple[str, str], dict[str, Any]] = {}
@@ -386,11 +388,6 @@ def _save_budget(state: dict[str, Any], *, force: bool = False) -> None:
         return
 
 
-def _over_budget() -> bool:
-    state = _budget()
-    return int(state.get("bytes") or 0) >= DAILY_BYTES
-
-
 def _charge(payload: dict[str, Any]) -> bool:
     interval = float(payload.get("interval_s") or 0)
     sent = 0
@@ -403,7 +400,6 @@ def _charge(payload: dict[str, Any]) -> bool:
     state["run"] = int(state.get("run") or 0) + octets
     over = (
         (interval > 0 and sent / interval > MAX_PPS)
-        or int(state["bytes"]) >= DAILY_BYTES
         or int(state["run"]) >= MAX_RUN_BYTES
     )
     _save_budget(state, force=over)
@@ -578,7 +574,6 @@ def sync(config: dict, get_json: Callable, post_json: Callable) -> bool:
         stale = [item for item in _running if item not in wanted]
     for item in stale:
         _stop(item)
-    over_budget = _over_budget()
     data_host = (
         str(body.get("target_host") or "")
         or str(config.get("measurement_host") or "")
@@ -586,8 +581,6 @@ def sync(config: dict, get_json: Callable, post_json: Callable) -> bool:
     )
     for item, job in wanted.items():
         if item in running:
-            continue
-        if over_budget and job.get("mode") != "stress":
             continue
         _ensure(config, item, job, data_host)
     return fast

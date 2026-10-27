@@ -155,7 +155,6 @@ def test_agent_module_matches_the_path_rule():
     started: list = []
     module.tunnel_warning = lambda: ""
     module._ensure = lambda *args: started.append(args)
-    module._over_budget = lambda: False
     module._write_key = lambda *_args: None
     module._write_srtp = lambda *_args: None
     module._running.clear()
@@ -807,3 +806,33 @@ def test_rfc3550_jitter_and_remote_desktop_rtcp_and_cross_link_diagnosis(client,
     assert wifi_inet["cause"] == "wifi"
     assert wifi_inet["status"] in ("degraded", "fail")
 
+
+
+def test_agent_has_no_daily_traffic_cap(tmp_path: Path):
+    path = Path(__file__).resolve().parents[2] / "monitor" / "synthetic.py"
+    if not path.is_file():
+        return
+    spec = importlib.util.spec_from_file_location("monitor_synthetic_budget", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(path.parent))
+    module.BUDGET_PATH = tmp_path / "rtnp-budget.json"
+    today = datetime.now(timezone.utc).date().isoformat()
+    payload = {"interval_s": 10, "flows": [{"sent": 500, "tx_kbps": 400}]}
+
+    assert not hasattr(module, "DAILY_BYTES")
+    assert not hasattr(module, "_over_budget")
+
+    # A day total far past the old 20 GiB cap no longer stops a flow.
+    module._budget_mem = {"day": today, "bytes": 5 * 1024**4, "run": 0}
+    assert module._charge(payload) is False
+
+    # The per-run and packet-rate limits still do.
+    module._budget_mem = {"day": today, "bytes": 0, "run": module.MAX_RUN_BYTES}
+    assert module._charge(payload) is True
+    module._budget_mem = {"day": today, "bytes": 0, "run": 0}
+    assert module._charge({"interval_s": 1, "flows": [{"sent": module.MAX_PPS + 1, "tx_kbps": 1}]}) is True

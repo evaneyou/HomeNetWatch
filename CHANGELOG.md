@@ -13,6 +13,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 ### Changed
 
 - Landing page (www): project proof copy and figures brought in line with v0.5 (capabilities, 125 PRs, 205 tests).
+- Landing page timeline: the Rust packet generator (RTN_PackGen) is listed as Live, not roadmap; it already runs on the production stack for Voice G.711 and other application checks.
 
 ## [0.5] - 2026-10-28
 

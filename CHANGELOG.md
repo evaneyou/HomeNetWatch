@@ -10,6 +10,14 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Added
+
+- **Tunnel-down alerts and auto-restore:** when a WireGuard handshake goes stale on an online Pi, a `pi` alert names the Wired or Wi-Fi **tunnel** (not an internet outage). Enable Telegram and Notify Pi in Settings to receive it. Agent **0.8.4** watches `10.7.0.1` / `10.7.1.1` and restarts `wg-quick@wg0` / `wg1` through `/opt/monitor/restore_tunnel.sh` (sudoers drop-in).
+
+### Fixed
+
+- **KPI / Apps diagnosis:** path and web checks prove the access plane. If they stay healthy on a link while voice/video over the tunnel fail, diagnosis is `tunnel` (measurement tunnel or receiver), not local Wi-Fi/Ethernet or internet down. Internet-outage alerts also skip when recent web/path samples on that link still succeed.
+
 ### Changed
 
 - Landing page (www): project proof copy and figures brought in line with v0.5 (capabilities, 125 PRs, 205 tests).

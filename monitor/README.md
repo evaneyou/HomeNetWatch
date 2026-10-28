@@ -57,6 +57,10 @@ A first install still uses `sudo ./install.sh`.
 
 On-demand scans from the dashboard use Scapy (ARP discovery) and Nmap (common TCP ports) on the Pi's wired LAN only. Install and update pull in `nmap` and `python3-scapy` when they are missing. WireGuard addresses are never scanned.
 
+## Tunnel watch
+
+The agent pings `10.7.0.1` (wired `wg0`) and `10.7.1.1` (Wi-Fi `wg1`) about once a minute. After two misses it runs `sudo -n /opt/monitor/restore_tunnel.sh wgN` (at most once per interface every 15 minutes). Install and update install a sudoers drop-in that allows only that script for user `monitor`. Home Wi-Fi can stay up while the measurement tunnel is down; restoring the tunnel is not the same as fixing ISP or radio problems.
+
 ## Airwave memory
 
 Kismet's Linux capture helper grows while it channel-hops. A first install with `--kismet` already caps that cgroup and restarts Kismet once a day. On a Pi that was set up earlier, run the repair from an unpacked package (enrollment and tunnels stay as they are):
@@ -101,5 +105,8 @@ Setup accepts HTTPS, or HTTP to a private LAN address.
 | `monitor.service` | `systemd` unit (runs with `CAP_NET_RAW` and `CAP_NET_BIND_SERVICE` only) |
 | `avahi-monitor.service` | Advertises the setup page as `<hostname>.local` |
 | `synthetic.py` | Real-time application traffic on the physical NIC |
+| `tunnel_watch.py` | Pings tunnel peers and restarts a dead `wg0` / `wg1` |
+| `restore_tunnel.sh` | Root helper invoked via sudoers to restart one WireGuard unit |
+| `lan_scan.py` | On-demand Scapy ARP + Nmap for Airwaves Security |
 | `rtnp_bind.c` | `LD_PRELOAD` shim that pins a measurement socket to one link; `install.sh` compiles it to `rtnp-bind.so` |
 | `pack.sh` | Builds `dist/monitor.tar.gz` |

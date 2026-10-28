@@ -103,7 +103,12 @@ def _utc(value: datetime) -> str:
 
 
 def network_conditions(db: Session, now: datetime, offline_ids: set) -> list[Condition]:
-    """The ISP path is down on a link, or many web services are unreachable while the path is up."""
+    """The ISP path is down on a link, or many web services are unreachable while the path is up.
+
+    Path/web checks are the access plane. A dead WireGuard tunnel alone is not an internet outage.
+    """
+    from app.services.link_correlation import access_ok_recent, tunnel_is_stale
+
     out: list[Condition] = []
     rows = db.execute(
         select(Test, Network, Monitor)
@@ -113,17 +118,27 @@ def network_conditions(db: Session, now: datetime, offline_ids: set) -> list[Con
     ).all()
     path: dict[tuple, dict[str, Test]] = {}
     web: dict[tuple, list[Test]] = {}
+    monitors: dict = {}
     for test, network, monitor in rows:
         if monitor.id in offline_ids:
             continue  # the Pi being offline is its own alert, and its old results say nothing new
+        monitors[monitor.id] = monitor
         slot = (monitor.id, network.kind.value, monitor.name)
         if test.slug in ("http-path", "icmp-path"):
             path.setdefault(slot, {})[test.slug] = test
         elif test.slug.startswith("http-"):
             web.setdefault(slot, []).append(test)
     for (monitor_id, kind, name), tests in path.items():
+        link = "wireless" if kind == "wifi" else "wired"
+        monitor = monitors.get(monitor_id)
+        # If the tunnel is stale but recent web/path samples still succeed, this is not a net outage.
+        if monitor is not None and tunnel_is_stale(monitor, link, now) and access_ok_recent(db, monitor_id, link, now):
+            continue
         down = [test for test in tests.values() if test.stable_status == ResultStatus.fail]
         if len(down) == len(tests) and tests:
+            # Confirm access is actually down: do not alert if a recent web check still passes.
+            if access_ok_recent(db, monitor_id, link, now):
+                continue
             since = min((test.state_since for test in down if test.state_since), default=None)
             out.append(
                 Condition(
@@ -131,7 +146,7 @@ def network_conditions(db: Session, now: datetime, offline_ids: set) -> list[Con
                     category="network",
                     severity="critical",
                     title=f"Internet outage on the {_link_label(kind)} link",
-                    detail=f"{name} cannot reach the HomeNetWatch server over this link." + (f" Since {_utc(since)}." if since else ""),
+                    detail=f"{name} cannot reach the internet over this link." + (f" Since {_utc(since)}." if since else ""),
                     debounce_s=60,
                 )
             )
@@ -219,6 +234,7 @@ def pi_conditions(db: Session, now: datetime) -> tuple[list[Condition], set]:
                 )
             )
             continue
+        out.extend(_tunnel_down_conditions(db, monitor, now))
         health = db.scalar(
             select(MonitorHealth).where(MonitorHealth.monitor_id == monitor.id).order_by(MonitorHealth.reported_at.desc()).limit(1)
         )
@@ -260,6 +276,33 @@ def pi_conditions(db: Session, now: datetime) -> tuple[list[Condition], set]:
                 )
             )
     return out, offline
+
+
+def _tunnel_down_conditions(db: Session, monitor: Monitor, now: datetime) -> list[Condition]:
+    """Measurement tunnel down while the Pi is still checking in (access plane may still be fine)."""
+    from app.services.link_correlation import access_ok_recent, correlate_link, tunnel_is_stale
+
+    out: list[Condition] = []
+    for link, label in (("wired", "Wired"), ("wireless", "Wi-Fi")):
+        if not tunnel_is_stale(monitor, link, now):
+            continue
+        access_ok = access_ok_recent(db, monitor.id, link, now)
+        corr = correlate_link(monitor, link, access_ok=access_ok, now=now)
+        detail = corr.detail or (
+            f"No recent WireGuard handshake on the {label} tunnel. "
+            "Application checks that use this tunnel will fail until it is restored."
+        )
+        out.append(
+            Condition(
+                key=f"tunnel-down:{monitor.id}:{link}",
+                category="pi",
+                severity="warning",
+                title=f"{monitor.name} {label} tunnel to the server is down",
+                detail=detail,
+                debounce_s=300,
+            )
+        )
+    return out
 
 
 def server_conditions(now: datetime) -> list[Condition]:
@@ -307,13 +350,27 @@ def server_conditions(now: datetime) -> list[Condition]:
 
 
 def app_conditions(db: Session, now: datetime, offline_ids: set) -> list[Condition]:
-    """A running application check (voice, video and so on) failed its last three reports."""
+    """A running application check (voice, video and so on) failed its last three reports.
+
+    When the measurement tunnel is down, skip per-app spam; tunnel-down covers that case.
+    """
+    from app.services.link_correlation import access_ok_recent, tunnel_is_stale
+
     out: list[Condition] = []
+    monitors = {
+        m.id: m
+        for m in db.scalars(select(Monitor).where(Monitor.token_hash.is_not(None), Monitor.token_hash != "")).all()
+    }
     runs = db.scalars(select(SyntheticRun).where(SyntheticRun.mode == "continuous", SyntheticRun.status == "running")).all()
     for run in runs:
         if run.monitor_id in offline_ids:
             continue
+        monitor = monitors.get(run.monitor_id)
         for link in run.links or []:
+            if link not in ("wired", "wireless"):
+                continue
+            if monitor is not None and tunnel_is_stale(monitor, link, now) and access_ok_recent(db, run.monitor_id, link, now):
+                continue
             rows = db.scalars(
                 select(SyntheticSample)
                 .where(
@@ -422,7 +479,11 @@ def _resolve_stale_issues(db: Session, now: datetime) -> None:
 
 
 def evaluate(db: Session, now: datetime) -> list[Condition]:
+    from app.wireguard_tunnel import refresh_handshakes
+
     _resolve_stale_issues(db, now)
+    monitors = list(db.scalars(select(Monitor).where(Monitor.token_hash.is_not(None), Monitor.token_hash != "")).all())
+    refresh_handshakes(db, monitors)
     pi, offline = pi_conditions(db, now)
     return [*network_conditions(db, now, offline), *pi, *server_conditions(now), *app_conditions(db, now, offline)]
 

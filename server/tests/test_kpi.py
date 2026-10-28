@@ -568,3 +568,49 @@ def test_single_link_wifi_degradation_keeps_service_kpi_green_and_flags_wifi(db)
     assert history[0]["root_cause"] == "wifi"
     assert history[0]["score"] == pytest.approx(100.0)
 
+
+def test_tunnel_only_failures_diagnose_as_tunnel_not_wifi(db):
+    """Path and web OK on Wi-Fi while voice fails → measurement tunnel, not local Wi-Fi down."""
+    monitor = _pi(db)
+    wired, wifi = _two_links(db, monitor)
+    for minute in range(10):
+        _ping(db, wired, minute, ResultStatus.ok)
+        _ping(db, wifi, minute, ResultStatus.ok)
+    voice = _run(db, monitor, "voip-g711a", ("wired", "wireless"))
+    for minute in range(10):
+        _sample(db, voice, minute, "pass", loss=0.0, link="wired")
+        # Keep rtt set so this is a real fail sample, not a software blackout skipped from KPI.
+        _sample(db, voice, minute, "fail", loss=5.0, link="wireless", rtt=200.0, jitter=20.0)
+    wired_web = Test(
+        monitor_id=monitor.id,
+        network_id=wired.network_id,
+        slug="http-youtube",
+        name="YouTube",
+        kind=TestKind.http,
+        target="https://youtube.com",
+    )
+    wifi_web = Test(
+        monitor_id=monitor.id,
+        network_id=wifi.network_id,
+        slug="http-youtube",
+        name="YouTube",
+        kind=TestKind.http,
+        target="https://youtube.com",
+    )
+    db.add_all([wired_web, wifi_web])
+    db.flush()
+    for minute in range(10):
+        _ping(db, wired_web, minute, ResultStatus.ok)
+        _ping(db, wifi_web, minute, ResultStatus.ok)
+    db.commit()
+
+    kpi.rebuild(db, HOUR, HOUR + timedelta(hours=1))
+    kpi.rebuild_days(db, HOUR.date(), HOUR.date())
+    db.commit()
+
+    rep = kpi.report(db, "day", now=NOW, monitor_id=monitor.id)
+    assert rep["links"]["internet"]["wireless"]["availability"] == pytest.approx(100.0)
+    assert rep["links"]["web"]["wireless"]["availability"] == pytest.approx(100.0)
+    assert rep["links"]["voice"]["wireless"]["availability"] == pytest.approx(0.0)
+    assert rep["diagnosis"] is not None and rep["diagnosis"]["cause"] == "tunnel"
+

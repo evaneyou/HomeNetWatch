@@ -19,7 +19,15 @@ if ! id monitor >/dev/null 2>&1; then
   useradd --system --home /opt/monitor --shell /usr/sbin/nologin monitor
 fi
 install -d -m 755 /opt/monitor
-install -m 644 agent.py agent_state.py enrollment.py health.py radio.py scheduler.py checks.py kismet_view.py rf_spool.py synthetic.py speedtest.py /opt/monitor/
+install -m 644 agent.py agent_state.py enrollment.py health.py radio.py scheduler.py checks.py kismet_view.py rf_spool.py synthetic.py speedtest.py lan_scan.py tunnel_watch.py /opt/monitor/
+if [ -f restore_tunnel.sh ]; then
+  install -m 755 restore_tunnel.sh /opt/monitor/restore_tunnel.sh
+fi
+if [ -d /etc/sudoers.d ] && [ -f /opt/monitor/restore_tunnel.sh ]; then
+  printf '%s\n' 'monitor ALL=(root) NOPASSWD: /opt/monitor/restore_tunnel.sh wg0, /opt/monitor/restore_tunnel.sh wg1' \
+    > /etc/sudoers.d/hnw-restore-tunnel
+  chmod 440 /etc/sudoers.d/hnw-restore-tunnel
+fi
 if [ -f rtnp-send ]; then
   install -m 755 rtnp-send /opt/monitor/rtnp-send
 fi

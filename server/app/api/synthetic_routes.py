@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -15,7 +15,7 @@ from app.api.common import _resolve_monitor_identity
 from app.auth import get_current_user, require_admin_csrf
 from app.config import get_settings
 from app.db import get_db
-from app.models import Monitor, Network, ResultStatus, StressRun, SyntheticProfile, SyntheticRun, SyntheticSample, Test, TestResult, User
+from app.models import Monitor, Network, NetworkKind, ResultStatus, StressRun, SyntheticProfile, SyntheticRun, SyntheticSample, Test, TestResult, User
 from app.synthetic import (
     SOFTWARE,
     apply_options,
@@ -302,8 +302,49 @@ def _diagnose_health(
     if sib_fails >= max(5, my_fails * 3):
         return None
 
-    # If this link has far more failures than the sibling link (>= 3x, or sibling had 0), attribute to this physical link.
+    # If this link has far more failures than the sibling link (>= 3x, or sibling had 0), attribute carefully.
     if my_fails >= 3 and (sib_fails == 0 or my_fails >= sib_fails * 3):
+        latest_fail_at = max(row.recorded_at for row in failed_samples)
+        web_ok = db.scalar(
+            select(TestResult.id)
+            .join(Test, TestResult.test_id == Test.id)
+            .join(Network, Test.network_id == Network.id)
+            .where(
+                Test.monitor_id == monitor_id,
+                Network.kind == (NetworkKind.wifi if link == "wireless" else NetworkKind.wired),
+                Test.slug.startswith("http-"),
+                Test.slug != "http-path",
+                TestResult.status == ResultStatus.ok,
+                TestResult.started_at >= latest_fail_at - timedelta(minutes=5),
+                TestResult.started_at <= latest_fail_at + timedelta(minutes=5),
+            )
+            .limit(1)
+        )
+        path_ok = db.scalar(
+            select(TestResult.id)
+            .join(Test, TestResult.test_id == Test.id)
+            .join(Network, Test.network_id == Network.id)
+            .where(
+                Test.monitor_id == monitor_id,
+                Network.kind == (NetworkKind.wifi if link == "wireless" else NetworkKind.wired),
+                Test.slug.in_(("icmp-path", "http-path")),
+                TestResult.status == ResultStatus.ok,
+                TestResult.started_at >= latest_fail_at - timedelta(minutes=5),
+                TestResult.started_at <= latest_fail_at + timedelta(minutes=5),
+            )
+            .limit(1)
+        )
+        if web_ok is not None or path_ok is not None:
+            label = "Wi-Fi" if link == "wireless" else "Wired"
+            return {
+                "cause": "tunnel",
+                "title": f"{label} measurement tunnel or receiver issue",
+                "summary": (
+                    f"{label} application checks failed ({my_fails} intervals) while path or web checks on the same "
+                    "link still succeeded. Home access was up; the WireGuard measurement tunnel or synthetic "
+                    "receiver was not."
+                ),
+            }
         if link == "wireless":
             return {
                 "cause": "wifi",
@@ -323,8 +364,6 @@ def _diagnose_health(
         }
 
     # Check if both links had a simultaneous multi-stream failure in the same 2-minute window
-    from datetime import timedelta
-
     latest_fail_at = max(row.recorded_at for row in failed_samples)
     w_start = latest_fail_at - timedelta(minutes=1)
     w_end = latest_fail_at + timedelta(minutes=1)

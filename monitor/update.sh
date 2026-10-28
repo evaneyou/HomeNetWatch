@@ -10,13 +10,17 @@ fi
 
 cd "$(dirname "$0")"
 
-files="agent.py agent_state.py enrollment.py health.py radio.py scheduler.py checks.py kismet_view.py rf_spool.py synthetic.py speedtest.py lan_scan.py"
+files="agent.py agent_state.py enrollment.py health.py radio.py scheduler.py checks.py kismet_view.py rf_spool.py synthetic.py speedtest.py lan_scan.py tunnel_watch.py"
 for file in $files; do
   if [ ! -f "$file" ]; then
     echo "Missing $file. Unpack monitor.tar.gz and run this script from that directory." >&2
     exit 1
   fi
 done
+if [ ! -f restore_tunnel.sh ]; then
+  echo "Missing restore_tunnel.sh. Unpack monitor.tar.gz and run this script from that directory." >&2
+  exit 1
+fi
 
 if [ ! -f /opt/monitor/agent.py ]; then
   echo "No agent is installed here. For a first install, run sudo ./install.sh." >&2
@@ -27,6 +31,13 @@ install -d -o root -g root -m 755 /opt/monitor
 rm -rf /opt/monitor/__pycache__
 # shellcheck disable=SC2086
 install -o root -g root -m 644 $files /opt/monitor/
+install -o root -g root -m 755 restore_tunnel.sh /opt/monitor/restore_tunnel.sh
+# Narrow sudo so the monitor user can restart only the WireGuard tunnels.
+if [ -d /etc/sudoers.d ]; then
+  printf '%s\n' 'monitor ALL=(root) NOPASSWD: /opt/monitor/restore_tunnel.sh wg0, /opt/monitor/restore_tunnel.sh wg1' \
+    > /etc/sudoers.d/hnw-restore-tunnel
+  chmod 440 /etc/sudoers.d/hnw-restore-tunnel
+fi
 if [ -f rtnp-send ]; then
   install -o root -g root -m 755 rtnp-send /opt/monitor/rtnp-send
 fi

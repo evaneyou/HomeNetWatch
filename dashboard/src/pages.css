@@ -1996,6 +1996,47 @@
   font-weight: 700;
 }
 
+.server-health-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.server-health-traffic th,
+.server-health-traffic td {
+  white-space: nowrap;
+}
+
+.server-health-traffic tbody th {
+  color: var(--text);
+  font-weight: 600;
+  white-space: normal;
+}
+
+.server-health-traffic .num {
+  text-align: right;
+}
+
+.server-health-traffic .total {
+  font-weight: 700;
+}
+
+.server-health-traffic-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.7rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.server-health-traffic-foot strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
 .risk-critical,
 .risk-high {
   color: var(--fail);

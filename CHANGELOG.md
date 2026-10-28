@@ -10,6 +10,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Added
+
+- Server Health, Interface tab: a Data used table under the network chart. It shows the bytes the machine received and sent in the last hour, 6 hours, 24 hours and 7 days and since the machine started, with a total for each. A period the history does not fully cover yet is marked "(so far)". Below the table are the app container's counters since it last started and a monthly pace of sending, worked out from the last 24 hours. The totals add up the counter increases, so a reboot or a container restart does not lose or invent data. The server's `GET /api/v1/server-health` response has a new `traffic` block. It needs no migration.
+
 ### Fixed
 
 - Pi agent: the Apps checks no longer stop for the rest of the day. The agent had a 20 GiB daily traffic cap. At the current load (four continuous profiles on two links) the Pi reached it around 15:35 UTC each day, stopped every continuous flow, and the Apps tiles read "Not running" until midnight UTC. The daily cap is removed. The packet-rate limit and the per-run limit stay, and a stopped flow is relaunched on the next sync. The Pi needs the updated agent package (`monitor/README.md`, Update).

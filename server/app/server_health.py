@@ -280,6 +280,90 @@ def byte_rates(previous: Optional[tuple[datetime, int, int]], current: tuple[dat
     return max(0.0, (current[1] - previous[1]) / elapsed), max(0.0, (current[2] - previous[2]) / elapsed)
 
 
+TRAFFIC_PERIODS = (
+    ("1h", "Last hour", timedelta(hours=1)),
+    ("6h", "Last 6 hours", timedelta(hours=6)),
+    ("24h", "Last 24 hours", timedelta(hours=24)),
+    ("7d", "Last 7 days", timedelta(days=7)),
+)
+# A period counts as fully covered when the oldest sample is no more than this far inside it.
+TRAFFIC_SLACK = timedelta(minutes=10)
+# The monthly pace is the last 24 hours of sending, times this many days.
+TRAFFIC_MONTH_DAYS = 30
+
+
+def counter_increase(previous: int, current: int) -> int:
+    """Bytes added between two readings of a counter. A counter that went down was reset by a reboot or restart."""
+    return current - previous if current >= previous else current
+
+
+def traffic_totals(rows: list[tuple[datetime, int, int]], now: datetime) -> Optional[dict[str, Any]]:
+    """Bytes received and sent over fixed periods, from counter readings (oldest first).
+
+    The increases between readings are added up, so a reset in the middle does not lose or invent data. A
+    reading that straddles the start of a period counts in full, so a period can run up to one sample long.
+    """
+    if not rows:
+        return None
+    periods: list[dict[str, Any]] = []
+    for key, label, length in TRAFFIC_PERIODS:
+        boundary = now - length
+        rx: Optional[int] = None
+        tx: Optional[int] = None
+        if len(rows) > 1:
+            rx = tx = 0
+            for earlier, later in zip(rows, rows[1:]):
+                if later[0] > boundary:
+                    rx += counter_increase(earlier[1], later[1])
+                    tx += counter_increase(earlier[2], later[2])
+        periods.append({"key": key, "label": label, "rx": rx, "tx": tx, "partial": rows[0][0] > boundary + TRAFFIC_SLACK})
+    day = next(item for item in periods if item["key"] == "24h")
+    month = day["tx"] * TRAFFIC_MONTH_DAYS if day["tx"] is not None and not day["partial"] else None
+    return {
+        "periods": periods,
+        "since_start": {"rx": rows[-1][1], "tx": rows[-1][2]},
+        "month_tx": month,
+    }
+
+
+def machine_traffic(db: Session, now: datetime) -> Optional[dict[str, Any]]:
+    """Totals for the machine's own interface, plus the app container's counters since it last started."""
+    readings = db.execute(
+        select(
+            ServerSample.recorded_at,
+            ServerSample.rx_bytes,
+            ServerSample.tx_bytes,
+            ServerSample.iface,
+            ServerSample.host_iface,
+            ServerSample.host_rx_bytes,
+            ServerSample.host_tx_bytes,
+        )
+        .where(ServerSample.recorded_at >= now - SAMPLE_KEEP)
+        .order_by(ServerSample.recorded_at)
+    ).all()
+    if not readings:
+        return None
+    latest = readings[-1]
+    machine = latest.host_rx_bytes is not None and latest.host_tx_bytes is not None
+    if machine:
+        rows = [
+            (row.recorded_at, row.host_rx_bytes, row.host_tx_bytes)
+            for row in readings
+            if row.host_rx_bytes is not None and row.host_tx_bytes is not None
+        ]
+        iface = latest.host_iface or ""
+    else:
+        rows = [(row.recorded_at, row.rx_bytes, row.tx_bytes) for row in readings]
+        iface = latest.iface or ""
+    totals = traffic_totals(rows, now)
+    if totals is None:
+        return None
+    app = None
+    if machine and latest.iface and latest.iface != latest.host_iface:
+        app = {"iface": latest.iface, "rx": latest.rx_bytes, "tx": latest.tx_bytes}
+    return {"iface": iface, **totals, "app": app}
+
+
 def parse_stat(text: str) -> Optional[tuple[str, str, int]]:
     end = text.rfind(")")
     start = text.find("(")
@@ -1535,6 +1619,7 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
             "breakdown": {"checked_at": measured.checked_at, **measured.payload} if measured is not None else None,
         },
         "backups": list_backups(backup_directory(), now),
+        "traffic": machine_traffic(db, now),
     }
 
 

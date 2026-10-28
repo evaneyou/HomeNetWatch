@@ -78,6 +78,14 @@ type BackupReport = {
   newest: string | null;
   kinds: { key: string; title: string; count: number; copies: BackupCopy[] }[];
 };
+type TrafficPeriod = { key: string; label: string; rx: number | null; tx: number | null; partial: boolean };
+type TrafficReport = {
+  iface: string;
+  periods: TrafficPeriod[];
+  since_start: { rx: number; tx: number };
+  month_tx: number | null;
+  app: { iface: string; rx: number; tx: number } | null;
+};
 type Report = {
   latest: Point | null;
   points: Point[];
@@ -98,6 +106,7 @@ type Report = {
   memory: { pid: number; name: string; bytes: number; share: number | null }[];
   storage: StorageReport;
   backups: BackupReport;
+  traffic: TrafficReport | null;
 };
 
 const RANGES: Range[] = ["1h", "6h", "24h", "7d"];
@@ -123,6 +132,77 @@ function amount(value: number | null | undefined): string {
 function perSecond(value: number | null | undefined): string {
   if (value == null) return "—";
   return `${amount(value)}/s`;
+}
+
+function sumBytes(rx: number | null, tx: number | null): number | null {
+  return rx == null || tx == null ? null : rx + tx;
+}
+
+function TrafficTable({ traffic }: { traffic: TrafficReport | null }) {
+  if (!traffic) {
+    return (
+      <div className="panel">
+        <h2 className="server-health-heading">Data used</h2>
+        <div className="state-box">No samples yet. Totals appear after the first minute of sampling.</div>
+      </div>
+    );
+  }
+  const rows: { key: string; label: string; rx: number | null; tx: number | null }[] = [
+    ...traffic.periods.map((period) => ({
+      key: period.key,
+      label: period.partial ? `${period.label} (so far)` : period.label,
+      rx: period.rx,
+      tx: period.tx,
+    })),
+    { key: "since_start", label: "Since the machine started", rx: traffic.since_start.rx, tx: traffic.since_start.tx },
+  ];
+  return (
+    <div className="panel">
+      <h2 className="server-health-heading">Data used</h2>
+      <p className="muted server-health-note">
+        The machine's own interface{traffic.iface ? `, ${traffic.iface}` : ""}. Received and sent are from this server's side.
+      </p>
+      <table className="server-health-table server-health-traffic">
+        <thead>
+          <tr>
+            <th scope="col">Period</th>
+            <th scope="col" className="num">
+              Received
+            </th>
+            <th scope="col" className="num">
+              Sent
+            </th>
+            <th scope="col" className="num">
+              Total
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <th scope="row">{row.label}</th>
+              <td className="num">{amount(row.rx)}</td>
+              <td className="num">{amount(row.tx)}</td>
+              <td className="num total">{amount(sumBytes(row.rx, row.tx))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="server-health-traffic-foot">
+        {traffic.month_tx != null ? (
+          <span>
+            At the last 24 hours' pace: about <strong>{amount(traffic.month_tx)}</strong> sent a month.
+          </span>
+        ) : null}
+        {traffic.app ? (
+          <span>
+            App container {traffic.app.iface} since it last started: <strong>{amount(traffic.app.rx)}</strong> received,{" "}
+            <strong>{amount(traffic.app.tx)}</strong> sent.
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function when(value: string | null | undefined): string {
@@ -879,27 +959,29 @@ export default function ServerHealthPage() {
         const machine = latest?.host_iface;
         const app = latest?.iface || "app";
         return (
-          <Chart
-            key={key}
-            title="Network"
-            note={machine ? `${machine} is the Oracle machine. ${app} is the app container.` : undefined}
-            data={data}
-            span={span}
-            lines={
-              machine
-                ? [
-                    { key: "host_rx", name: `${machine} in` },
-                    { key: "host_tx", name: `${machine} out`, dashed: true },
-                    { key: "rx", name: `${app} in` },
-                    { key: "tx", name: `${app} out`, dashed: true },
-                  ]
-                : [
-                    { key: "rx", name: "In" },
-                    { key: "tx", name: "Out" },
-                  ]
-            }
-            unit="/s"
-          />
+          <div key={key} className="server-health-stack">
+            <Chart
+              title="Network"
+              note={machine ? `${machine} is the Oracle machine. ${app} is the app container.` : undefined}
+              data={data}
+              span={span}
+              lines={
+                machine
+                  ? [
+                      { key: "host_rx", name: `${machine} in` },
+                      { key: "host_tx", name: `${machine} out`, dashed: true },
+                      { key: "rx", name: `${app} in` },
+                      { key: "tx", name: `${app} out`, dashed: true },
+                    ]
+                  : [
+                      { key: "rx", name: "In" },
+                      { key: "tx", name: "Out" },
+                    ]
+              }
+              unit="/s"
+            />
+            <TrafficTable traffic={current.traffic ?? null} />
+          </div>
         );
       }
       case "storage":

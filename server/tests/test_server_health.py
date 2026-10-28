@@ -13,6 +13,7 @@ from app.server_health import (
     build_advisory_payload,
     cvss3_score,
     byte_rates,
+    counter_increase,
     category_usage,
     cpu_cores,
     check_due,
@@ -34,6 +35,7 @@ from app.server_health import (
     refresh_advisories,
     risk_of,
     support_row,
+    traffic_totals,
     version_is_newer,
 )
 from tests.conftest import login
@@ -469,3 +471,71 @@ def test_database_categories_sum_to_the_tables():
     assert groups["synthetic"]["children"][0]["name"] == "synthetic_samples"
     assert groups["settings"]["bytes"] == 8  # users plus the unlisted table
     assert sum(group["bytes"] for group in groups.values()) == sum(table["bytes"] for table in tables)
+
+def test_traffic_totals_add_up_counter_increases_and_survive_a_reset():
+    now = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+    rows = [
+        (now - timedelta(days=7, minutes=1), 100, 1000),
+        (now - timedelta(hours=25), 200, 2000),
+        (now - timedelta(hours=24, minutes=1), 300, 3000),
+        (now - timedelta(hours=23), 400, 4000),
+        # The machine rebooted: the counters start again from a small number.
+        (now - timedelta(hours=2), 50, 500),
+        (now - timedelta(minutes=30), 150, 800),
+        (now, 250, 1300),
+    ]
+    totals = traffic_totals(rows, now)
+    assert totals is not None
+    by_key = {item["key"]: item for item in totals["periods"]}
+    assert (by_key["1h"]["rx"], by_key["1h"]["tx"]) == (200, 800)
+    assert (by_key["6h"]["rx"], by_key["6h"]["tx"]) == (250, 1300)
+    # 24h: the reading 23h ago is the first one inside the period, so it counts from the one before it.
+    assert (by_key["24h"]["rx"], by_key["24h"]["tx"]) == (100 + 50 + 100 + 100, 1000 + 500 + 300 + 500)
+    assert (by_key["7d"]["rx"], by_key["7d"]["tx"]) == (100 + 100 + 100 + 50 + 100 + 100, 1000 + 1000 + 1000 + 500 + 300 + 500)
+    assert not any(item["partial"] for item in totals["periods"])
+    assert totals["since_start"] == {"rx": 250, "tx": 1300}
+    assert totals["month_tx"] == by_key["24h"]["tx"] * 30
+    assert counter_increase(10, 4) == 4
+
+
+def test_traffic_totals_mark_short_history_and_hold_back_the_monthly_pace():
+    now = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+    rows = [(now - timedelta(hours=3), 0, 0), (now, 3000, 600)]
+    totals = traffic_totals(rows, now)
+    assert totals is not None
+    by_key = {item["key"]: item for item in totals["periods"]}
+    assert by_key["1h"]["partial"] is False
+    assert by_key["6h"]["partial"] is True
+    assert by_key["7d"]["partial"] is True
+    assert by_key["24h"]["tx"] == 600
+    assert totals["month_tx"] is None
+    assert traffic_totals([], now) is None
+    single = traffic_totals([(now, 5, 6)], now)
+    assert single is not None
+    assert single["periods"][0]["rx"] is None
+    assert single["since_start"] == {"rx": 5, "tx": 6}
+
+
+def test_report_has_machine_totals_and_the_app_container(client, db):
+    _user(db, "admin", UserRole.admin)
+    db.execute(delete(ServerSample))
+    db.commit()
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    db.add_all(
+        [
+            _sample(now - timedelta(minutes=30), iface="eth0", rx_bytes=500, tx_bytes=50, host_iface="enp0s6", host_rx_bytes=10_000, host_tx_bytes=40_000),
+            _sample(now - timedelta(minutes=1), iface="eth0", rx_bytes=900, tx_bytes=90, host_iface="enp0s6", host_rx_bytes=12_000, host_tx_bytes=49_000),
+        ]
+    )
+    db.commit()
+    login(client)
+    traffic = client.get("/api/v1/server-health?range=1h").json()["traffic"]
+    assert traffic["iface"] == "enp0s6"
+    hour = next(item for item in traffic["periods"] if item["key"] == "1h")
+    assert (hour["rx"], hour["tx"]) == (2000, 9000)
+    assert traffic["since_start"] == {"rx": 12_000, "tx": 49_000}
+    assert traffic["app"] == {"iface": "eth0", "rx": 900, "tx": 90}
+    assert traffic["month_tx"] is None
+    db.execute(delete(ServerSample))
+    db.commit()
+    assert client.get("/api/v1/server-health?range=1h").json()["traffic"] is None

@@ -4,9 +4,11 @@ Raw measurements are averaged after six months, which would blur a long report. 
 exact counts (checks run, checks failed, loss, latency) are written to `kpi_hourly`, and the report
 adds those up. Counts and sums are kept, never averages, so any period combines without bias.
 
-Internet availability is the share of ping checks to the HomeNetWatch server that did not fail, on the
-wired and Wi-Fi links. Voice and video availability is the share of their checks (every few seconds)
-that passed the limits set for them. Packet drop is the average packet loss those checks reported.
+Internet availability is the share of path pings that did not fail on the wired and Wi-Fi links, except
+when a path fail coincides with a healthy public web check on the same link — that is a dead measurement
+tunnel (``10.7.x.1``), not home internet down, and is not counted as an outage. Voice and video
+availability is the share of their checks (every few seconds) that passed the limits set for them.
+Packet drop is the average packet loss those checks reported.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from sqlalchemy import Date, DateTime, case, cast, delete, func, select
 from sqlalchemy.orm import Session
 
 from app.internet_tests import WEB_SERVICES
-from app.models import KpiDaily, KpiHourly, Network, ResultStatus, SyntheticRun, SyntheticSample, Test, TestKind, TestResult
+from app.models import KpiDaily, KpiHourly, Network, NetworkKind, ResultStatus, SyntheticRun, SyntheticSample, Test, TestKind, TestResult
 from app.synthetic import SOFTWARE, is_blackout
 
 log = logging.getLogger(__name__)
@@ -147,18 +149,69 @@ class Acc:
 Key = tuple[datetime, UUID, str, str]
 
 
+def _nearby(times: list[datetime], moment: datetime, window: timedelta = OUTAGE_GAP) -> bool:
+    return any(abs(stamp - moment) <= window for stamp in times)
+
+
+def _public_web_ok_times(db: Session, start: datetime, end: datetime) -> dict[tuple[UUID, str], list[datetime]]:
+    """Successful public HTTP checks (not http-path) per monitor/link — proves home internet access."""
+    out: dict[tuple[UUID, str], list[datetime]] = defaultdict(list)
+    for started, monitor_id, kind in db.execute(
+        select(TestResult.started_at, Test.monitor_id, Network.kind)
+        .join(Test, TestResult.test_id == Test.id)
+        .join(Network, Test.network_id == Network.id)
+        .where(
+            Test.slug.in_(list(WEB_HTTP_SLUGS)),
+            Test.enabled.is_(True),
+            TestResult.status == ResultStatus.ok,
+            TestResult.started_at >= start - OUTAGE_GAP,
+            TestResult.started_at < end + OUTAGE_GAP,
+            ~TestResult.external_id.startswith("rollup-"),
+        )
+    ).all():
+        out[(monitor_id, _link(kind.value))].append(started)
+    return out
+
+
+def _public_web_near(db: Session, monitor_id: UUID, link: str, moment: datetime) -> bool:
+    """Whether a public HTTP check on this link succeeded within OUTAGE_GAP of `moment`."""
+    kind = NetworkKind.wifi if link == "wireless" else NetworkKind.wired
+    return (
+        db.scalar(
+            select(TestResult.id)
+            .join(Test, TestResult.test_id == Test.id)
+            .join(Network, Test.network_id == Network.id)
+            .where(
+                Test.monitor_id == monitor_id,
+                Network.kind == kind,
+                Test.slug.in_(list(WEB_HTTP_SLUGS)),
+                Test.enabled.is_(True),
+                TestResult.status == ResultStatus.ok,
+                TestResult.started_at >= moment - OUTAGE_GAP,
+                TestResult.started_at <= moment + OUTAGE_GAP,
+                ~TestResult.external_id.startswith("rollup-"),
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
 def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]:
     """Counts for every hour in [start, end) from the raw measurements."""
     start, end = hour_of(start), hour_of(end)
     out: dict[Key, Acc] = defaultdict(Acc)
 
-    # Internet: the ping to the server, per link.
+    # Internet: icmp-path is aimed at the WireGuard peer (10.7.x.1). A fail while public web on the
+    # same link still succeeds is tunnel death, not an ISP/home-internet outage.
+    public_web_ok = _public_web_ok_times(db, start, end)
     path_tests = {
         row[0]: (row[1], _link(row[2].value))
         for row in db.execute(
             select(Test.id, Test.monitor_id, Network.kind).join(Network, Test.network_id == Network.id).where(Test.slug == "icmp-path")
         ).all()
     }
+    path_rows: list = []
     if path_tests:
         previous_failed: dict[UUID, bool] = {}
         previous_at: dict[UUID, datetime] = {}
@@ -169,20 +222,30 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
                 .order_by(TestResult.started_at.desc())
                 .limit(1)
             ).first()
-            previous_failed[test_id] = last is not None and last[0].value == "fail"
+            # Seed prior state only from failures that counted as internet down (not tunnel-only).
+            prior_down = False
+            if last is not None and last[0].value == "fail":
+                mon_id, lnk = path_tests[test_id]
+                if _nearby(public_web_ok.get((mon_id, lnk), []), last[1]):
+                    prior_down = False
+                else:
+                    prior_down = not _public_web_near(db, mon_id, lnk, last[1])
+            previous_failed[test_id] = prior_down
             if last is not None:
                 previous_at[test_id] = last[1]
-        rows = db.execute(
-            select(TestResult.test_id, TestResult.started_at, TestResult.status, TestResult.metrics)
-            .where(
-                TestResult.test_id.in_(list(path_tests)),
-                TestResult.started_at >= start,
-                TestResult.started_at < end,
-                ~TestResult.external_id.startswith("rollup-"),
-            )
-            .order_by(TestResult.test_id, TestResult.started_at)
-        ).all()
-        for test_id, started, status, metrics in rows:
+        path_rows = list(
+            db.execute(
+                select(TestResult.test_id, TestResult.started_at, TestResult.status, TestResult.metrics)
+                .where(
+                    TestResult.test_id.in_(list(path_tests)),
+                    TestResult.started_at >= start,
+                    TestResult.started_at < end,
+                    ~TestResult.external_id.startswith("rollup-"),
+                )
+                .order_by(TestResult.test_id, TestResult.started_at)
+            ).all()
+        )
+        for test_id, started, status, metrics in path_rows:
             monitor_id, link = path_tests[test_id]
             acc = out[(hour_of(started), monitor_id, link, "internet")]
             acc.n += 1
@@ -192,16 +255,19 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
                 acc.gaps += 1
                 acc.gap_min += (started - before).total_seconds() / 60 - 1
             previous_at[test_id] = started
-            down = status.value == "fail"
+            raw_fail = status.value == "fail"
+            tunnel_only = raw_fail and _nearby(public_web_ok.get((monitor_id, link), []), started)
+            down = raw_fail and not tunnel_only
             if down:
                 acc.failed += 1
                 if not previous_failed[test_id]:
                     acc.incidents += 1
-            elif status.value == "degraded":
+            elif status.value == "degraded" and not tunnel_only:
                 acc.degraded += 1
             previous_failed[test_id] = down
-            data = metrics or {}
-            acc.add_metrics(_number(data.get("rtt_ms")), _number(data.get("jitter_ms")), _number(data.get("loss_pct")))
+            if not tunnel_only:
+                data = metrics or {}
+                acc.add_metrics(_number(data.get("rtt_ms")), _number(data.get("jitter_ms")), _number(data.get("loss_pct")))
 
     # Speed: the bandwidth test.
     speed_rows = db.execute(
@@ -239,7 +305,7 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
     ).all()
     healthy_link_times: dict[tuple[UUID, str], list[datetime]] = defaultdict(list)
     if path_tests:
-        for test_id, started, status, _metrics in rows:
+        for test_id, started, status, _metrics in path_rows:
             if status.value == "ok":
                 mon_id, lnk = path_tests[test_id]
                 healthy_link_times[(mon_id, lnk)].append(started)
@@ -579,7 +645,7 @@ def _service_summary(rows: list[dict[str, Any]], kind: str) -> dict[str, Any]:
     and loss reflect the healthier link while `links` keeps the exact per-link breakdown.
     """
     blended = _summary(rows, kind)
-    if kind not in ("voice", "video", "web", "apps"):
+    if kind not in ("internet", "voice", "video", "web", "apps"):
         return blended
     by_link = _by_link(rows, kind)
     wired = by_link.get("wired")
@@ -624,9 +690,9 @@ def _diagnose_kpi(
     )
 
 def incidents(db: Session, start: datetime, end: datetime, monitor_id: Optional[UUID], limit: int = 10) -> list[dict[str, Any]]:
-    """Internet outages in the period: runs of failed pings, newest first. Raw data only, so within six months."""
+    """Internet outages in the period: runs of failed path pings that were not tunnel-only, newest first."""
     query = (
-        select(TestResult.started_at, Network.kind)
+        select(TestResult.started_at, Network.kind, Test.monitor_id)
         .join(Test, TestResult.test_id == Test.id)
         .join(Network, Test.network_id == Network.id)
         .where(Test.slug == "icmp-path", TestResult.status == ResultStatus.fail, TestResult.started_at >= start, TestResult.started_at < end)
@@ -635,10 +701,13 @@ def incidents(db: Session, start: datetime, end: datetime, monitor_id: Optional[
     )
     if monitor_id is not None:
         query = query.where(Test.monitor_id == monitor_id)
+    public_web_ok = _public_web_ok_times(db, start, end)
     runs: list[dict[str, Any]] = []
     current: Optional[dict[str, Any]] = None
-    for started, kind in db.execute(query).all():
+    for started, kind, mon_id in db.execute(query).all():
         link = _link(kind.value)
+        if _nearby(public_web_ok.get((mon_id, link), []), started):
+            continue  # tunnel path down; public internet still answered
         if current is not None and current["link"] == link and started - current["last"] <= OUTAGE_GAP:
             current["last"] = started
             current["checks"] += 1

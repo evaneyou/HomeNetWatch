@@ -105,7 +105,7 @@ def _utc(value: datetime) -> str:
 def network_conditions(db: Session, now: datetime, offline_ids: set) -> list[Condition]:
     """The ISP path is down on a link, or many web services are unreachable while the path is up.
 
-    Path/web checks are the access plane. A dead WireGuard tunnel alone is not an internet outage.
+    Public web checks are the access plane. A dead WireGuard tunnel alone is not an internet outage.
     """
     from app.services.link_correlation import access_ok_recent, tunnel_is_stale
 
@@ -131,7 +131,7 @@ def network_conditions(db: Session, now: datetime, offline_ids: set) -> list[Con
     for (monitor_id, kind, name), tests in path.items():
         link = "wireless" if kind == "wifi" else "wired"
         monitor = monitors.get(monitor_id)
-        # If the tunnel is stale but recent web/path samples still succeed, this is not a net outage.
+        # If the tunnel is stale but recent public web samples still succeed, this is not a net outage.
         if monitor is not None and tunnel_is_stale(monitor, link, now) and access_ok_recent(db, monitor_id, link, now):
             continue
         down = [test for test in tests.values() if test.stable_status == ResultStatus.fail]

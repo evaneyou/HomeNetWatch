@@ -139,6 +139,8 @@ class Monitor(Base):
     # Set by an admin. The probe clears it once, then replaces its own process.
     restart_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     scan_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # Set by an admin. The probe clears it when it posts LAN scan results.
+    lan_scan_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     group: Mapped[Group] = relationship(back_populates="monitors")
@@ -331,6 +333,42 @@ class RfAlert(Base):
         UniqueConstraint("monitor_id", "observed_at", "dedupe_key", name="uq_rf_alerts_capture"),
         Index("ix_rf_alerts_monitor_observed", "monitor_id", "observed_at"),
     )
+
+
+class LanScanRun(Base):
+    """One on-demand LAN scan requested from Airwaves Security."""
+
+    __tablename__ = "lan_scan_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    monitor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("monitors.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    subnet: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    error: Mapped[str] = mapped_column(String(400), nullable=False, default="")
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    hosts: Mapped[list["LanScanHost"]] = relationship(back_populates="run", cascade="all, delete-orphan")
+
+    __table_args__ = (Index("ix_lan_scan_runs_monitor_requested", "monitor_id", "requested_at"),)
+
+
+class LanScanHost(Base):
+    """One live host found during a LAN scan."""
+
+    __tablename__ = "lan_scan_hosts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("lan_scan_runs.id", ondelete="CASCADE"), nullable=False)
+    ip: Mapped[str] = mapped_column(String(64), nullable=False)
+    mac: Mapped[str] = mapped_column(String(17), nullable=False, default="")
+    vendor: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    ports: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    run: Mapped[LanScanRun] = relationship(back_populates="hosts")
+
+    __table_args__ = (Index("ix_lan_scan_hosts_run", "run_id"),)
 
 
 class ApInventory(Base):

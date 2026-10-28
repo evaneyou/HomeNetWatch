@@ -148,6 +148,7 @@ export default function AirwavesLayout() {
     { path: "/airwaves/networks", label: "Networks" },
     { path: "/airwaves/clients", label: "Clients" },
     { path: "/airwaves/channels", label: "Channels" },
+    { path: "/airwaves/security", label: "Security" },
   ];
 
   return (

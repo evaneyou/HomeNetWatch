@@ -990,3 +990,199 @@
   background: var(--aw-mint);
   color: #06201b;
 }
+
+/* Security tab */
+.aw-security {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.aw-sec-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  background: var(--aw-card);
+  border: 1px solid var(--aw-line);
+  border-radius: 12px;
+  color: var(--aw-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.aw-sec-strip strong {
+  color: var(--aw-mint);
+}
+
+.aw-sec-seg {
+  display: flex;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px;
+  background: var(--aw-card);
+  border: 1px solid var(--aw-line);
+  border-radius: 999px;
+}
+
+.aw-sec-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--aw-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.aw-sec-seg-btn.on {
+  background: var(--aw-mint);
+  color: var(--aw-ink);
+}
+
+.aw-sec-count {
+  min-width: 1.25rem;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--aw-ink) 18%, transparent);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.aw-sec-seg-btn.on .aw-sec-count {
+  background: color-mix(in srgb, var(--aw-ink) 16%, transparent);
+}
+
+.aw-sec-subhead {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--aw-soft);
+}
+
+.aw-sec-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.aw-chip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--aw-line);
+  background: var(--aw-card);
+  color: var(--aw-soft);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.aw-chip.on {
+  border-color: var(--aw-mint);
+  color: var(--aw-text);
+  background: #1d2a44;
+}
+
+.aw-sec-search {
+  flex: 1;
+  min-width: 140px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--aw-line);
+  background: var(--aw-inset);
+  color: var(--aw-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.aw-sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.aw-sec-note {
+  margin: 0 0 10px;
+  color: var(--aw-muted);
+  font-size: 12px;
+}
+
+.aw-sec-alerts {
+  max-height: 320px;
+}
+
+.aw-sec-label {
+  color: var(--aw-muted);
+  font-weight: 600;
+}
+
+.aw-sec-attention,
+.aw-sec-hosts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.aw-sec-attention li,
+.aw-sec-hosts li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--aw-line);
+  font-size: 13px;
+}
+
+.aw-sec-attention li:last-child,
+.aw-sec-hosts li:last-child {
+  border-bottom: 0;
+}
+
+.aw-sec-ports {
+  display: block;
+  width: 100%;
+  color: var(--aw-muted);
+  font-size: 12px;
+}
+
+.aw-sec-history {
+  margin-top: 10px;
+  color: var(--aw-muted);
+  font-size: 12px;
+}
+
+.aw-sec-history ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.aw-alerts > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aw-sec-more {
+  margin-left: auto;
+  color: var(--aw-mint);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.aw-sec-more:hover {
+  text-decoration: underline;
+}

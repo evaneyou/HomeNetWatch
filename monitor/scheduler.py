@@ -82,6 +82,10 @@ def poll_restart(config: dict) -> None:
             threading.Thread(target=run_requested_trace, args=(config, request), daemon=True).start()
     if body.get("scan"):
         upload_wifi_scan(config, forced=True)
+    if body.get("lan_scan"):
+        from lan_scan import upload_lan_scan
+
+        threading.Thread(target=upload_lan_scan, args=(config, post_json), daemon=True, name="lan-scan").start()
 
 def remember_tests(tests: object) -> None:
     if not isinstance(tests, list):

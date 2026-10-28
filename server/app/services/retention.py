@@ -27,6 +27,7 @@ from app.models import (
     InstallerCode,
     Issue,
     IssueStatus,
+    LanScanRun,
     MonitorHealth,
     ResultStatus,
     RfAlert,
@@ -100,6 +101,9 @@ def apply_retention(db: Session, now: datetime) -> dict[str, int]:
     deleted_stress = db.execute(
         delete(StressRun).where(StressRun.started_at < now - timedelta(days=30))
     ).rowcount
+    deleted_lan_scans = db.execute(
+        delete(LanScanRun).where(LanScanRun.requested_at < now - timedelta(days=30))
+    ).rowcount
     db.execute(
         delete(SyntheticRun).where(
             SyntheticRun.mode.in_(("manual", "stress")),
@@ -156,6 +160,7 @@ def apply_retention(db: Session, now: datetime) -> dict[str, int]:
         "deleted_traces": deleted_traces or 0,
         "deleted_codes": deleted_codes or 0,
         "deleted_stress": deleted_stress or 0,
+        "deleted_lan_scans": deleted_lan_scans or 0,
         "deleted_speedtests": deleted_speedtests or 0,
         "deleted_audit": deleted_audit or 0,
         "deleted_issues": deleted_issues or 0,

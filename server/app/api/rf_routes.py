@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import ipaddress
 from typing import Annotated, Optional
 from uuid import UUID
 
@@ -20,6 +21,8 @@ from app.models import (
     Issue,
     IssueSeverity,
     IssueStatus,
+    LanScanHost,
+    LanScanRun,
     Monitor,
     MonitorHealth,
     RfAlert,
@@ -28,6 +31,7 @@ from app.models import (
     User,
     WifiObservation,
 )
+from app.synthetic import is_tunnel_target
 from app.rf_view import (
     bucket_seconds,
     bucket_start,
@@ -39,6 +43,10 @@ from app.rf_view import (
     recommend_band,
 )
 from app.schemas import (
+    LanScanIn,
+    LanScanHostOut,
+    LanScanRequestOut,
+    LanScanRunOut,
     RfAlertOut,
     RfApOut,
     RfCaptureIn,
@@ -46,6 +54,8 @@ from app.schemas import (
     RfChannelSnapshotOut,
     RfClientOut,
     RfClientPoint,
+    SecurityAttentionOut,
+    SecuritySummaryOut,
     RfHillSeries,
     RfHistoryPoint,
     RfOverviewOut,
@@ -640,6 +650,16 @@ def _airwave_mode(db: Session, monitor_id: UUID) -> str:
     return row.airwave_mode
 
 
+def _alert_out(row: RfAlert) -> RfAlertOut:
+    return RfAlertOut(
+        alert_type=row.alert_type,
+        bssid=row.bssid,
+        text=row.text,
+        observed_at=row.observed_at,
+        severity=rf_alert_severity(row.alert_type),
+    )
+
+
 def _recent_alerts(db: Session, monitor_id: UUID, start: datetime, limit: int = 8) -> list[RfAlertOut]:
     rows = db.scalars(
         select(RfAlert)
@@ -647,16 +667,41 @@ def _recent_alerts(db: Session, monitor_id: UUID, start: datetime, limit: int = 
         .order_by(RfAlert.observed_at.desc())
         .limit(limit)
     ).all()
-    return [
-        RfAlertOut(
-            alert_type=row.alert_type,
-            bssid=row.bssid,
-            text=row.text,
-            observed_at=row.observed_at,
-            severity=rf_alert_severity(row.alert_type),
-        )
-        for row in rows
-    ]
+    return [_alert_out(row) for row in rows]
+
+
+def _list_alerts(
+    db: Session,
+    monitor_id: UUID,
+    start: datetime,
+    *,
+    limit: int = 50,
+    severity: Optional[str] = None,
+    alert_type: Optional[str] = None,
+    trusted: Optional[bool] = None,
+    q: Optional[str] = None,
+) -> list[RfAlertOut]:
+    query = select(RfAlert).where(RfAlert.monitor_id == monitor_id, RfAlert.observed_at >= start)
+    if alert_type:
+        query = query.where(func.upper(RfAlert.alert_type) == alert_type.strip().upper())
+    rows = db.scalars(query.order_by(RfAlert.observed_at.desc()).limit(max(limit * 4, 200))).all()
+    trusted_set = _trusted_set(db, monitor_id) if trusted is not None else set()
+    needle = (q or "").strip().lower()
+    found: list[RfAlertOut] = []
+    for row in rows:
+        item = _alert_out(row)
+        if severity and item.severity != severity:
+            continue
+        if trusted is True and row.bssid.lower() not in trusted_set:
+            continue
+        if trusted is False and row.bssid and row.bssid.lower() in trusted_set:
+            continue
+        if needle and needle not in row.alert_type.lower() and needle not in row.bssid.lower() and needle not in row.text.lower():
+            continue
+        found.append(item)
+        if len(found) >= limit:
+            break
+    return found
 
 
 @router.get("/rf/alerts", response_model=list[RfAlertOut])
@@ -665,9 +710,23 @@ def rf_alerts(
     _user: Annotated[User, Depends(get_current_user)],
     agent_id: UUID = Query(...),
     range_key: str = Query("1h", alias="range", pattern=_RANGES),
+    severity: Optional[str] = Query(None, pattern="^(critical|warning|info)$"),
+    alert_type: Optional[str] = Query(None, max_length=64),
+    trusted: Optional[bool] = Query(None),
+    q: Optional[str] = Query(None, max_length=100),
+    limit: int = Query(50, ge=1, le=200),
 ) -> list[RfAlertOut]:
     _monitor_or_404(db, agent_id)
-    return _recent_alerts(db, agent_id, range_start(range_key), limit=50)
+    return _list_alerts(
+        db,
+        agent_id,
+        range_start(range_key),
+        limit=limit,
+        severity=severity,
+        alert_type=alert_type,
+        trusted=trusted,
+        q=q,
+    )
 
 
 @router.get("/rf/clients", response_model=list[RfClientOut])
@@ -812,3 +871,206 @@ def untrust_ap(
     agent_id: UUID = Query(...),
 ) -> RfApOut:
     return _set_trust(db, agent_id, bssid, False)
+
+
+def _lan_run_out(run: LanScanRun) -> LanScanRunOut:
+    hosts = sorted(run.hosts, key=lambda row: row.ip)
+    return LanScanRunOut(
+        id=run.id,
+        status=run.status,
+        subnet=run.subnet,
+        error=run.error,
+        requested_at=run.requested_at,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        hosts=[
+            LanScanHostOut(ip=host.ip, mac=host.mac, vendor=host.vendor, ports=list(host.ports or []))
+            for host in hosts
+        ],
+    )
+
+
+def _active_lan_scan(db: Session, monitor_id: UUID) -> Optional[LanScanRun]:
+    now = datetime.now(timezone.utc)
+    row = db.scalar(
+        select(LanScanRun)
+        .where(LanScanRun.monitor_id == monitor_id, LanScanRun.status.in_(("pending", "running")))
+        .order_by(LanScanRun.requested_at.desc())
+        .limit(1)
+    )
+    if row is None:
+        return None
+    # A scan that never reports back must not block the next Run forever.
+    age = now - (row.started_at or row.requested_at)
+    if age > timedelta(minutes=20):
+        row.status = "failed"
+        row.error = "The remote agent did not finish the LAN scan in time"
+        row.finished_at = now
+        monitor = db.get(Monitor, monitor_id)
+        if monitor is not None:
+            monitor.lan_scan_requested_at = None
+        db.commit()
+        return None
+    return row
+
+
+def _assert_lan_subnet(subnet: str) -> None:
+    text = (subnet or "").strip()
+    if not text:
+        return
+    try:
+        network = ipaddress.ip_network(text, strict=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="The LAN subnet is not valid.") from exc
+    if network.version != 4:
+        raise HTTPException(status_code=400, detail="Only IPv4 LAN scans are supported.")
+    if network.is_loopback or network.is_link_local or network.is_multicast:
+        raise HTTPException(status_code=400, detail="That network cannot be scanned.")
+    if is_tunnel_target(str(network.network_address)) or str(network.network_address).startswith("10.7."):
+        raise HTTPException(status_code=400, detail="The WireGuard tunnel cannot be scanned.")
+
+
+@router.get("/rf/security", response_model=SecuritySummaryOut)
+def rf_security_summary(
+    db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(get_current_user)],
+    agent_id: UUID = Query(...),
+) -> SecuritySummaryOut:
+    monitor = _monitor_or_404(db, agent_id)
+    open_issues = db.scalars(
+        select(Issue).where(
+            Issue.monitor_id == monitor.id,
+            Issue.status == IssueStatus.open,
+            Issue.root_cause_stage == "airwave",
+        )
+    ).all()
+    attention: list[SecurityAttentionOut] = []
+    for issue in open_issues:
+        bssid = ""
+        if " on " in issue.title:
+            bssid = issue.title.rsplit(" on ", 1)[-1].strip().lower()
+        reason = "evil_twin" if issue.title.startswith("Possible evil twin") else "airwave_alert"
+        ssid = ""
+        if reason == "evil_twin" and issue.title.startswith("Possible evil twin "):
+            mid = issue.title[len("Possible evil twin ") :]
+            ssid = mid.rsplit(" on ", 1)[0] if " on " in mid else mid
+        attention.append(SecurityAttentionOut(bssid=bssid, ssid=ssid, reason=reason, issue_title=issue.title))
+    latest, rows = _latest_rows(db, monitor.id)
+    if latest is not None and monitor.link_ssid:
+        joined = monitor.link_ssid
+        for row in rows:
+            if row.ssid != joined:
+                continue
+            inv = db.scalar(
+                select(ApInventory).where(ApInventory.monitor_id == monitor.id, ApInventory.bssid == row.bssid.lower())
+            )
+            if inv is not None and inv.trusted:
+                continue
+            if any(item.bssid == row.bssid.lower() for item in attention):
+                continue
+            attention.append(
+                SecurityAttentionOut(
+                    bssid=row.bssid.lower(),
+                    ssid=row.ssid,
+                    reason="untrusted_same_ssid",
+                    issue_title="",
+                )
+            )
+    last = db.scalar(
+        select(LanScanRun).where(LanScanRun.monitor_id == monitor.id).order_by(LanScanRun.requested_at.desc()).limit(1)
+    )
+    if last is not None:
+        _ = last.hosts  # load relationship
+    return SecuritySummaryOut(
+        airwave_mode=_airwave_mode(db, monitor.id),
+        open_issues=len(open_issues),
+        attention=attention,
+        last_lan_scan=_lan_run_out(last) if last is not None else None,
+    )
+
+
+@router.post("/rf/lan-scan", response_model=LanScanRequestOut)
+def request_lan_scan(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(require_admin_csrf)],
+    agent_id: UUID = Query(...),
+) -> LanScanRequestOut:
+    monitor = _monitor_or_404(db, agent_id)
+    active = _active_lan_scan(db, monitor.id)
+    if active is not None:
+        raise HTTPException(status_code=409, detail="A LAN scan is already in progress for this agent.")
+    now = datetime.now(timezone.utc)
+    run = LanScanRun(monitor_id=monitor.id, status="pending", requested_at=now)
+    db.add(run)
+    monitor.lan_scan_requested_at = now
+    db.commit()
+    db.refresh(run)
+    return LanScanRequestOut(
+        agent_id=monitor.id,
+        agent_name=monitor.name,
+        run_id=run.id,
+        lan_scan_requested_at=now,
+    )
+
+
+@router.get("/rf/lan-scans", response_model=list[LanScanRunOut])
+def list_lan_scans(
+    db: Annotated[Session, Depends(get_db)],
+    _user: Annotated[User, Depends(get_current_user)],
+    agent_id: UUID = Query(...),
+    limit: int = Query(8, ge=1, le=30),
+) -> list[LanScanRunOut]:
+    _monitor_or_404(db, agent_id)
+    rows = db.scalars(
+        select(LanScanRun)
+        .where(LanScanRun.monitor_id == agent_id)
+        .order_by(LanScanRun.requested_at.desc())
+        .limit(limit)
+    ).all()
+    for row in rows:
+        _ = row.hosts
+    return [_lan_run_out(row) for row in rows]
+
+
+@router.post("/monitors/lan-scan")
+def post_lan_scan(
+    body: LanScanIn,
+    db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[Optional[str], Header()] = None,
+    x_monitor_name: Annotated[Optional[str], Header()] = None,
+) -> dict[str, str]:
+    monitor = _resolve_monitor_identity(db, authorization, x_monitor_name)
+    _assert_lan_subnet(body.subnet)
+    for host in body.hosts:
+        if is_tunnel_target(host.ip):
+            raise HTTPException(status_code=400, detail="Tunnel addresses cannot appear in a LAN scan.")
+    run = _active_lan_scan(db, monitor.id)
+    if run is None:
+        run = LanScanRun(
+            monitor_id=monitor.id,
+            status="pending",
+            requested_at=body.started_at if body.started_at.tzinfo else body.started_at.replace(tzinfo=timezone.utc),
+        )
+        db.add(run)
+        db.flush()
+    started = body.started_at if body.started_at.tzinfo else body.started_at.replace(tzinfo=timezone.utc)
+    finished = body.finished_at if body.finished_at.tzinfo else body.finished_at.replace(tzinfo=timezone.utc)
+    run.status = body.status
+    run.subnet = body.subnet.strip()
+    run.error = body.error.strip()[:400]
+    run.started_at = started
+    run.finished_at = finished
+    run.hosts.clear()
+    for host in body.hosts:
+        ports = sorted({int(port) for port in host.ports if 1 <= int(port) <= 65535})
+        run.hosts.append(
+            LanScanHost(
+                ip=host.ip.strip()[:64],
+                mac=host.mac.strip().lower()[:17],
+                vendor=host.vendor.strip()[:128],
+                ports=ports,
+            )
+        )
+    monitor.lan_scan_requested_at = None
+    db.commit()
+    return {"status": run.status, "run_id": str(run.id)}

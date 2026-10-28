@@ -169,7 +169,7 @@ VERSION        Current project version
 | 0 | Dashboard-first slice: server, seed, core UI | Done |
 | 1 | Server hardening: enrollment, config ETag, issue engine | In progress |
 | 2 | Pi agent: enrollment, device health, HTTP, ping, MTR, Bandwidth Test | In progress |
-| 3 | Airwaves: a second radio adapter scans (iw, or Kismet with `--kismet`); the link adapter scans only when it is the only radio, at most every 15 minutes, and never during a test | In progress |
+| 3 | Airwaves: second-radio scans (iw / Kismet), trust and evil-twin, Security tab (WIDS filters + on-demand LAN scan) | In progress |
 | 4 | Cloud deployment of the same Compose stack with TLS (see docs/deploy.md) | In progress |
 
 Details and out-of-scope items are in [`SPEC.md`](./SPEC.md).

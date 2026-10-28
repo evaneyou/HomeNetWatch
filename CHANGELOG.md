@@ -12,6 +12,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Added
 
+- **Airwaves Security tab:** next to Channels, with sub-tabs Alerts, Trust and Scans. WIDS (Kismet alerts) with filters for range, severity, trusted-only and search; Trust for evil twins and untrusted same-SSID APs; and on-demand LAN scans (Scapy ARP then Nmap on common TCP ports) on the Pi's wired LAN only, with history. New APIs: filtered `GET /api/v1/rf/alerts`, `GET /api/v1/rf/security`, `POST /api/v1/rf/lan-scan`, `GET /api/v1/rf/lan-scans`, `POST /api/v1/monitors/lan-scan`. Migration `0048_lan_scan`. Agent 0.8.3; install/update pull in `nmap` and `python3-scapy` when missing.
 - Server Health, Interface tab: a Data used table under the network chart. It shows the bytes the machine received and sent in the last hour, 6 hours, 24 hours and 7 days and since the machine started, with a total for each. A period the history does not fully cover yet is marked "(so far)". Below the table are the app container's counters since it last started and a monthly pace of sending, worked out from the last 24 hours. The totals add up the counter increases, so a reboot or a container restart does not lose or invent data. The server's `GET /api/v1/server-health` response has a new `traffic` block. It needs no migration.
 
 ### Fixed

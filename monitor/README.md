@@ -53,6 +53,10 @@ sudo ./update.sh
 
 A first install still uses `sudo ./install.sh`.
 
+## LAN scan (Airwaves Security)
+
+On-demand scans from the dashboard use Scapy (ARP discovery) and Nmap (common TCP ports) on the Pi's wired LAN only. Install and update pull in `nmap` and `python3-scapy` when they are missing. WireGuard addresses are never scanned.
+
 ## Airwave memory
 
 Kismet's Linux capture helper grows while it channel-hops. A first install with `--kismet` already caps that cgroup and restarts Kismet once a day. On a Pi that was set up earlier, run the repair from an unpacked package (enrollment and tunnels stay as they are):

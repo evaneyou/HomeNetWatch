@@ -10,7 +10,7 @@ fi
 
 cd "$(dirname "$0")"
 
-files="agent.py agent_state.py enrollment.py health.py radio.py scheduler.py checks.py kismet_view.py rf_spool.py synthetic.py speedtest.py"
+files="agent.py agent_state.py enrollment.py health.py radio.py scheduler.py checks.py kismet_view.py rf_spool.py synthetic.py speedtest.py lan_scan.py"
 for file in $files; do
   if [ ! -f "$file" ]; then
     echo "Missing $file. Unpack monitor.tar.gz and run this script from that directory." >&2
@@ -48,6 +48,15 @@ fi
 link_wifi="$(python3 -c 'import sys; sys.path.insert(0, "/opt/monitor"); from checks import wifi_roles; print(wifi_roles().get("link") or "")' 2>/dev/null || true)"
 if [ -n "$link_wifi" ] && command -v iw >/dev/null 2>&1; then
   iw dev "$link_wifi" set power_save off 2>/dev/null || true
+fi
+
+# LAN scan tools for Airwaves Security (on-demand ARP + Nmap).
+need=""
+command -v nmap >/dev/null 2>&1 || need="$need nmap"
+dpkg -s python3-scapy >/dev/null 2>&1 || need="$need python3-scapy"
+if [ -n "$need" ]; then
+  apt-get update
+  apt-get install -y $need
 fi
 
 systemctl restart monitor.service

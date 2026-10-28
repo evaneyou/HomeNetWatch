@@ -75,6 +75,14 @@ export type RfBandAdvice = {
   reason: string;
 };
 
+export type RfAlert = {
+  alert_type: string;
+  bssid: string;
+  text: string;
+  observed_at: string;
+  severity?: "info" | "warning" | "critical";
+};
+
 export type RfOverview = {
   agent_id: string;
   agent_name: string;
@@ -85,7 +93,29 @@ export type RfOverview = {
   headline: string;
   sparkline: { t: string; ap_count: number; count_24: number; count_5: number }[];
   airwave_mode: string;
-  alerts: { alert_type: string; bssid: string; text: string; observed_at: string; severity?: "info" | "warning" | "critical" }[];
+  alerts: RfAlert[];
+};
+
+export type LanScanHost = { ip: string; mac: string; vendor: string; ports: number[] };
+
+export type LanScanRun = {
+  id: string;
+  status: string;
+  subnet: string;
+  error: string;
+  requested_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  hosts: LanScanHost[];
+};
+
+export type SecurityAttention = { bssid: string; ssid: string; reason: string; issue_title: string };
+
+export type SecuritySummary = {
+  airwave_mode: string;
+  open_issues: number;
+  attention: SecurityAttention[];
+  last_lan_scan: LanScanRun | null;
 };
 
 export type RfAp = {

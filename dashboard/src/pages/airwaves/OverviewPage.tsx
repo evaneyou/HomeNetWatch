@@ -1,4 +1,4 @@
-import { useOutletContext } from "react-router-dom";
+import { Link, useOutletContext, useLocation } from "react-router-dom";
 import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts";
 import { isAnonymized } from "../../anonymized";
 import { CHART_COLORS } from "../../chartTheme";
@@ -7,6 +7,7 @@ import type { AirContext } from "./shared";
 
 export default function AirwavesOverview() {
   const ctx = useOutletContext<AirContext>();
+  const location = useLocation();
   const overview = ctx.overview;
 
   if (ctx.overviewLoading) return <div className="state-box">Loading the latest scan…</div>;
@@ -20,7 +21,7 @@ export default function AirwavesOverview() {
       {overview.bands.map((band) => (
         <BandCard key={band.band} band={band} overview={overview} />
       ))}
-      <Alerts alerts={overview.alerts} />
+      <Alerts alerts={overview.alerts} search={location.search} />
     </div>
   );
 }
@@ -29,13 +30,16 @@ function clock(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function Alerts({ alerts }: { alerts: RfOverview["alerts"] }) {
+function Alerts({ alerts, search }: { alerts: RfOverview["alerts"]; search: string }) {
   const activeCount = alerts.filter((a) => a.severity === "critical" || a.severity === "warning").length;
   return (
     <section className="aw-card aw-alerts" aria-label="Recent alerts">
       <header>
         <h2>Recent alerts</h2>
         <span className={`aw-badge${activeCount === 0 ? " info" : ""}`}>{alerts.length}</span>
+        <Link className="aw-sec-more" to={{ pathname: "security", search }}>
+          Security
+        </Link>
       </header>
       <div className="aw-alerts-list" tabIndex={0} role="region" aria-label="Recent alerts list, scrollable">
         {alerts.length === 0 ? <p className="aw-empty">No alerts in this range.</p> : null}

@@ -14,14 +14,15 @@ Packet drop is the average packet loss those checks reported.
 from __future__ import annotations
 
 import logging
+from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, case, cast, delete, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Date, DateTime, case, cast, delete, func, literal, select
+from sqlalchemy.orm import Session, aliased
 
 from app.internet_tests import WEB_SERVICES
 from app.models import KpiDaily, KpiHourly, Network, NetworkKind, ResultStatus, SyntheticRun, SyntheticSample, Test, TestKind, TestResult
@@ -150,11 +151,16 @@ Key = tuple[datetime, UUID, str, str]
 
 
 def _nearby(times: list[datetime], moment: datetime, window: timedelta = OUTAGE_GAP) -> bool:
-    return any(abs(stamp - moment) <= window for stamp in times)
+    """Whether a sorted list of timestamps has one within `window` of `moment`. Binary search, not a scan."""
+    index = bisect_left(times, moment - window)
+    return index < len(times) and times[index] <= moment + window
 
 
 def _public_web_ok_times(db: Session, start: datetime, end: datetime) -> dict[tuple[UUID, str], list[datetime]]:
-    """Successful public HTTP checks (not http-path) per monitor/link — proves home internet access."""
+    """Successful public HTTP checks (not http-path) per monitor/link, sorted — proves home internet access.
+
+    Meant for one rebuild chunk (a day). For report-sized windows use `_not_tunnel_only` in SQL instead.
+    """
     out: dict[tuple[UUID, str], list[datetime]] = defaultdict(list)
     for started, monitor_id, kind in db.execute(
         select(TestResult.started_at, Test.monitor_id, Network.kind)
@@ -170,7 +176,34 @@ def _public_web_ok_times(db: Session, start: datetime, end: datetime) -> dict[tu
         )
     ).all():
         out[(monitor_id, _link(kind.value))].append(started)
+    for times in out.values():
+        times.sort()
     return out
+
+
+def _not_tunnel_only():
+    """SQL filter for a path TestResult row: no public web check on the same monitor and link succeeded
+    within OUTAGE_GAP. Correlated subquery, so a report over months never loads web rows into Python."""
+    web_result = aliased(TestResult)
+    web_test = aliased(Test)
+    web_network = aliased(Network)
+    nearby_web_ok = (
+        select(literal(1))
+        .select_from(web_result)
+        .join(web_test, web_result.test_id == web_test.id)
+        .join(web_network, web_test.network_id == web_network.id)
+        .where(
+            web_test.monitor_id == Test.monitor_id,
+            web_network.kind == Network.kind,
+            web_test.slug.in_(list(WEB_HTTP_SLUGS)),
+            web_test.enabled.is_(True),
+            web_result.status == ResultStatus.ok,
+            web_result.started_at >= TestResult.started_at - OUTAGE_GAP,
+            web_result.started_at <= TestResult.started_at + OUTAGE_GAP,
+            ~web_result.external_id.startswith("rollup-"),
+        )
+    )
+    return ~nearby_web_ok.exists()
 
 
 def _public_web_near(db: Session, monitor_id: UUID, link: str, moment: datetime) -> bool:
@@ -695,19 +728,22 @@ def incidents(db: Session, start: datetime, end: datetime, monitor_id: Optional[
         select(TestResult.started_at, Network.kind, Test.monitor_id)
         .join(Test, TestResult.test_id == Test.id)
         .join(Network, Test.network_id == Network.id)
-        .where(Test.slug == "icmp-path", TestResult.status == ResultStatus.fail, TestResult.started_at >= start, TestResult.started_at < end)
+        .where(
+            Test.slug == "icmp-path",
+            TestResult.status == ResultStatus.fail,
+            TestResult.started_at >= start,
+            TestResult.started_at < end,
+            _not_tunnel_only(),  # a fail while public web still answered is the tunnel, not the internet
+        )
         .order_by(Network.kind, TestResult.started_at)
         .limit(5000)
     )
     if monitor_id is not None:
         query = query.where(Test.monitor_id == monitor_id)
-    public_web_ok = _public_web_ok_times(db, start, end)
     runs: list[dict[str, Any]] = []
     current: Optional[dict[str, Any]] = None
-    for started, kind, mon_id in db.execute(query).all():
+    for started, kind, _mon_id in db.execute(query).all():
         link = _link(kind.value)
-        if _nearby(public_web_ok.get((mon_id, link), []), started):
-            continue  # tunnel path down; public internet still answered
         if current is not None and current["link"] == link and started - current["last"] <= OUTAGE_GAP:
             current["last"] = started
             current["checks"] += 1

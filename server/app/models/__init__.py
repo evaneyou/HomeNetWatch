@@ -364,6 +364,7 @@ class LanScanHost(Base):
     ip: Mapped[str] = mapped_column(String(64), nullable=False)
     mac: Mapped[str] = mapped_column(String(17), nullable=False, default="")
     vendor: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    hostname: Mapped[str] = mapped_column(String(253), nullable=False, default="")
     ports: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
 
     run: Mapped[LanScanRun] = relationship(back_populates="hosts")

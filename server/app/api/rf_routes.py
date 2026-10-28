@@ -884,7 +884,7 @@ def _lan_run_out(run: LanScanRun) -> LanScanRunOut:
         started_at=run.started_at,
         finished_at=run.finished_at,
         hosts=[
-            LanScanHostOut(ip=host.ip, mac=host.mac, vendor=host.vendor, ports=list(host.ports or []))
+            LanScanHostOut(ip=host.ip, mac=host.mac, vendor=host.vendor, hostname=host.hostname, ports=list(host.ports or []))
             for host in hosts
         ],
     )
@@ -1068,6 +1068,7 @@ def post_lan_scan(
                 ip=host.ip.strip()[:64],
                 mac=host.mac.strip().lower()[:17],
                 vendor=host.vendor.strip()[:128],
+                hostname=host.hostname.strip().rstrip(".")[:253],
                 ports=ports,
             )
         )

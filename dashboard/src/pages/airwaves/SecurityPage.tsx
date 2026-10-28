@@ -4,7 +4,7 @@ import { useOutletContext } from "react-router-dom";
 import { api } from "../../api";
 import { isAnonymized } from "../../anonymized";
 import { useGuestGate } from "../../guestGate";
-import type { LanScanRun, RfAlert, SecurityAttention, User } from "../../types";
+import type { LanScanHost, LanScanRun, RfAlert, SecurityAttention, User } from "../../types";
 import type { AirContext } from "./shared";
 
 const RANGES = ["1h", "6h", "24h", "7d"] as const;
@@ -34,6 +34,38 @@ const ALERT_LABELS: Record<string, string> = {
   DHCPROGUE: "Rogue DHCP",
   ARPSPOOF: "ARP spoof",
 };
+
+// The fixed port set the Pi scans (monitor/lan_scan.py NMAP_PORTS), named for the card.
+const PORT_NAMES: Record<number, string> = {
+  22: "SSH",
+  53: "DNS",
+  80: "HTTP",
+  443: "HTTPS",
+  445: "SMB",
+  548: "AFP",
+  631: "IPP print",
+  3389: "RDP",
+  5000: "UPnP",
+  8080: "HTTP alt",
+  8443: "HTTPS alt",
+  9100: "raw print",
+};
+
+const RANDOMIZED_MAC = "Private address";
+
+/** What to call a host: its mDNS name, else its maker, else a hint that the MAC is randomized. */
+function hostLabel(host: LanScanHost): string {
+  const name = host.hostname.replace(/\.local$/i, "");
+  if (name) return name;
+  if (host.vendor && host.vendor !== RANDOMIZED_MAC) return `${host.vendor} device`;
+  if (host.vendor === RANDOMIZED_MAC) return "Device hiding its MAC";
+  return "Unknown device";
+}
+
+function portLabel(port: number): string {
+  const name = PORT_NAMES[port];
+  return name ? `${port} ${name}` : String(port);
+}
 
 function clock(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -262,7 +294,10 @@ export default function AirwavesSecurity() {
               </button>
             ) : null}
           </header>
-          <p className="aw-sec-note">Wired LAN only. Scapy ARP discovery, then Nmap on common ports. The WireGuard tunnel is never scanned.</p>
+          <p className="aw-sec-note">
+            Wired LAN only. Scapy ARP discovery, then Nmap on common ports. The maker comes from the MAC&apos;s IEEE prefix and
+            the name from mDNS when a device announces one. The WireGuard tunnel is never scanned.
+          </p>
           {lanScan.isError ? <p className="error">{(lanScan.error as Error).message}</p> : null}
           {!ctx.operate ? <p className="air-caption">An admin can run a LAN scan.</p> : null}
           <ScanResult run={lastScan} />
@@ -325,14 +360,29 @@ function ScanResult({ run }: { run: LanScanRun | null }) {
     return <p className="aw-empty">No hosts answered on {run.subnet || "the LAN"}.</p>;
   }
   return (
-    <ul className="aw-sec-hosts">
-      {run.hosts.map((host) => (
-        <li key={`${host.ip}-${host.mac}`}>
-          <b>{host.ip}</b>
-          {host.vendor ? ` · ${host.vendor}` : host.mac ? ` · ${host.mac}` : null}
-          <span className="aw-sec-ports">{host.ports.length ? host.ports.join(" ") : "no open ports in the set"}</span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <p className="air-caption">
+        {run.hosts.length} {run.hosts.length === 1 ? "device" : "devices"} on {run.subnet || "the LAN"}
+        {" · "}
+        {run.hosts.filter((host) => host.ports.length).length} with open ports in the set
+      </p>
+      <ul className="aw-sec-hosts">
+        {run.hosts.map((host) => (
+          <li key={`${host.ip}-${host.mac}`}>
+            <span className="aw-sec-host">
+              <b className={isAnonymized(host.hostname) ? "anon-mark" : undefined}>{hostLabel(host)}</b>
+              <span className={`aw-sec-host-ip${isAnonymized(host.ip) ? " anon-mark" : ""}`}>{host.ip}</span>
+            </span>
+            <small className="aw-sec-host-id">
+              {host.mac ? <span className={isAnonymized(host.mac) ? "anon-mark" : undefined}>{host.mac}</span> : "no MAC"}
+              {host.vendor ? ` · ${host.vendor}` : " · maker unknown"}
+            </small>
+            <span className="aw-sec-ports">
+              {host.ports.length ? host.ports.map(portLabel).join(" · ") : "no open ports in the set"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

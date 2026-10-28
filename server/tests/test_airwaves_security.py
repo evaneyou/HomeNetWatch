@@ -119,7 +119,10 @@ def test_lan_scan_request_command_ingest_and_rejects_tunnel(client, db, monitor_
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "status": "finished",
             "subnet": "192.168.1.0/24",
-            "hosts": [{"ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff", "vendor": "Router", "ports": [80, 443]}],
+            "hosts": [
+                {"ip": "192.168.1.1", "mac": "aa:bb:cc:dd:ee:ff", "vendor": "Router", "hostname": "gateway.local.", "ports": [80, 443]},
+                {"ip": "192.168.1.20", "mac": "aa:bb:cc:00:11:22", "ports": []},  # older agent: no hostname field
+            ],
         },
     )
     assert ok.status_code == 200, ok.text
@@ -130,12 +133,18 @@ def test_lan_scan_request_command_ingest_and_rejects_tunnel(client, db, monitor_
     assert run is not None
     assert run.status == "finished"
     assert run.subnet == "192.168.1.0/24"
-    assert len(run.hosts) == 1
-    assert run.hosts[0].ports == [80, 443]
+    assert len(run.hosts) == 2
+    by_ip = {host.ip: host for host in run.hosts}
+    assert by_ip["192.168.1.1"].ports == [80, 443]
+    assert by_ip["192.168.1.1"].hostname == "gateway.local"  # trailing dot trimmed
+    assert by_ip["192.168.1.20"].hostname == ""
 
     listed = client.get(f"/api/v1/rf/lan-scans?agent_id={monitor.id}", headers=headers)
     assert listed.status_code == 200
     assert listed.json()[0]["id"] == run_id
+    hosts_out = {host["ip"]: host for host in listed.json()[0]["hosts"]}
+    assert hosts_out["192.168.1.1"]["hostname"] == "gateway.local"
+    assert hosts_out["192.168.1.1"]["vendor"] == "Router"
     summary = client.get(f"/api/v1/rf/security?agent_id={monitor.id}", headers=headers)
     assert summary.status_code == 200
     assert summary.json()["last_lan_scan"]["id"] == run_id

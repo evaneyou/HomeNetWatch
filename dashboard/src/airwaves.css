@@ -1151,6 +1151,31 @@
   border-bottom: 0;
 }
 
+.aw-sec-host {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.aw-sec-host b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+.aw-sec-host-ip {
+  color: var(--aw-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.aw-sec-host-id {
+  color: var(--aw-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .aw-sec-ports {
   display: block;
   width: 100%;

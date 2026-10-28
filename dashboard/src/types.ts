@@ -96,7 +96,7 @@ export type RfOverview = {
   alerts: RfAlert[];
 };
 
-export type LanScanHost = { ip: string; mac: string; vendor: string; ports: number[] };
+export type LanScanHost = { ip: string; mac: string; vendor: string; hostname: string; ports: number[] };
 
 export type LanScanRun = {
   id: string;

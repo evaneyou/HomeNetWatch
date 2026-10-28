@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/evaneyou/homenetwatch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/evaneyou/homenetwatch/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-0.3-informational" />
+  <img alt="Version" src="https://img.shields.io/badge/version-0.5-informational" />
   <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-orange" />
 </p>
 
@@ -28,7 +28,9 @@ degraded, and at which stage a problem starts: DNS, TCP, TLS, or the server's fi
   issue list that records the stage where each failure began.
 - **Internet and web-service checks.** Built-in checks against popular services, plus your own
   HTTP targets.
-- **Wi-Fi scans.** Nearby networks observed by the agent, with history.
+- **Wi-Fi scans and Airwaves Security.** Nearby networks and clients, plus a Security tab for Kismet
+  WIDS alerts, trust attention, and on-demand LAN scans (Scapy and Nmap on the wired LAN).
+- **Server Health.** CPU, memory, disk, database, backups, and interface traffic totals for admins.
 - **Secure enrollment.** Agents check in with a signed request, pin the server's TLS key, wait for
   admin approval, and then receive a WireGuard tunnel to the server.
 - **Retention built in.** Raw results for 6 months, hourly averages up to 12 months, daily averages

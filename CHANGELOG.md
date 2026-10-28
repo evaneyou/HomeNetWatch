@@ -10,6 +10,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Changed
+
+- Landing page (www): project proof copy and figures brought in line with v0.5 (capabilities, 125 PRs, 205 tests).
+
 ## [0.5] - 2026-10-28
 
 ### Added

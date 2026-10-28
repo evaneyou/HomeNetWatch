@@ -612,6 +612,40 @@ def test_path_fail_with_healthy_web_is_not_internet_outage(db):
     assert kpi.incidents(db, HOUR, HOUR + timedelta(hours=1), monitor.id) == []
 
 
+def test_incidents_keep_path_fails_that_have_no_web_cover(db):
+    """Web answered until minute 4, then everything on Wi-Fi died: the fails from minute 8 on are a real outage."""
+    monitor = _pi(db)
+    wired, wifi = _two_links(db, monitor)
+    for minute in range(10):
+        _ping(db, wired, minute, ResultStatus.ok)
+        _ping(db, wifi, minute, ResultStatus.fail, loss=100.0)
+    wifi_web = Test(monitor_id=monitor.id, network_id=wifi.network_id, slug="http-youtube", name="YouTube", kind=TestKind.http, target="x")
+    db.add(wifi_web)
+    db.flush()
+    for minute in range(5):
+        _ping(db, wifi_web, minute, ResultStatus.ok)  # minute 4 still covers fails up to minute 7 (OUTAGE_GAP)
+    db.commit()
+
+    found = kpi.incidents(db, HOUR, HOUR + timedelta(hours=1), monitor.id)
+    assert len(found) == 1
+    assert found[0]["link"] == "wireless" and found[0]["checks"] == 2
+    assert found[0]["start"] == HOUR + timedelta(minutes=8)
+
+    kpi.rebuild(db, HOUR, HOUR + timedelta(hours=1))
+    db.commit()
+    row = db.scalar(select(KpiHourly).where(KpiHourly.monitor_id == monitor.id, KpiHourly.kind == "internet", KpiHourly.link == "wireless"))
+    assert (row.n, row.failed, row.incidents) == (10, 2, 1)
+
+
+def test_nearby_uses_a_sorted_window():
+    base = HOUR
+    times = [base + timedelta(minutes=m) for m in (0, 10, 20)]
+    assert kpi._nearby(times, base + timedelta(minutes=12))  # 10 is within 3 minutes
+    assert kpi._nearby(times, base - timedelta(minutes=3))  # edge of the window counts
+    assert not kpi._nearby(times, base + timedelta(minutes=5))  # 0 and 10 are both 5 away
+    assert not kpi._nearby([], base)
+
+
 def test_tunnel_only_failures_diagnose_as_tunnel_not_wifi(db):
     """Web OK on Wi-Fi while voice fails → measurement tunnel, not local Wi-Fi down."""
     monitor = _pi(db)

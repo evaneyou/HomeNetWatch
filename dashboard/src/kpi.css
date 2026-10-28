@@ -710,6 +710,7 @@
 .kpi-heat {
   --cell: 20px;
   position: relative;
+  overflow: visible;
 }
 
 .kpi-heat-scroll {
@@ -808,7 +809,11 @@
 .kpi-tip {
   position: absolute;
   z-index: 5;
-  min-width: 210px;
+  width: min(280px, calc(100% - 16px));
+  max-width: 280px;
+  max-height: min(70vh, 420px);
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 10px 12px;
   background: #0b1020;
   border: 1px solid var(--k-line);
@@ -818,6 +823,10 @@
   font-size: 13px;
   pointer-events: none;
   transform: translate(-50%, calc(-100% - 8px));
+}
+
+.kpi-tip.is-below {
+  transform: translate(-50%, 8px);
 }
 
 .kpi-tip b {
@@ -864,6 +873,13 @@
   margin: 0;
   font-weight: 700;
   text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.kpi-tip dd.kpi-tip-diagnosis {
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
 }
 
 .kpi-tip dd small {

@@ -246,12 +246,14 @@ def ensure_health_loop() -> None:
         start_kismet = not state._kismet_started
         start_synthetic = not state._synthetic_started
         start_speedtest = not state._speedtest_started
+        start_tunnel = not getattr(state, "_tunnel_started", False)
         state._health_started = True
         state._tests_started = True
         state._scan_started = True
         state._kismet_started = True
         state._synthetic_started = True
         state._speedtest_started = True
+        state._tunnel_started = True
     if start_health:
         threading.Thread(target=health.health_loop, name="health", daemon=True).start()
     if start_tests:
@@ -262,6 +264,10 @@ def ensure_health_loop() -> None:
         threading.Thread(target=radio.kismet_loop, name="kismet", daemon=True).start()
     if start_synthetic:
         threading.Thread(target=scheduler.synthetic_loop, name="synthetic", daemon=True).start()
+    if start_tunnel:
+        from tunnel_watch import tunnel_loop
+
+        threading.Thread(target=tunnel_loop, name="tunnel-watch", daemon=True).start()
     if start_speedtest:
         def _locked_config() -> dict:
             with state._lock:

@@ -609,55 +609,19 @@ def _diagnose_kpi(
     summary: dict[str, dict[str, Any]],
     links: dict[str, dict[str, dict[str, Any]]],
     targets: dict[str, float],
+    *,
+    wireless_tunnel_stale: bool = False,
+    wired_tunnel_stale: bool = False,
 ) -> Optional[dict[str, str]]:
-    """Diagnose whether KPI degradation in the period is Wi-Fi-only, Wired-only, ISP/WAN, or Server/Agent."""
-    def _link_missed(lnk: str) -> list[str]:
-        missed_list = []
-        for k in ("internet", "voice", "video", "web"):
-            avail = links.get(k, {}).get(lnk, {}).get("availability")
-            if avail is not None and avail < targets.get(k, 99.9):
-                missed_list.append(k)
-        for k in ("voice", "video"):
-            loss = links.get(k, {}).get(lnk, {}).get("loss_avg")
-            if loss is not None and loss > targets["loss_pct"] and f"{k}_loss" not in missed_list:
-                missed_list.append("loss")
-        return missed_list
+    """Diagnose Wi-Fi-only, Wired-only, tunnel-only, ISP/WAN, or server/agent degradation."""
+    from app.services.link_correlation import diagnose_from_links
 
-    wired_missed = _link_missed("wired")
-    wifi_missed = _link_missed("wireless")
-    has_both = any("wired" in links.get(k, {}) and "wireless" in links.get(k, {}) for k in ("internet", "voice", "video", "web"))
-
-    if has_both and wifi_missed and not wired_missed:
-        return {
-            "cause": "wifi",
-            "title": "Local Wi-Fi network degradation",
-            "summary": "All service targets were met on Wired Ethernet; packet loss or availability dips occurred only on the Wi-Fi link.",
-        }
-    if has_both and wired_missed and not wifi_missed:
-        return {
-            "cause": "wired",
-            "title": "Local Wired Ethernet degradation",
-            "summary": "All service targets were met on Wi-Fi; packet loss or availability dips occurred only on the Wired Ethernet link.",
-        }
-    if wired_missed and wifi_missed:
-        w_inet = links.get("internet", {}).get("wired", {}).get("availability")
-        f_inet = links.get("internet", {}).get("wireless", {}).get("availability")
-        w_web = links.get("web", {}).get("wired", {}).get("availability")
-        f_web = links.get("web", {}).get("wireless", {}).get("availability")
-        if (w_inet is not None and w_inet < targets["internet"]) and (f_inet is not None and f_inet < targets["internet"]):
-            if (w_web is None or w_web >= targets["web"]) and (f_web is None or f_web >= targets["web"]) and (w_web is not None or f_web is not None):
-                return {
-                    "cause": "server",
-                    "title": "Server path or receiver issue",
-                    "summary": "External Web checks met target on both links while checks to the HomeNetWatch server dipped.",
-                }
-            return {
-                "cause": "wan",
-                "title": "Upstream ISP, remote agent, or WAN outage",
-                "summary": "Checks across both Wired and Wi-Fi dipped during the period, indicating an upstream ISP or connectivity outage rather than individual application faults.",
-            }
-    return None
-
+    return diagnose_from_links(
+        links,
+        targets,
+        wireless_tunnel_stale=wireless_tunnel_stale,
+        wired_tunnel_stale=wired_tunnel_stale,
+    )
 
 def incidents(db: Session, start: datetime, end: datetime, monitor_id: Optional[UUID], limit: int = 10) -> list[dict[str, Any]]:
     """Internet outages in the period: runs of failed pings, newest first. Raw data only, so within six months."""
@@ -822,7 +786,23 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
     weight = sum(count for _value, count in loss_parts)
     app_loss = sum(value * count for value, count in loss_parts) / weight if weight else None
     links = {kind: _by_link(current, kind) for kind in ("internet", "voice", "video", "web")}
-    diagnosis = _diagnose_kpi(summary, links, TARGETS)
+    wireless_stale = False
+    wired_stale = False
+    if monitor_id is not None:
+        from app.models import Monitor
+        from app.services.link_correlation import tunnel_is_stale
+
+        mon = db.get(Monitor, monitor_id)
+        if mon is not None:
+            wireless_stale = tunnel_is_stale(mon, "wireless", now)
+            wired_stale = tunnel_is_stale(mon, "wired", now)
+    diagnosis = _diagnose_kpi(
+        summary,
+        links,
+        TARGETS,
+        wireless_tunnel_stale=wireless_stale,
+        wired_tunnel_stale=wired_stale,
+    )
     return {
         "period": period,
         "day": day,

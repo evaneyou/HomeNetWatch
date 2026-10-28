@@ -45,6 +45,8 @@ need=""
 command -v ping >/dev/null 2>&1 || need="$need iputils-ping"
 command -v mtr >/dev/null 2>&1 || need="$need mtr-tiny"
 command -v iw >/dev/null 2>&1 || need="$need iw"
+command -v nmap >/dev/null 2>&1 || need="$need nmap"
+dpkg -s python3-scapy >/dev/null 2>&1 || need="$need python3-scapy"
 if [ -n "$need" ]; then
   apt-get update
   apt-get install -y $need

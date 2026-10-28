@@ -19,6 +19,7 @@ import AirwavesOverview from "./pages/airwaves/OverviewPage";
 import AirwavesNetworks from "./pages/airwaves/NetworksPage";
 import AirwavesChannels from "./pages/airwaves/ChannelsPage";
 import AirwavesClients from "./pages/airwaves/ClientsPage";
+import AirwavesSecurity from "./pages/airwaves/SecurityPage";
 import GuestVisitsPage from "./pages/GuestVisitsPage";
 import InternetServicePage from "./pages/InternetServicePage";
 import SyntheticPage from "./pages/SyntheticPage";
@@ -343,6 +344,7 @@ function Shell({ role, onLogout }: { role: User["role"]; onLogout: () => void })
             <Route path="networks" element={<AirwavesNetworks />} />
             <Route path="clients" element={<AirwavesClients />} />
             <Route path="channels" element={<AirwavesChannels />} />
+            <Route path="security" element={<AirwavesSecurity />} />
           </Route>
           <Route path="/monitors/:id/connection" element={<ConnectionDiagramPage />} />
           <Route path="/monitors/:id" element={<MonitorPage />} />

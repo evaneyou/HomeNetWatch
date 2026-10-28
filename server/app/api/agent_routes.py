@@ -43,6 +43,7 @@ def _config_out(db: Session, monitor: Monitor) -> DeviceConfigOut:
         tests=[ScheduledTestOut(**item) for item in scheduled_tests(db, monitor)],
         restart=monitor.restart_requested_at is not None,
         scan=monitor.scan_requested_at is not None,
+        lan_scan=monitor.lan_scan_requested_at is not None,
         trusted_bssids=_trusted_bssids(db, monitor.id),
     )
 
@@ -79,6 +80,7 @@ def ack_probe_command(
     return ProbeCommandOut(
         restart=False,
         scan=monitor.scan_requested_at is not None,
+        lan_scan=monitor.lan_scan_requested_at is not None,
         trusted_bssids=_trusted_bssids(db, monitor.id),
     )
 
@@ -206,6 +208,7 @@ def probe_command(
     return ProbeCommandOut(
         restart=monitor.restart_requested_at is not None,
         scan=monitor.scan_requested_at is not None,
+        lan_scan=monitor.lan_scan_requested_at is not None,
         traces=_take_trace_requests(db, monitor),
         trusted_bssids=_trusted_bssids(db, monitor.id),
     )

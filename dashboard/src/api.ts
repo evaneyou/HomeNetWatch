@@ -1,4 +1,17 @@
-import type { EnrollmentRegistration, InternetServiceSetting, RfAp, RfChannelSnapshot, RfClient, RfHistoryPoint, RfOverview, WebServiceSetting, WebStability } from "./types";
+import type {
+  EnrollmentRegistration,
+  InternetServiceSetting,
+  LanScanRun,
+  RfAlert,
+  RfAp,
+  RfChannelSnapshot,
+  RfClient,
+  RfHistoryPoint,
+  RfOverview,
+  SecuritySummary,
+  WebServiceSetting,
+  WebStability,
+} from "./types";
 
 // The session cookie is stored for the API host only. A page opened at
 // localhost cannot use a cookie set by 127.0.0.1, so keep the API on the
@@ -234,4 +247,12 @@ export const api = {
       method: trusted ? "POST" : "DELETE",
       headers: csrfHeaders(csrf),
     }),
+  rfAlerts: (agentId: string, params: Record<string, string>) => {
+    const query = new URLSearchParams({ agent_id: agentId, ...params });
+    return request<RfAlert[]>(`/api/v1/rf/alerts?${query}`);
+  },
+  rfSecurity: (agentId: string) => request<SecuritySummary>(`/api/v1/rf/security?agent_id=${agentId}`),
+  rfLanScans: (agentId: string) => request<LanScanRun[]>(`/api/v1/rf/lan-scans?agent_id=${agentId}&limit=5`),
+  rfLanScanNow: (agentId: string, csrf: string) =>
+    request(`/api/v1/rf/lan-scan?agent_id=${agentId}`, { method: "POST", headers: csrfHeaders(csrf) }),
 };

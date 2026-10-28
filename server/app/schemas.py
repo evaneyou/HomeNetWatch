@@ -229,6 +229,7 @@ class DeviceConfigOut(BaseModel):
     tests: list[ScheduledTestOut] = Field(default_factory=list)
     restart: bool = False
     scan: bool = False
+    lan_scan: bool = False
     trusted_bssids: list[str] = Field(default_factory=list)
 
 
@@ -245,6 +246,7 @@ class TraceResultIn(BaseModel):
 class ProbeCommandOut(BaseModel):
     restart: bool
     scan: bool = False
+    lan_scan: bool = False
     traces: list[dict[str, str]] = Field(default_factory=list)
     trusted_bssids: list[str] = Field(default_factory=list)
 
@@ -660,6 +662,61 @@ class RfScanRequestOut(BaseModel):
     agent_id: UUID
     agent_name: str
     scan_requested_at: datetime
+
+
+class LanScanHostIn(BaseModel):
+    ip: str = Field(min_length=1, max_length=64)
+    mac: str = Field(default="", max_length=17)
+    vendor: str = Field(default="", max_length=128)
+    ports: list[int] = Field(default_factory=list, max_length=64)
+
+
+class LanScanIn(BaseModel):
+    started_at: datetime
+    finished_at: datetime
+    status: str = Field(pattern="^(finished|failed)$")
+    error: str = Field(default="", max_length=400)
+    subnet: str = Field(default="", max_length=64)
+    hosts: list[LanScanHostIn] = Field(default_factory=list, max_length=512)
+
+
+class LanScanHostOut(BaseModel):
+    ip: str
+    mac: str = ""
+    vendor: str = ""
+    ports: list[int] = Field(default_factory=list)
+
+
+class LanScanRunOut(BaseModel):
+    id: UUID
+    status: str
+    subnet: str = ""
+    error: str = ""
+    requested_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    hosts: list[LanScanHostOut] = Field(default_factory=list)
+
+
+class LanScanRequestOut(BaseModel):
+    agent_id: UUID
+    agent_name: str
+    run_id: UUID
+    lan_scan_requested_at: datetime
+
+
+class SecurityAttentionOut(BaseModel):
+    bssid: str
+    ssid: str = ""
+    reason: str
+    issue_title: str = ""
+
+
+class SecuritySummaryOut(BaseModel):
+    airwave_mode: str = "off"
+    open_issues: int = 0
+    attention: list[SecurityAttentionOut] = Field(default_factory=list)
+    last_lan_scan: Optional[LanScanRunOut] = None
 
 
 class WebServiceSettingOut(BaseModel):

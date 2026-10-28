@@ -12,6 +12,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Added
 
+- **LAN scan names devices:** each host in Airwaves Security › Scans now shows its maker (from the MAC's IEEE OUI prefix, using the table that ships with Nmap), the name it announces over mDNS, and the service behind each open port. Randomized MACs are flagged as `Private address`. Migration `0049_lan_scan_hostname`. Agent **0.8.5**.
 - **Tunnel-down alerts and auto-restore:** when a WireGuard handshake goes stale on an online Pi, a `pi` alert names the Wired or Wi-Fi **tunnel** (not an internet outage). Enable Telegram and Notify Pi in Settings to receive it. Agent **0.8.4** watches `10.7.0.1` / `10.7.1.1` and restarts `wg-quick@wg0` / `wg1` through `/opt/monitor/restore_tunnel.sh` (sudoers drop-in).
 
 ### Fixed

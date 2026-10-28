@@ -668,6 +668,7 @@ class LanScanHostIn(BaseModel):
     ip: str = Field(min_length=1, max_length=64)
     mac: str = Field(default="", max_length=17)
     vendor: str = Field(default="", max_length=128)
+    hostname: str = Field(default="", max_length=253)
     ports: list[int] = Field(default_factory=list, max_length=64)
 
 
@@ -684,6 +685,7 @@ class LanScanHostOut(BaseModel):
     ip: str
     mac: str = ""
     vendor: str = ""
+    hostname: str = ""
     ports: list[int] = Field(default_factory=list)
 
 

@@ -55,7 +55,7 @@ A first install still uses `sudo ./install.sh`.
 
 ## LAN scan (Airwaves Security)
 
-On-demand scans from the dashboard use Scapy (ARP discovery) and Nmap (common TCP ports) on the Pi's wired LAN only. Install and update pull in `nmap` and `python3-scapy` when they are missing. WireGuard addresses are never scanned.
+On-demand scans from the dashboard use Scapy (ARP discovery) and Nmap (common TCP ports) on the Pi's wired LAN only. Each host is labelled with its maker, looked up from the MAC's IEEE prefix in the OUI table that ships with Nmap (`/usr/share/nmap/nmap-mac-prefixes`), and with the name it announces over mDNS (a reverse PTR query to `224.0.0.251`, no extra tools). A locally administered MAC (a phone or laptop randomizing its address) is reported as `Private address`. Install and update pull in `nmap` and `python3-scapy` when they are missing. WireGuard addresses are never scanned.
 
 ## Tunnel watch
 

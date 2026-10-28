@@ -569,8 +569,51 @@ def test_single_link_wifi_degradation_keeps_service_kpi_green_and_flags_wifi(db)
     assert history[0]["score"] == pytest.approx(100.0)
 
 
+def test_path_fail_with_healthy_web_is_not_internet_outage(db):
+    """icmp-path to 10.7.x.1 can fail while public web still works — that is tunnel, not ISP down."""
+    monitor = _pi(db)
+    wired, wifi = _two_links(db, monitor)
+    for minute in range(10):
+        _ping(db, wired, minute, ResultStatus.ok)
+        _ping(db, wifi, minute, ResultStatus.fail, loss=100.0)
+    wired_web = Test(
+        monitor_id=monitor.id,
+        network_id=wired.network_id,
+        slug="http-youtube",
+        name="YouTube",
+        kind=TestKind.http,
+        target="https://youtube.com",
+    )
+    wifi_web = Test(
+        monitor_id=monitor.id,
+        network_id=wifi.network_id,
+        slug="http-youtube",
+        name="YouTube",
+        kind=TestKind.http,
+        target="https://youtube.com",
+    )
+    db.add_all([wired_web, wifi_web])
+    db.flush()
+    for minute in range(10):
+        _ping(db, wired_web, minute, ResultStatus.ok)
+        _ping(db, wifi_web, minute, ResultStatus.ok)
+    db.commit()
+
+    kpi.rebuild(db, HOUR, HOUR + timedelta(hours=1))
+    kpi.rebuild_days(db, HOUR.date(), HOUR.date())
+    db.commit()
+
+    rep = kpi.report(db, "day", now=NOW, monitor_id=monitor.id)
+    assert rep["links"]["internet"]["wireless"]["availability"] == pytest.approx(100.0)
+    assert rep["links"]["internet"]["wireless"]["failed"] == 0
+    assert rep["links"]["internet"]["wireless"]["incidents"] == 0
+    assert rep["summary"]["internet"]["availability"] == pytest.approx(100.0)
+    assert rep["summary"]["internet"]["incidents"] == 0
+    assert kpi.incidents(db, HOUR, HOUR + timedelta(hours=1), monitor.id) == []
+
+
 def test_tunnel_only_failures_diagnose_as_tunnel_not_wifi(db):
-    """Path and web OK on Wi-Fi while voice fails → measurement tunnel, not local Wi-Fi down."""
+    """Web OK on Wi-Fi while voice fails → measurement tunnel, not local Wi-Fi down."""
     monitor = _pi(db)
     wired, wifi = _two_links(db, monitor)
     for minute in range(10):

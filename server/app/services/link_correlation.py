@@ -1,8 +1,9 @@
-"""Correlate access-plane health (path/web) vs measurement-tunnel health (WireGuard / RTNP).
+"""Correlate access-plane health (public web) vs measurement-tunnel health (WireGuard / RTNP).
 
-Direct path and web checks leave through the NIC and do not need the WireGuard tunnel.
-Synthetic app flows and tunnel handshakes do. Mixing those planes made a dead wg1 look like
-"Wi-Fi down" or "internet down".
+Public web HTTP checks leave through the NIC to the open internet. Path checks (icmp-path /
+http-path) target the WireGuard peer (``10.7.x.1``) and need the measurement tunnel. Synthetic
+app flows also use the tunnel. Mixing those planes made a dead wg1 look like "Wi-Fi down" or
+"internet down".
 """
 
 from __future__ import annotations
@@ -78,39 +79,29 @@ def access_ok_recent(
     now: datetime,
     window: timedelta = ACCESS_WINDOW,
 ) -> bool:
-    """True if a recent path or web check on this link succeeded (access plane up)."""
+    """True if a recent public web HTTP check on this link succeeded (home internet up).
+
+    Path checks are excluded: they target the WireGuard peer and only prove the tunnel.
+    """
     since = now - window
     kind = network_kind(link)
-    path_ok = db.scalar(
-        select(TestResult.id)
-        .join(Test, TestResult.test_id == Test.id)
-        .join(Network, Test.network_id == Network.id)
-        .where(
-            Test.monitor_id == monitor_id,
-            Network.kind == kind,
-            Test.slug.in_(("icmp-path", "http-path")),
-            TestResult.status == ResultStatus.ok,
-            TestResult.started_at >= since,
+    return (
+        db.scalar(
+            select(TestResult.id)
+            .join(Test, TestResult.test_id == Test.id)
+            .join(Network, Test.network_id == Network.id)
+            .where(
+                Test.monitor_id == monitor_id,
+                Network.kind == kind,
+                Test.slug.startswith("http-"),
+                Test.slug != "http-path",
+                TestResult.status == ResultStatus.ok,
+                TestResult.started_at >= since,
+            )
+            .limit(1)
         )
-        .limit(1)
+        is not None
     )
-    if path_ok is not None:
-        return True
-    web_ok = db.scalar(
-        select(TestResult.id)
-        .join(Test, TestResult.test_id == Test.id)
-        .join(Network, Test.network_id == Network.id)
-        .where(
-            Test.monitor_id == monitor_id,
-            Network.kind == kind,
-            Test.slug.startswith("http-"),
-            Test.slug != "http-path",
-            TestResult.status == ResultStatus.ok,
-            TestResult.started_at >= since,
-        )
-        .limit(1)
-    )
-    return web_ok is not None
 
 
 def correlate_link(
@@ -131,7 +122,7 @@ def correlate_link(
             access_ok=True,
             tunnel_configured=configured,
             tunnel_stale=True,
-            detail=f"The {label} measurement tunnel to the server is down while path or web checks on that link still succeed.",
+            detail=f"The {label} measurement tunnel to the server is down while public web checks on that link still succeed.",
         )
     if access_ok:
         return LinkCorrelation(
@@ -149,7 +140,7 @@ def correlate_link(
             access_ok=False,
             tunnel_configured=configured,
             tunnel_stale=stale,
-            detail="Path and web checks on this link are failing.",
+            detail="Public web checks on this link are failing.",
         )
     if not access_ok:
         return LinkCorrelation(
@@ -158,7 +149,7 @@ def correlate_link(
             access_ok=False,
             tunnel_configured=configured,
             tunnel_stale=stale,
-            detail="Path and web checks on this link are failing.",
+            detail="Public web checks on this link are failing.",
         )
     return LinkCorrelation(link=link, status="unknown", access_ok=access_ok, tunnel_configured=configured, tunnel_stale=stale)
 

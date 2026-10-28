@@ -16,7 +16,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
-- **KPI / Apps diagnosis:** path and web checks prove the access plane. If they stay healthy on a link while voice/video over the tunnel fail, diagnosis is `tunnel` (measurement tunnel or receiver), not local Wi-Fi/Ethernet or internet down. Internet-outage alerts also skip when recent web/path samples on that link still succeed.
+- **KPI internet vs tunnel:** `icmp-path` / `http-path` target the WireGuard peer (`10.7.x.1`), not the open internet. Internet availability, outage minutes, and the outage list no longer count a path fail when a public web check on the same link still succeeds. Access-plane correlation for alerts uses public web only. Rebuild affected KPI hours after deploy.
+- **KPI / Apps diagnosis:** public web proves the access plane. If web stays healthy on a link while voice/video over the tunnel fail, diagnosis is `tunnel` (measurement tunnel or receiver), not local Wi-Fi/Ethernet or internet down. Internet-outage alerts also skip when recent web samples on that link still succeed.
 
 ### Changed
 

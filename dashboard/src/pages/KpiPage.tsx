@@ -270,7 +270,7 @@ function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitor
   const clamp = (day: string) => (since && day < since ? since : day);
   const [last, setLast] = useState(isoToday());
   const [first, setFirst] = useState(() => clamp(shiftDay(isoToday(), -89)));
-  const [tip, setTip] = useState<{ cell: Cell; x: number; y: number } | null>(null);
+  const [tip, setTip] = useState<{ cell: Cell; x: number; y: number; place: "above" | "below" } | null>(null);
   const valid = ISO_DAY.test(first) && ISO_DAY.test(last) && first <= last && first >= shiftDay(last, -400);
   const rows = useQuery({
     queryKey: ["kpi-daily", first, last, monitorId],
@@ -321,8 +321,17 @@ function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitor
     const frame = element.closest(".kpi-heat")?.getBoundingClientRect();
     if (!frame) return;
     const centre = box.left - frame.left + box.width / 2;
-    // Keep the card inside the panel when the square is near an edge.
-    setTip({ cell, x: Math.min(Math.max(centre, 115), Math.max(115, frame.width - 115)), y: box.top - frame.top });
+    // Tip is tall once diagnosis is included; open below when the viewport lacks room above.
+    const tipHeight = 280;
+    const spaceAbove = box.top;
+    const spaceBelow = window.innerHeight - box.bottom;
+    const place: "above" | "below" = spaceAbove < tipHeight && spaceBelow >= Math.min(tipHeight, spaceAbove + 40) ? "below" : "above";
+    setTip({
+      cell,
+      x: Math.min(Math.max(centre, 130), Math.max(130, frame.width - 130)),
+      y: place === "above" ? box.top - frame.top : box.bottom - frame.top,
+      place,
+    });
   }
 
   return (
@@ -401,7 +410,7 @@ function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitor
           </div>
         </div>
         {tip ? (
-          <div className="kpi-tip" role="tooltip" style={{ left: tip.x, top: tip.y }}>
+          <div className={`kpi-tip${tip.place === "below" ? " is-below" : ""}`} role="tooltip" style={{ left: tip.x, top: tip.y }}>
             <b>{niceDay(tip.cell.day)}</b>
             {tip.cell.row ? (
               <>
@@ -449,7 +458,7 @@ function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitor
                   {tip.cell.row.root_cause_title ? (
                     <>
                       <dt>Diagnosis</dt>
-                      <dd>{tip.cell.row.root_cause_title}</dd>
+                      <dd className="kpi-tip-diagnosis">{tip.cell.row.root_cause_title}</dd>
                     </>
                   ) : null}
                   <dt>Offline</dt>

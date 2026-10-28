@@ -10,6 +10,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+## [0.5] - 2026-10-28
+
 ### Added
 
 - **Airwaves Security tab:** next to Channels, with sub-tabs Alerts, Trust and Scans. WIDS (Kismet alerts) with filters for range, severity, trusted-only and search; Trust for evil twins and untrusted same-SSID APs; and on-demand LAN scans (Scapy ARP then Nmap on common TCP ports) on the Pi's wired LAN only, with history. New APIs: filtered `GET /api/v1/rf/alerts`, `GET /api/v1/rf/security`, `POST /api/v1/rf/lan-scan`, `GET /api/v1/rf/lan-scans`, `POST /api/v1/monitors/lan-scan`. Migration `0048_lan_scan`. Agent 0.8.3; install/update pull in `nmap` and `python3-scapy` when missing.
@@ -23,6 +25,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 - New logo: a rounded house with a heartbeat line replaces the house with the magnifying glass. The lettering is unchanged. It is used in the dashboard top bar, the landing page header, the README banner, and as the browser tab icon on the dashboard and the landing page (the dashboard had none).
 - Landing page header: the logo no longer squeezes and the links and the "Open the Live system" button no longer wrap on screens narrower than about 1060px. There the sticky header is only the logo and the button, and the section links sit in a small strip below it that scrolls away. On phones the button reads "Live system".
+- Landing page figures: updated to 125 merged pull requests, 205 automated tests and 30 fixes as of October 28, and the release line records v0.5.
 - Backups are encrypted with age before they are saved. The server keeps the public key only. The private key stays off the machine. Server Health lists Yes or No in an Encrypted column on each copy.
 - Application health charts stack round-trip, jitter, and packet loss in three full-width rows on every app check.
 - Application checks and Internet Connection add a fourth chart, share of each limit. It keeps only the moments that crossed a limit, and each bar is that metric against its own limit, so 100% is the line and past it is a failure. Internet Connection stacks download, ping, and jitter the same way.
@@ -148,6 +151,7 @@ First release.
 
 - iperf3 bandwidth checks. Bandwidth Test is the throughput check.
 
+[0.5]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.5
 [0.4]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.4
 [0.3]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.3
 [0.2]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.2

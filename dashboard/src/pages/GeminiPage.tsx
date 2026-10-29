@@ -41,7 +41,7 @@ export default function GeminiPage() {
     enabled: admin,
   });
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("gemini-2.5-flash");
+  const [model, setModel] = useState("gemini-3.8-flash");
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -50,7 +50,7 @@ export default function GeminiPage() {
   const data = settings.data;
   useEffect(() => {
     if (!data || loaded) return;
-    setModel(data.model || "gemini-2.5-flash");
+    setModel(data.model || "gemini-3.8-flash");
     setLoaded(true);
   }, [data, loaded]);
 

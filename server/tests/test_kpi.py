@@ -710,13 +710,13 @@ def test_gemini_settings_and_on_demand_root_cause_analysis(client: TestClient, d
     db.commit()
 
     fake_key = "AQ." + "B" * 40
-    monkeypatch.setattr(gemini_rca, "verify_key", lambda key, model="gemini-2.5-flash": None)
+    monkeypatch.setattr(gemini_rca, "verify_key", lambda key, model="gemini-3.8-flash": None)
 
     headers = login(client)
     saved = client.put(
         "/api/v1/settings/gemini",
         headers=headers,
-        json={"api_key": fake_key, "model": "gemini-2.5-flash"},
+        json={"api_key": fake_key, "model": "gemini-3.8-flash"},
     )
     assert saved.status_code == 200, saved.text
     body = saved.json()

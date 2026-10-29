@@ -2,10 +2,14 @@
 
 from datetime import datetime, timedelta, timezone
 
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app import alerts
-from app.models import Network, NetworkKind, ResultStatus, Test, TestKind, TestResult
+from app.auth import hash_password
+from app.internet_tests import ensure_internet_tests
+from app.models import MonitorStatus, Network, NetworkKind, ResultStatus, Test, TestKind, TestResult, User, UserRole
+from conftest import login
 from tests.test_ingest import _make_monitor
 
 NOW = datetime(2026, 10, 28, 15, 0, tzinfo=timezone.utc)
@@ -217,4 +221,59 @@ def test_alert_hierarchy_collapses_dual_link_bandwidth_and_suppresses_apps_and_p
     assert keys == [f"net-bandwidth:{monitor.id}:wan"]
     assert "ISP bandwidth drop" in conditions[0].title
     assert "0.6 Mbps" in conditions[0].detail
+
+
+def test_summary_blames_tunnel_not_wifi_when_web_ok_and_handshake_stale(client: TestClient, db):
+    now = datetime.now(timezone.utc)
+    monitor, _token = _make_monitor(db, "Overview Tunnel Pi")
+    monitor.status = MonitorStatus.online
+    monitor.last_seen_at = now
+    monitor.wg_address = "10.7.0.8"
+    monitor.wg_wireless_address = "10.7.1.8"
+    monitor.last_handshake_at = now - timedelta(minutes=1)
+    monitor.last_wireless_handshake_at = now - timedelta(minutes=45)
+    ensure_internet_tests(db, monitor)
+    db.commit()
+
+    def _latest(test: Test, status: ResultStatus, extra: dict | None = None) -> None:
+        db.add(
+            TestResult(
+                external_id=f"{test.slug}-{test.network.slug}-{monitor.id.hex[:8]}",
+                test_id=test.id,
+                started_at=now - timedelta(seconds=30),
+                finished_at=now - timedelta(seconds=20),
+                status=status,
+                metrics=extra or {},
+            )
+        )
+        test.stable_status = status
+        test.state_since = now - timedelta(minutes=20)
+
+    tests = db.scalars(select(Test).where(Test.monitor_id == monitor.id)).all()
+    for test in tests:
+        net = test.network.slug
+        if test.slug in ("icmp-path", "http-path"):
+            _latest(test, ResultStatus.fail if net == "wifi" else ResultStatus.ok)
+        elif test.slug.startswith("http-") and test.slug != "http-path":
+            _latest(test, ResultStatus.ok)
+        elif test.slug == "librespeed":
+            _latest(
+                test,
+                ResultStatus.fail if net == "wifi" else ResultStatus.ok,
+                {"down_mbps": 0.0, "up_mbps": 0.0} if net == "wifi" else {"down_mbps": 300.0, "up_mbps": 30.0},
+            )
+    if db.scalar(select(User).where(User.username == "admin")) is None:
+        db.add(User(username="admin", password_hash=hash_password("admin-change-me"), role=UserRole.admin, is_active=True))
+    db.commit()
+
+    headers = login(client)
+    data = client.get("/api/v1/summary", headers=headers).json()
+    assert data["diagnoses"][str(monitor.id)]["cause"] == "tunnel"
+    wifi_inet = next(
+        c
+        for c in data["matrix"]
+        if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wifi" and c["column"] == "internet"
+    )
+    assert wifi_inet["cause"] == "tunnel"
+    assert wifi_inet["status"] in ("degraded", "fail")
 

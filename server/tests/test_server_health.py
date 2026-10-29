@@ -539,3 +539,73 @@ def test_report_has_machine_totals_and_the_app_container(client, db):
     db.execute(delete(ServerSample))
     db.commit()
     assert client.get("/api/v1/server-health?range=1h").json()["traffic"] is None
+
+
+def test_fault_simulation_viewer_refused_missing_key_and_mocked_success(client, db, monkeypatch):
+    from app import gemini_rca
+    from app.models import GeminiSetting
+
+    _user(db, "viewer-fault", UserRole.viewer)
+    login(client, "viewer-fault", "viewer-fault")
+    assert (
+        client.post(
+            "/api/v1/server-health/fault-simulation",
+            json={"prompt": "Wi-Fi apps fail but web is fine"},
+        ).status_code
+        == 403
+    )
+
+    _user(db, "admin", UserRole.admin)
+    login(client)
+    db.execute(delete(GeminiSetting))
+    db.commit()
+    missing = client.post(
+        "/api/v1/server-health/fault-simulation",
+        json={"prompt": "Wi-Fi apps fail but web is fine"},
+    )
+    assert missing.status_code == 400
+    assert "Gemini API key" in missing.json()["detail"]
+
+    fake_key = "AQ." + "C" * 40
+    monkeypatch.setattr(gemini_rca, "verify_key", lambda key, model="gemini-3.8-flash": None)
+    headers = login(client)
+    saved = client.put(
+        "/api/v1/settings/gemini",
+        headers=headers,
+        json={"api_key": fake_key, "model": "gemini-3.8-flash"},
+    )
+    assert saved.status_code == 200, saved.text
+
+    def fake_call_gemini(api_key, model, system_prompt, user_payload, json_mode=True):
+        assert api_key == fake_key
+        assert "fault_simulation" in user_payload or "Wi-Fi" in user_payload
+        assert "tunnel-down" in system_prompt or "BEHAVIOR" in system_prompt or "Access plane" in system_prompt
+        return {
+            "assumptions": ["Single home sensor with wired and wifi"],
+            "interpretation": "Public web OK on Wi-Fi; tunnel-backed apps fail against 10.7.1.1.",
+            "detection": ["stale last_wireless_handshake_at", "synthetic wireless fail"],
+            "overview": {
+                "matrix": "Wi-Fi web green; internet/apps red or amber",
+                "cause": "tunnel",
+                "detail": "Access plane healthy; measurement tunnel dead",
+            },
+            "alerts": {
+                "fires": ["tunnel-down:{id}:wireless"],
+                "suppresses": ["net-down on wifi because access_ok_recent"],
+            },
+            "logs": ["tunnel_watch: wg1 restore"],
+            "self_heal": "tunnel_watch restores wg1 on ~60s recovery cooldown once access is ok",
+            "will_not_happen": ["net-down:wan blaming the ISP"],
+        }
+
+    monkeypatch.setattr(gemini_rca, "call_gemini", fake_call_gemini)
+    ok = client.post(
+        "/api/v1/server-health/fault-simulation",
+        headers=headers,
+        json={"prompt": "Wi-Fi public web is fine but apps time out to 10.7.1.1"},
+    )
+    assert ok.status_code == 200, ok.text
+    body = ok.json()
+    assert body["overview"]["cause"] == "tunnel"
+    assert "tunnel-down:{id}:wireless" in body["alerts"]["fires"]
+    assert "ISP" in body["will_not_happen"][0] or "net-down:wan" in body["will_not_happen"][0]

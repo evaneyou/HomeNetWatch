@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   CartesianGrid,
@@ -753,8 +753,256 @@ export function ServerHealthPackagePage() {
   );
 }
 
-const SECTIONS = ["cpu", "memory", "interface", "storage", "database", "backup", "software", "stuck"] as const;
+const SECTIONS = [
+  "cpu",
+  "memory",
+  "interface",
+  "storage",
+  "database",
+  "backup",
+  "software",
+  "stuck",
+  "fault-simulation",
+] as const;
 type SectionKey = (typeof SECTIONS)[number];
+
+type FaultSimulationReport = {
+  generated_at: string;
+  model: string;
+  prompt: string;
+  assumptions: string[];
+  interpretation: string;
+  detection: string[];
+  overview: { matrix: string; cause: string; detail: string };
+  alerts: { fires: string[]; suppresses: string[] };
+  logs: string[];
+  self_heal: string;
+  will_not_happen: string[];
+};
+
+const FAULT_EXAMPLES = [
+  "ISP is down on both Wired and Wi-Fi",
+  "Wi-Fi public web is fine but apps time out to 10.7.1.1",
+  "LibreSpeed upload collapses on both links",
+  "The Pi is powered off",
+  "ISP came back but Wi-Fi apps are still down",
+];
+
+function parseApiError(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error ?? "Could not run Fault Simulation.");
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown };
+    if (typeof parsed.detail === "string") return parsed.detail;
+  } catch {
+    // plain text
+  }
+  return text;
+}
+
+function FaultSimulationPanel() {
+  const [prompt, setPrompt] = useState("");
+  const mutation = useMutation({
+    mutationFn: (text: string) => api.faultSimulation(text.trim()) as Promise<FaultSimulationReport>,
+  });
+  const report = mutation.data;
+  const errorText = mutation.isError ? parseApiError(mutation.error) : null;
+
+  function run(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setPrompt(trimmed);
+    mutation.mutate(trimmed);
+  }
+
+  return (
+    <div className="panel fault-sim" key="fault-simulation">
+      <div className="fault-sim-header">
+        <h2 className="server-health-heading">Fault Simulation</h2>
+        <p className="muted server-health-note">
+          Describe a failure. HomeNetWatch explains what Overview, alerts, logs, and self-heal would do.
+          Uses the same Gemini API key and model as the KPI Dashboard root-cause tool. Nothing is written
+          to the live sensors or Telegram.
+        </p>
+      </div>
+      <div className="fault-sim-split">
+        <aside className="fault-sim-input">
+          <label className="fault-sim-label" htmlFor="fault-sim-prompt">
+            Prompt
+          </label>
+          <textarea
+            id="fault-sim-prompt"
+            className="fault-sim-prompt"
+            rows={8}
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            placeholder="Example: Wi-Fi can reach Google, but voice and video fail against 10.7.1.1"
+            maxLength={4000}
+            disabled={mutation.isPending}
+          />
+          <p className="muted fault-sim-count">{prompt.length} / 4000</p>
+          <h3 className="fault-sim-label">Example scenarios</h3>
+          <div className="fault-sim-examples" role="list">
+            {FAULT_EXAMPLES.map((example) => {
+              const active = prompt === example;
+              return (
+                <button
+                  key={example}
+                  type="button"
+                  role="listitem"
+                  className={`fault-sim-example${active ? " active" : ""}`}
+                  disabled={mutation.isPending}
+                  onClick={() => run(example)}
+                >
+                  {example}
+                </button>
+              );
+            })}
+          </div>
+          <div className="fault-sim-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={mutation.isPending || !prompt.trim()}
+              onClick={() => run(prompt)}
+            >
+              {mutation.isPending ? "Simulating…" : "Simulate"}
+            </button>
+            <Link className="muted" to="/settings/gemini">
+              Same key as KPI · Configure Gemini AI
+            </Link>
+          </div>
+        </aside>
+        <section className="fault-sim-output" aria-live="polite">
+          <div className="fault-sim-output-head">
+            <h3 className="server-health-heading">Walkthrough</h3>
+            {report ? (
+              <p className="muted server-health-note">
+                Model {report.model}
+                {report.generated_at ? ` · ${when(report.generated_at)}` : ""}
+              </p>
+            ) : null}
+          </div>
+          {mutation.isPending ? <div className="state-box">Simulating…</div> : null}
+          {!mutation.isPending && errorText ? (
+            <div className="state-box">
+              <p>{errorText}</p>
+              {errorText.toLowerCase().includes("gemini api key") ? (
+                <p>
+                  <Link to="/settings/gemini">Open Settings → Configure Gemini AI</Link> to save your API key.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {!mutation.isPending && !errorText && !report ? (
+            <div className="state-box">
+              Pick an example or write a prompt, then Simulate. The walkthrough appears here.
+            </div>
+          ) : null}
+          {!mutation.isPending && report ? <FaultSimulationResult report={report} /> : null}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function FaultSimulationResult({ report }: { report: FaultSimulationReport }) {
+  return (
+    <div className="fault-sim-result">
+      {report.assumptions.length > 0 ? (
+        <FaultSimBlock title="Assumptions">
+          <ul>
+            {report.assumptions.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </FaultSimBlock>
+      ) : null}
+      <FaultSimBlock title="Scenario interpretation">
+        <p>{report.interpretation || "—"}</p>
+      </FaultSimBlock>
+      <FaultSimBlock title="Detection">
+        {report.detection.length === 0 ? (
+          <p className="muted">—</p>
+        ) : (
+          <ul>
+            {report.detection.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        )}
+      </FaultSimBlock>
+      <FaultSimBlock title="Overview">
+        <p>
+          <span className="fault-sim-cause">{report.overview.cause || "unknown"}</span>
+        </p>
+        <p>{report.overview.matrix || "—"}</p>
+        {report.overview.detail ? <p className="muted">{report.overview.detail}</p> : null}
+      </FaultSimBlock>
+      <FaultSimBlock title="Alerts">
+        <p>
+          <strong>Fires</strong>
+        </p>
+        {report.alerts.fires.length === 0 ? (
+          <p className="muted">None</p>
+        ) : (
+          <ul>
+            {report.alerts.fires.map((item) => (
+              <li key={item}>
+                <code>{item}</code>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p>
+          <strong>Suppresses</strong>
+        </p>
+        {report.alerts.suppresses.length === 0 ? (
+          <p className="muted">None</p>
+        ) : (
+          <ul>
+            {report.alerts.suppresses.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        )}
+      </FaultSimBlock>
+      <FaultSimBlock title="Logs">
+        {report.logs.length === 0 ? (
+          <p className="muted">—</p>
+        ) : (
+          <ul>
+            {report.logs.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        )}
+      </FaultSimBlock>
+      <FaultSimBlock title="Self-heal">
+        <p>{report.self_heal || "none"}</p>
+      </FaultSimBlock>
+      <FaultSimBlock title="What will not happen">
+        {report.will_not_happen.length === 0 ? (
+          <p className="muted">—</p>
+        ) : (
+          <ul>
+            {report.will_not_happen.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        )}
+      </FaultSimBlock>
+    </div>
+  );
+}
+
+function FaultSimBlock({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="fault-sim-block">
+      <h3 className="server-health-heading">{title}</h3>
+      {children}
+    </section>
+  );
+}
 
 /** The figures are the buttons. Software and Processes get tiles of their own. */
 function CardTabs({
@@ -818,6 +1066,12 @@ function CardTabs({
       value: report.stuck.length === 0 ? "None stuck" : `${report.stuck.length} stuck`,
       note: "look stuck",
       warn: report.stuck.length > 0,
+    },
+    {
+      key: "fault-simulation",
+      label: "Fault Simulation",
+      value: "What-if",
+      note: "prompt walkthrough",
     },
   ];
   return (
@@ -1125,10 +1379,17 @@ export default function ServerHealthPage() {
             )}
           </div>
         );
+      case "fault-simulation":
+        return <FaultSimulationPanel />;
     }
   }
 
-  const graphTab = active !== "software" && active !== "stuck" && active !== "storage" && active !== "backup";
+  const graphTab =
+    active !== "software" &&
+    active !== "stuck" &&
+    active !== "storage" &&
+    active !== "backup" &&
+    active !== "fault-simulation";
 
   return (
     <div className="server-health">

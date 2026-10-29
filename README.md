@@ -30,7 +30,7 @@ degraded, and at which stage a problem starts: DNS, TCP, TLS, or the server's fi
   HTTP targets.
 - **Wi-Fi scans and Airwaves Security.** Nearby networks and clients, plus a Security tab for Kismet
   WIDS alerts, trust attention, and on-demand LAN scans (Scapy and Nmap on the wired LAN).
-- **Server Health.** CPU, memory, disk, database, backups, and interface traffic totals for admins.
+- **Server Health.** CPU, memory, disk, database, backups, and interface traffic totals for admins, plus Fault Simulation (prompt-based walkthrough of alerts and Overview behavior; does not inject live data).
 - **Secure enrollment.** Agents check in with a signed request, pin the server's TLS key, wait for
   admin approval, and then receive a WireGuard tunnel to the server.
 - **Retention built in.** Raw results for 6 months, hourly averages up to 12 months, daily averages

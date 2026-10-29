@@ -101,6 +101,13 @@ class Enroller(private val store: Store) {
     }
 
     companion object {
+        /** What to call this device when asked: the maker and model, for example "NVIDIA SHIELD Android TV". */
+        fun deviceLabel(): String {
+            val maker = Build.MANUFACTURER.trim()
+            val model = Build.MODEL.trim()
+            return if (model.startsWith(maker, ignoreCase = true) || maker.isEmpty()) model else "$maker $model"
+        }
+
         fun hostname(): String {
             val model = Build.MODEL.lowercase().replace(Regex("[^a-z0-9-]"), "").trim('-')
             return ("android-" + model).take(63).trim('-').ifEmpty { "android-agent" }

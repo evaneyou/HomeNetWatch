@@ -15,6 +15,7 @@ import android.widget.TextView
 class MainActivity : Activity() {
     private lateinit var store: Store
     private val handler = Handler(Looper.getMainLooper())
+    private lateinit var device: TextView
     private lateinit var status: TextView
     private lateinit var code: TextView
     private lateinit var where: TextView
@@ -42,6 +43,7 @@ class MainActivity : Activity() {
             setPadding(0, 10, 0, 10)
         }
         column.addView(text(34f, "#E8ECF8", true).apply { this.text = "HomeNetWatch agent" })
+        device = text(20f, "#C3CCE6").also { column.addView(it) }
         status = text(24f, "#4FD1B5", true).also { column.addView(it) }
         code = text(44f, "#E8ECF8", true).apply { typeface = Typeface.MONOSPACE }.also { column.addView(it) }
         where = text(22f, "#C3CCE6").also { column.addView(it) }
@@ -72,6 +74,7 @@ class MainActivity : Activity() {
 
     private fun draw() {
         val address = Enroller.localIpv4()
+        device.text = "This device: ${Enroller.deviceLabel()}  (reports as ${Enroller.hostname()})"
         code.text = store.ensureInstallerCode()
         status.text = when (store.state) {
             "approved" -> "Approved as ${store.name.ifEmpty { "this device" }}"

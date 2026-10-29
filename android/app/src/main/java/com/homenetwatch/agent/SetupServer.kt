@@ -106,6 +106,7 @@ button{margin-top:18px;padding:12px 20px;border:0;border-radius:10px;background:
 .code{font:700 26px ui-monospace,monospace;letter-spacing:2px;background:#161d2f;padding:12px;border-radius:10px;display:inline-block}
 .note{background:#1d2a2b;padding:10px;border-radius:10px}small{color:#9aa6c4}</style></head><body>
 <h1>HomeNetWatch Android agent</h1>
+<p>This device: <b>${escape(Enroller.deviceLabel())}</b> <small>(reports as ${escape(Enroller.hostname())})</small></p>
 <p>$status</p>$note
 <p>Installer code<br><span class=code>${escape(code)}</span></p>
 <ol><li>In the dashboard, open <b>Remote Agent Onboarding</b>. Enter the installer code above and the device name, then register it.</li>

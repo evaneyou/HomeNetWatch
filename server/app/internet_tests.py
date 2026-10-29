@@ -290,10 +290,10 @@ PATH_SLUGS = frozenset({"http-path", "icmp-path", "mtr-path"})
 
 
 def matrix_column(network_slug: str, test_slug: str) -> str | None:
-    """Dashboard column for a test. Internet path checks and web services are separate."""
+    """Dashboard column for a test. Internet path checks, bandwidth tests, and web services."""
     if network_slug not in {"wan", "wired", "wifi"}:
         return network_slug
-    if test_slug in PATH_SLUGS:
+    if test_slug in PATH_SLUGS or test_slug == "librespeed":
         return "internet"
     kind, _, key = test_slug.partition("-")
     if kind in {"http", "icmp", "mtr"} and key and key != "path":

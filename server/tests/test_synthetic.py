@@ -901,3 +901,11 @@ def test_bandwidth_collapse_diagnosed_as_root_cause_on_synthetic_health(client, 
     assert "0.6 Mbps" in diag["summary"]
     assert "0.5 Mbps" in diag["summary"]
 
+    summary = client.get("/api/v1/summary", headers=headers).json()
+    assert summary["diagnoses"][str(monitor.id)]["cause"] == "bandwidth"
+    wired_inet = next(c for c in summary["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wired" and c["column"] == "internet")
+    wifi_inet = next(c for c in summary["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wifi" and c["column"] == "internet")
+    assert wired_inet["status"] in ("degraded", "fail") and wired_inet["cause"] == "bandwidth"
+    assert wifi_inet["status"] in ("degraded", "fail") and wifi_inet["cause"] == "bandwidth"
+
+

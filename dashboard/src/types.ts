@@ -17,7 +17,7 @@ export type HealthCell = {
   last_test_at: string | null;
   failing_tests: number;
   quorum?: { bad: number; total: number } | null;
-  cause?: "wifi" | "wired" | "wan" | "server" | "agent" | "service" | null;
+  cause?: "wifi" | "wired" | "wan" | "bandwidth" | "tunnel" | "server" | "agent" | "service" | null;
 };
 
 export type IssueSummary = {

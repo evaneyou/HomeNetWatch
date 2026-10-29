@@ -555,6 +555,16 @@ def test_fault_simulation_viewer_refused_missing_key_and_mocked_success(client, 
         == 403
     )
 
+    _user(db, "guest-fault", UserRole.guest)
+    login(client, "guest-fault", "guest-fault")
+    assert (
+        client.post(
+            "/api/v1/server-health/fault-simulation",
+            json={"prompt": "Wi-Fi apps fail but web is fine"},
+        ).status_code
+        == 403
+    )
+
     _user(db, "admin", UserRole.admin)
     login(client)
     db.execute(delete(GeminiSetting))

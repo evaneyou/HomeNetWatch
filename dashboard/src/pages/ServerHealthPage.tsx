@@ -17,6 +17,7 @@ import { api } from "../api";
 import { TimeAxis } from "../components/InternetDetail";
 import { CHART_COLORS } from "../chartTheme";
 import { chartWindow, formatChartTick } from "../chartTime";
+import type { User } from "../types";
 
 type Range = "1h" | "6h" | "24h" | "7d";
 type Point = {
@@ -788,6 +789,50 @@ const FAULT_EXAMPLES = [
   "ISP came back but Wi-Fi apps are still down",
 ];
 
+const FAULT_DEMO_PROMPT = "Wi-Fi public web is fine but apps time out to 10.7.1.1";
+
+const FAULT_DEMO_REPORT: FaultSimulationReport = {
+  generated_at: "",
+  model: "demo",
+  prompt: FAULT_DEMO_PROMPT,
+  assumptions: [
+    "One home sensor with Wired and Wi-Fi links",
+    "Public HTTP checks on Wi-Fi still succeed",
+    "Voice/video/apps target the Wi-Fi measurement tunnel peer 10.7.1.1",
+    "The Wi-Fi WireGuard handshake is stale while the Pi is still checking in",
+  ],
+  interpretation:
+    "Access plane on Wi-Fi is healthy (Google and other public sites work), but tunnel-backed checks fail. That is a measurement-tunnel fault on wg1, not an ISP outage and not a dead Wi-Fi radio.",
+  detection: [
+    "Public web tests on network wifi stay ok",
+    "icmp-path / http-path and synthetic samples on wireless fail or time out to 10.7.1.1",
+    "Monitor.last_wireless_handshake_at is stale (≥ ~10 minutes) while last_seen_at is fresh",
+  ],
+  overview: {
+    matrix: "Wi-Fi web green; Wi-Fi internet/apps amber or red. Wired stays healthy if its tunnel is up.",
+    cause: "tunnel",
+    detail: "Overview attributes tunnel when public web is OK but tunnel-backed path/apps fail or the wireless handshake is stale.",
+  },
+  alerts: {
+    fires: ["tunnel-down:{monitor_id}:wireless"],
+    suppresses: [
+      "net-down / net-degraded on wifi (access_ok_recent with stale tunnel)",
+      "app:{run}:{wireless} while tunnel-down is open and web is OK",
+    ],
+  },
+  logs: [
+    "Agent health last_error may mention timed out connecting to 10.7.1.1",
+    "SystemLog / tunnel_watch notes about wg1 peer fails and restore_tunnel.sh",
+  ],
+  self_heal:
+    "tunnel_watch (agent 0.8.6+) restores wg1 after two failed peer pings. While home internet on that link is up, recovery cooldown is about 60 seconds so PostUp re-pins the current gateway.",
+  will_not_happen: [
+    "net-down:{monitor}:wan blaming a shared ISP outage",
+    "Overview cause wifi for a radio/AP failure (web would be down too)",
+    "Telegram app alerts as the primary signal while tunnel-down suppresses them",
+  ],
+};
+
 function parseApiError(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error ?? "Could not run Fault Simulation.");
   try {
@@ -800,18 +845,30 @@ function parseApiError(error: unknown): string {
 }
 
 function FaultSimulationPanel() {
+  const me = useQuery({ queryKey: ["me"], queryFn: () => api.me() as Promise<User> });
+  const admin = me.data?.role === "admin";
   const [prompt, setPrompt] = useState("");
+  const [demoReport, setDemoReport] = useState<FaultSimulationReport | null>(null);
   const mutation = useMutation({
     mutationFn: (text: string) => api.faultSimulation(text.trim()) as Promise<FaultSimulationReport>,
   });
-  const report = mutation.data;
-  const errorText = mutation.isError ? parseApiError(mutation.error) : null;
 
-  function run(text: string) {
+  const liveReport = admin ? mutation.data : undefined;
+  const report = admin ? liveReport : demoReport;
+  const errorText = admin && mutation.isError ? parseApiError(mutation.error) : null;
+  const pending = admin && mutation.isPending;
+
+  function runLive(text: string) {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || !admin) return;
     setPrompt(trimmed);
+    setDemoReport(null);
     mutation.mutate(trimmed);
+  }
+
+  function runDemo() {
+    setPrompt(FAULT_DEMO_PROMPT);
+    setDemoReport({ ...FAULT_DEMO_REPORT, generated_at: new Date().toISOString() });
   }
 
   return (
@@ -819,9 +876,9 @@ function FaultSimulationPanel() {
       <div className="fault-sim-header">
         <h2 className="server-health-heading">Fault Simulation</h2>
         <p className="muted server-health-note">
-          Describe a failure. HomeNetWatch explains what Overview, alerts, logs, and self-heal would do.
-          Uses the same Gemini API key and model as the KPI Dashboard root-cause tool. Nothing is written
-          to the live sensors or Telegram.
+          {admin
+            ? "Describe a failure. HomeNetWatch explains what Overview, alerts, logs, and self-heal would do. Uses the same Gemini API key and model as the KPI Dashboard root-cause tool. Nothing is written to the live sensors or Telegram."
+            : "Guests see a canned demo walkthrough. Live prompts that call Gemini are admin-only."}
         </p>
       </div>
       <div className="fault-sim-split">
@@ -834,42 +891,67 @@ function FaultSimulationPanel() {
             className="fault-sim-prompt"
             rows={8}
             value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Example: Wi-Fi can reach Google, but voice and video fail against 10.7.1.1"
+            onChange={(event) => {
+              if (!admin) return;
+              setPrompt(event.target.value);
+            }}
+            placeholder={
+              admin
+                ? "Example: Wi-Fi can reach Google, but voice and video fail against 10.7.1.1"
+                : "Press Run demo to fill this prompt and show a sample walkthrough"
+            }
             maxLength={4000}
-            disabled={mutation.isPending}
+            readOnly={!admin}
+            disabled={pending}
           />
-          <p className="muted fault-sim-count">{prompt.length} / 4000</p>
-          <h3 className="fault-sim-label">Example scenarios</h3>
-          <div className="fault-sim-examples" role="list">
-            {FAULT_EXAMPLES.map((example) => {
-              const active = prompt === example;
-              return (
-                <button
-                  key={example}
-                  type="button"
-                  role="listitem"
-                  className={`fault-sim-example${active ? " active" : ""}`}
-                  disabled={mutation.isPending}
-                  onClick={() => run(example)}
-                >
-                  {example}
-                </button>
-              );
-            })}
-          </div>
+          {admin ? <p className="muted fault-sim-count">{prompt.length} / 4000</p> : null}
+          {admin ? (
+            <>
+              <h3 className="fault-sim-label">Example scenarios</h3>
+              <div className="fault-sim-examples" role="list">
+                {FAULT_EXAMPLES.map((example) => {
+                  const active = prompt === example;
+                  return (
+                    <button
+                      key={example}
+                      type="button"
+                      role="listitem"
+                      className={`fault-sim-example${active ? " active" : ""}`}
+                      disabled={pending}
+                      onClick={() => runLive(example)}
+                    >
+                      {example}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <p className="muted server-health-note fault-sim-demo-note">
+              Demo scenario: Wi-Fi web stays up while apps fail against the measurement tunnel (
+              <code>10.7.1.1</code>).
+            </p>
+          )}
           <div className="fault-sim-actions">
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={mutation.isPending || !prompt.trim()}
-              onClick={() => run(prompt)}
-            >
-              {mutation.isPending ? "Simulating…" : "Simulate"}
-            </button>
-            <Link className="muted" to="/settings/gemini">
-              Same key as KPI · Configure Gemini AI
-            </Link>
+            {admin ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={pending || !prompt.trim()}
+                  onClick={() => runLive(prompt)}
+                >
+                  {pending ? "Simulating…" : "Simulate"}
+                </button>
+                <Link className="muted" to="/settings/gemini">
+                  Same key as KPI · Configure Gemini AI
+                </Link>
+              </>
+            ) : (
+              <button type="button" className="btn btn-primary" onClick={runDemo}>
+                Run demo
+              </button>
+            )}
           </div>
         </aside>
         <section className="fault-sim-output" aria-live="polite">
@@ -877,13 +959,13 @@ function FaultSimulationPanel() {
             <h3 className="server-health-heading">Walkthrough</h3>
             {report ? (
               <p className="muted server-health-note">
-                Model {report.model}
+                {report.model === "demo" ? "Demo sample" : `Model ${report.model}`}
                 {report.generated_at ? ` · ${when(report.generated_at)}` : ""}
               </p>
             ) : null}
           </div>
-          {mutation.isPending ? <div className="state-box">Simulating…</div> : null}
-          {!mutation.isPending && errorText ? (
+          {pending ? <div className="state-box">Simulating…</div> : null}
+          {!pending && errorText ? (
             <div className="state-box">
               <p>{errorText}</p>
               {errorText.toLowerCase().includes("gemini api key") ? (
@@ -893,12 +975,14 @@ function FaultSimulationPanel() {
               ) : null}
             </div>
           ) : null}
-          {!mutation.isPending && !errorText && !report ? (
+          {!pending && !errorText && !report ? (
             <div className="state-box">
-              Pick an example or write a prompt, then Simulate. The walkthrough appears here.
+              {admin
+                ? "Pick an example or write a prompt, then Simulate. The walkthrough appears here."
+                : "Press Run demo to fill the prompt and show a sample walkthrough."}
             </div>
           ) : null}
-          {!mutation.isPending && report ? <FaultSimulationResult report={report} /> : null}
+          {!pending && report ? <FaultSimulationResult report={report} /> : null}
         </section>
       </div>
     </div>

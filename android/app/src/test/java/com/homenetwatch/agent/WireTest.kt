@@ -64,6 +64,32 @@ class WireTest {
         }
     }
 
+    // Built by the server's own code path (server/app/api/enrollment_routes.py setup_key) from these two pins.
+    private val setupKey = "hnw1.eyJ1IjoiaHR0cHM6Ly9saXZlLmV4YW1wbGUuY29tIiwicCI6WyJzaGEyNTYvQVFFQkFRRUJBUUVCQVFFQkFRRUJBUUVCQVFFQkFRRUJBUUVCQVFFQkFRRT0iLCJzaGEyNTYvQWdJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnST0iXX0"
+
+    @Test
+    fun setupKeyFromTheServerGivesTheAddressAndBothPins() {
+        val key = Wire.parseSetupKey(setupKey)
+        assertEquals("https://live.example.com", key.serverUrl)
+        assertEquals(
+            listOf("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI="),
+            key.pins,
+        )
+        // A key pasted with line breaks, as a phone often does, still works.
+        assertEquals(key.serverUrl, Wire.parseSetupKey(setupKey.chunked(40).joinToString("\n")).serverUrl)
+    }
+
+    @Test
+    fun badSetupKeysAreRefusedWithAReason() {
+        for (bad in listOf("", "https://live.example.com", "hnw1.not-base64!!", "hnw1.e30")) {
+            try {
+                Wire.parseSetupKey(bad)
+                fail("expected a refusal for: $bad")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+    }
+
     @Test
     fun enrollmentUsesHttpsOnPort8848() {
         assertEquals("https://live.example.com:8848", Wire.enrollmentBase("https://live.example.com/some/path"))

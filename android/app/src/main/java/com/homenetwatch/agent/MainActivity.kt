@@ -79,7 +79,8 @@ class MainActivity : Activity() {
             else -> "Not set up yet"
         }
         where.text = if (store.state == "approved") "" else
-            "On your phone, open  http://${address ?: "this device's address"}:${SetupServer.PORT}  to enter the server address and key."
+            "1. Register this code on the dashboard with a device name.\n" +
+                "2. On your phone, open  http://${address ?: "this device's address"}:${SetupServer.PORT}  and paste the setup key the dashboard shows."
         detail.text = store.lastError
     }
 }

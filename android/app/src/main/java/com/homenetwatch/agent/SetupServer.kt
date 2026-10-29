@@ -79,16 +79,14 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
             if (key.isEmpty()) null else key to URLDecoder.decode(it.substringAfter("=", ""), "UTF-8")
         }.toMap()
         return try {
-            val url = form["server_url"].orEmpty().trim()
-            Wire.enrollmentBase(url)
-            val pins = Wire.parsePins(form["pins"].orEmpty())
-            store.serverUrl = url
-            store.pins = pins.joinToString(" ")
+            val key = Wire.parseSetupKey(form["setup_key"].orEmpty())
+            store.serverUrl = key.serverUrl
+            store.pins = key.pins.joinToString(" ")
             store.state = "waiting_for_approval"
             store.lastError = ""
-            "Saved. Now enter the installer code shown on the screen into the dashboard's Enrollment page."
+            "Saved. Waiting for the dashboard to approve this device."
         } catch (failure: IllegalArgumentException) {
-            "Not saved: " + (failure.message ?: "check the values")
+            "Not saved: " + (failure.message ?: "check the setup key")
         }
     }
 
@@ -103,17 +101,17 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
         return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HomeNetWatch Android agent</title>
 <style>body{font:16px system-ui;margin:0;padding:20px;background:#0f1424;color:#e8ecf8;max-width:560px}
-h1{font-size:22px}label{display:block;margin:14px 0 6px;font-weight:700}input{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #2a3556;background:#161d2f;color:#e8ecf8;font-size:16px}
+h1{font-size:22px}label{display:block;margin:14px 0 6px;font-weight:700}input,textarea{width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;padding:12px;border-radius:10px;border:1px solid #2a3556;background:#161d2f;color:#e8ecf8;font-size:16px}
 button{margin-top:18px;padding:12px 20px;border:0;border-radius:10px;background:#4fd1b5;color:#06201b;font-weight:800;font-size:16px}
 .code{font:700 26px ui-monospace,monospace;letter-spacing:2px;background:#161d2f;padding:12px;border-radius:10px;display:inline-block}
 .note{background:#1d2a2b;padding:10px;border-radius:10px}small{color:#9aa6c4}</style></head><body>
 <h1>HomeNetWatch Android agent</h1>
 <p>$status</p>$note
 <p>Installer code<br><span class=code>${escape(code)}</span></p>
+<ol><li>In the dashboard, open <b>Remote Agent Onboarding</b>. Enter the installer code above and the device name, then register it.</li>
+<li>The dashboard shows a <b>Setup key</b>. Copy it and paste it below.</li></ol>
 <form method="post" action="/save">
-<label>Server address</label><input name="server_url" value="${escape(store.serverUrl)}" placeholder="https://live.example.com" autocapitalize="off">
-<label>Server TLS key pin</label><input name="pins" value="${escape(store.pins)}" placeholder="sha256/..." autocapitalize="off">
-<small>The pin is printed by the server, the same one the Pi setup page asks for.</small><br>
+<label>Setup key</label><textarea name="setup_key" rows="4" placeholder="hnw1...." autocapitalize="off" spellcheck="false">${if (store.serverUrl.isEmpty()) "" else "Saved for " + escape(store.serverUrl)}</textarea>
 <button type="submit">Save</button></form></body></html>"""
     }
 

@@ -9,9 +9,10 @@ The WireGuard tunnel, the voice stream and the speed test are not built yet.
 ## How enrollment works
 
 1. Start the app. It shows an installer code and a setup address, for example `http://192.168.1.50:8080`.
-2. On a phone on the same network, open that address and enter the server address and its TLS key pin (the same pin the Pi setup page asks for).
-3. On the dashboard, register the installer code on the Enrollment page and approve the device, as for a Pi.
-4. The app receives its token and tunnel settings.
+2. On the dashboard, open Remote Agent Onboarding, enter the installer code and the **device name**, and register it. This is the device's final name on the dashboard.
+3. The dashboard then shows a **Setup key** (the server address and its TLS key pins in one string) with a Copy button.
+4. On a phone on the same network, open the setup address from the TV and paste the setup key.
+5. Approve the device on the dashboard, as for a Pi. The app receives its token and tunnel settings.
 
 The app sends `platform: android` and one WireGuard key. The server gives it one tunnel and does not assign the Pi's HTTP and ping checks.
 

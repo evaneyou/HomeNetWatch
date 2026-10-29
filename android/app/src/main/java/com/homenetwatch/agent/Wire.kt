@@ -61,6 +61,24 @@ object Wire {
         return pins
     }
 
+    /** The server address and the TLS key pins, as the dashboard hands them over in one setup key. */
+    class SetupKey(val serverUrl: String, val pins: List<String>)
+
+    fun parseSetupKey(raw: String): SetupKey {
+        val text = raw.trim().replace(Regex("\\s+"), "")
+        require(text.startsWith("hnw1.")) { "That is not a setup key. Copy it from the dashboard's Remote Agent Onboarding page." }
+        val json = try {
+            org.json.JSONObject(String(Base64.getUrlDecoder().decode(text.removePrefix("hnw1.")), Charsets.UTF_8))
+        } catch (_: Exception) {
+            throw IllegalArgumentException("The setup key is damaged. Copy it again from the dashboard.")
+        }
+        val url = json.optString("u")
+        enrollmentBase(url)
+        val list = json.optJSONArray("p") ?: throw IllegalArgumentException("The setup key has no server key in it.")
+        val pins = parsePins((0 until list.length()).joinToString(" ") { list.getString(it) })
+        return SetupKey(url, pins)
+    }
+
     /** The enrollment address, which is the server's HTTPS port 8848 on the host the owner typed. */
     fun enrollmentBase(url: String): String {
         val uri = try {

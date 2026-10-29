@@ -50,7 +50,8 @@ export default function GeminiPage() {
   const data = settings.data;
   useEffect(() => {
     if (!data || loaded) return;
-    setModel(data.model || "gemini-3.8-flash");
+    const allowed = data.allowed_models?.length ? data.allowed_models : ["gemini-3.8-flash"];
+    setModel(allowed.includes(data.model) ? data.model : allowed[0]);
     setLoaded(true);
   }, [data, loaded]);
 
@@ -77,7 +78,9 @@ export default function GeminiPage() {
 
   const save = () =>
     run("save", async () => {
-      await api.geminiSave({ api_key: apiKey.trim() || undefined, model }, csrf);
+      const allowed = data.allowed_models?.length ? data.allowed_models : ["gemini-3.8-flash"];
+      const chosen = allowed.includes(model) ? model : allowed[0];
+      await api.geminiSave({ api_key: apiKey.trim() || undefined, model: chosen }, csrf);
       setApiKey("");
       await refresh();
       setNotice({ kind: "ok", text: "Saved and verified with Google Gemini." });

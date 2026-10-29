@@ -173,6 +173,13 @@ def verify_key(api_key: str, model: str = DEFAULT_MODEL) -> None:
     )
 
 
+def _to_dt(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    dt = datetime.fromisoformat(str(value))
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
 def build_event_context(
     db: Session,
     period: str,
@@ -181,8 +188,8 @@ def build_event_context(
 ) -> dict[str, Any]:
     """Assemble the KPI report, bandwidth test log, synthetic application transitions, and path/alert events."""
     kpi_report = kpi.report(db, period, monitor_id=monitor_id, day=day)
-    start_dt = datetime.fromisoformat(kpi_report["from"])
-    end_dt = datetime.fromisoformat(kpi_report["to"])
+    start_dt = _to_dt(kpi_report["from"])
+    end_dt = _to_dt(kpi_report["to"])
     # Include 24h before start_dt for bandwidth tests so we have baseline context
     bw_start = start_dt - timedelta(hours=24)
 
@@ -324,7 +331,7 @@ def build_event_context(
     # 5. Compact series buckets
     series_compact = []
     for pt in kpi_report.get("series", []):
-        dt = datetime.fromisoformat(pt["t"])
+        dt = _to_dt(pt["t"])
         series_compact.append(
             {
                 "bucket_et": _et(dt),
@@ -354,11 +361,11 @@ def build_event_context(
         "kpi_summary": kpi_report.get("summary"),
         "kpi_by_link": kpi_report.get("links"),
         "incidents": [
-            {**inc, "start_et": _et(datetime.fromisoformat(inc["start"]))}
+            {**inc, "start_et": _et(_to_dt(inc["start"]))}
             for inc in kpi_report.get("incidents", [])
         ],
         "reporting_gaps": [
-            {**gap, "start_et": _et(datetime.fromisoformat(gap["start"]))}
+            {**gap, "start_et": _et(_to_dt(gap["start"]))}
             for gap in kpi_report.get("gaps", [])
         ],
         "bandwidth_test_log": bandwidth_log,

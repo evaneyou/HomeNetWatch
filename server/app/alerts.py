@@ -206,10 +206,15 @@ def network_conditions(
     speed: dict[tuple, Test] = {}
     monitors: dict = {}
     monitor_kinds: dict[object, set[str]] = {}
+    has_real_links = {
+        monitor.id
+        for _test, network, monitor in rows
+        if network.slug in ("wired", "wifi")
+    }
     for test, network, monitor in rows:
         if monitor.id in offline_ids:
             continue  # the Pi being offline is its own alert, and its old results say nothing new
-        if network.slug == "wan":
+        if network.slug == "wan" and monitor.id in has_real_links:
             continue
         kind = network.kind.value
         monitors[monitor.id] = monitor

@@ -497,6 +497,12 @@ export default function MonitorOnboardingPage() {
                     {count === 0 && registration.setup_key ? <SetupKey value={registration.setup_key} /> : null}
                     {registration.checkins.map((checkin) => (
                       <p key={checkin.id} className="muted">
+                        {checkin.device_name ? (
+                          <>
+                            <strong>{checkin.device_name}</strong>
+                            {" (named on the device) · "}
+                          </>
+                        ) : null}
                         <AnonText value={checkin.hostname} className="mono" />
                         {" · "}
                         <AnonText value={checkin.lan_ip} className="mono" />

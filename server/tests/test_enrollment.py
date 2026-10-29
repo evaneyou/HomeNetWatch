@@ -462,7 +462,7 @@ def test_registration_carries_a_setup_key_with_the_server_address_and_pins(clien
     assert registered.status_code == 201, registered.text
     key = registered.json()["setup_key"]
     assert _decode_setup_key(key) == {"u": "https://testserver", "p": tls.pin_list(tls_dir)}
-    listed = client.get("/api/v1/enrollment/codes").json()
+    listed = client.get("/api/v1/enrollment").json()
     assert any(item["setup_key"] == key for item in listed if item["id"] == registered.json()["id"])
 
 

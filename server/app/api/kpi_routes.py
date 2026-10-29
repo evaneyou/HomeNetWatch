@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import gemini_rca, kpi, telegram
-from app.auth import get_current_user, require_admin, require_admin_csrf
+from app.auth import require_admin, require_admin_csrf
 from app.db import get_db
 from app.models import GeminiSetting, User
 
@@ -77,9 +77,9 @@ def get_daily(
 def determine_root_cause(
     body: RootCauseIn,
     db: Annotated[Session, Depends(get_db)],
-    _user: Annotated[User, Depends(get_current_user)],
+    _admin: Annotated[User, Depends(require_admin)],
 ) -> dict[str, Any]:
-    """Run an on-demand Gemini LLM root cause analysis over the event and metric log for this KPI window."""
+    """On-demand Gemini root cause analysis. Admin only; guests use the KPI UI demo."""
     try:
         return gemini_rca.analyze_root_cause(
             db,

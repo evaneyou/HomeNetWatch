@@ -1136,6 +1136,17 @@
   color: var(--k-bad);
 }
 
+.kpi-rca-demo-banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--k-good) 40%, var(--k-line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--k-good) 12%, transparent);
+  color: var(--k-text, inherit);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
 .kpi-rca-summary {
   margin: 0;
   padding: 12px 14px;

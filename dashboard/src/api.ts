@@ -230,6 +230,8 @@ export const api = {
   serverHealth: (range: string) => request(`/api/v1/server-health?range=${encodeURIComponent(range)}`),
   serverHealthPackage: (source: string, name: string) =>
     request(`/api/v1/server-health/software?source=${encodeURIComponent(source)}&name=${encodeURIComponent(name)}`),
+  faultSimulation: (prompt: string) =>
+    request("/api/v1/server-health/fault-simulation", { method: "POST", body: JSON.stringify({ prompt }) }),
   kpi: (period: string, day?: string, monitorId?: string) =>
     request(`/api/v1/kpi?period=${encodeURIComponent(period)}${day ? `&day=${encodeURIComponent(day)}` : ""}${monitorId ? `&monitor_id=${encodeURIComponent(monitorId)}` : ""}`),
   kpiDaily: (first: string, last: string, monitorId?: string) =>

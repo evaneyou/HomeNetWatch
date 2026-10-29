@@ -59,6 +59,31 @@ function formatSeen(iso: string | null): string {
   return new Date(iso).toLocaleString();
 }
 
+/** The server address and TLS key pins as one string, for agents with a setup page (the Android agent). Not a secret. */
+function SetupKey({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }
+  return (
+    <div style={{ margin: "8px 0" }}>
+      <p className="muted" style={{ margin: "0 0 4px" }}>
+        Setup key. Paste it into the device&apos;s setup page after entering this installer code there.
+      </p>
+      <textarea className="mono" readOnly rows={3} value={value} style={{ width: "100%" }} aria-label="Setup key" onFocus={(event) => event.currentTarget.select()} />
+      <button className="btn" type="button" onClick={() => void copy()}>
+        {copied ? "Copied" : "Copy setup key"}
+      </button>
+    </div>
+  );
+}
+
 export default function MonitorOnboardingPage() {
   const qc = useQueryClient();
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.me() as Promise<User> });
@@ -468,7 +493,8 @@ export default function MonitorOnboardingPage() {
                     {registration.conflict ? (
                       <p className="error">More than one device used this code. Start over, then have one device check in again.</p>
                     ) : null}
-                    {count === 0 ? <p className="muted">Waiting for the Pi to check in.</p> : null}
+                    {count === 0 ? <p className="muted">Waiting for the device to check in.</p> : null}
+                    {count === 0 && registration.setup_key ? <SetupKey value={registration.setup_key} /> : null}
                     {registration.checkins.map((checkin) => (
                       <p key={checkin.id} className="muted">
                         <AnonText value={checkin.hostname} className="mono" />

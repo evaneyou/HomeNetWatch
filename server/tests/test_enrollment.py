@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -8,7 +10,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
+from app import tls
 from app.api.enrollment_routes import NONCE_PATH
+from app.config import get_settings
 from app.auth import hash_password
 from app.enrollment import RATE_LIMIT, nonces
 from app.main import app
@@ -441,3 +445,31 @@ def test_onboarding_issues_a_wired_and_a_wireless_tunnel(client, room, state_dir
     listed = next(item for item in client.get("/api/v1/monitors").json() if item["id"] == created["id"])
     assert listed["tunnel_address"] == body["address"]
     assert listed["wireless_tunnel_address"] == body["wireless_address"]
+
+
+def _decode_setup_key(value: str) -> dict:
+    assert value.startswith("hnw1.")
+    raw = value[len("hnw1.") :]
+    return json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+
+
+def test_registration_carries_a_setup_key_with_the_server_address_and_pins(client, room, state_dir, tmp_path, monkeypatch):
+    tls_dir = tmp_path / "tls"
+    tls.ensure(tls_dir)
+    monkeypatch.setattr(get_settings(), "tls_dir", str(tls_dir))
+    csrf = login(client)
+    registered = _register(client, csrf, new_installer_code(), f"{room}Shield")
+    assert registered.status_code == 201, registered.text
+    key = registered.json()["setup_key"]
+    assert _decode_setup_key(key) == {"u": "https://testserver", "p": tls.pin_list(tls_dir)}
+    listed = client.get("/api/v1/enrollment/codes").json()
+    assert any(item["setup_key"] == key for item in listed if item["id"] == registered.json()["id"])
+
+
+def test_registration_has_no_setup_key_without_a_server_key(client, room, state_dir, tmp_path, monkeypatch):
+    monkeypatch.setattr(get_settings(), "tls_dir", str(tmp_path / "missing"))
+    csrf = login(client)
+    registered = _register(client, csrf, new_installer_code(), f"{room}NoKey")
+    assert registered.status_code == 201, registered.text
+    assert registered.json()["setup_key"] is None
+

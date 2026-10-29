@@ -346,6 +346,7 @@ export type EnrollmentRegistration = {
   created_at: string | null;
   expires_at: string;
   conflict: boolean;
+  setup_key?: string | null;
   checkins: EnrollmentCheckin[];
 };
 

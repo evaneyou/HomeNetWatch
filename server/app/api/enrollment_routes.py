@@ -140,6 +140,8 @@ def agent_check_in(body: CheckInIn, request: Request, db: Annotated[Session, Dep
     signed_fields.extend([body.installer_code, body.hostname, body.lan_ip])
     if body.platform:
         signed_fields.append(body.platform)
+    if body.device_name:
+        signed_fields.append(body.device_name)
     _rate_limit(db, request, body.identity_public_key)
     _verify(
         CHECK_IN_PATH,
@@ -195,6 +197,7 @@ def agent_check_in(body: CheckInIn, request: Request, db: Annotated[Session, Dep
     row.wg_public_key = body.wg_public_key
     row.wg_wireless_public_key = body.wg_wireless_public_key
     row.platform = body.platform or "pi"
+    row.device_name = _clean_chosen_name(body.device_name)
     row.hostname = hostname
     row.lan_ip = lan_ip
     row.observed_ip = _client_ip(request)
@@ -274,6 +277,12 @@ def _tunnel_config(monitor: Monitor, now: datetime, link: str = "wired") -> Tunn
     )
 
 
+def _clean_chosen_name(raw: str | None) -> str | None:
+    """The name an agent asked for. Empty means the dashboard's registration name is used."""
+    name = " ".join((raw or "").split())
+    return name[:128] or None
+
+
 def _registration_out(code: InstallerCode, now: datetime) -> RegistrationOut:
     fresh = sorted(
         (row for row in code.checkins if row.last_seen_at >= now - CHECKIN_TTL),
@@ -291,6 +300,7 @@ def _registration_out(code: InstallerCode, now: datetime) -> RegistrationOut:
             CheckinOut(
                 id=row.id,
                 hostname=row.hostname,
+                device_name=row.device_name,
                 lan_ip=row.lan_ip,
                 observed_ip=row.observed_ip,
                 first_seen_at=row.first_seen_at,
@@ -415,13 +425,15 @@ def approve(
             detail="More than one device used this code. Choose Start over before approving.",
         )
     checkin = fresh[0]
+    # A device that was given a name during its own setup keeps it. Otherwise the registration name is used.
+    final_name = checkin.device_name or code.device_name
     if _approved(db, checkin.identity_public_key) is not None:
         raise HTTPException(status_code=409, detail="This remote agent is already on the dashboard")
 
     name_taken = HTTPException(status_code=409, detail="A remote agent with this device name already exists")
     if body.replace_monitor_id is None:
         group = _home_group(db)
-        if _name_taken(db, group.id, code.device_name):
+        if _name_taken(db, group.id, final_name):
             raise name_taken
         try:
             address = allocate_address(db)
@@ -432,8 +444,8 @@ def approve(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         monitor = Monitor(
             group_id=group.id,
-            slug=_unique_slug(db, group.id, code.device_name),
-            name=code.device_name,
+            slug=_unique_slug(db, group.id, final_name),
+            name=final_name,
             location_label=code.location_label,
             status=MonitorStatus.unknown,
             config_version=1,
@@ -450,10 +462,10 @@ def approve(
         monitor = db.get(Monitor, body.replace_monitor_id)
         if monitor is None:
             raise HTTPException(status_code=404, detail="Remote agent not found")
-        if _name_taken(db, monitor.group_id, code.device_name, monitor.id):
+        if _name_taken(db, monitor.group_id, final_name, monitor.id):
             raise name_taken
-        if monitor.name != code.device_name:
-            monitor.name = code.device_name
+        if monitor.name != final_name:
+            monitor.name = final_name
             monitor.config_version += 1
         if code.location_label:
             monitor.location_label = code.location_label

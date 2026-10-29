@@ -209,6 +209,7 @@ class FakeAgent:
                 body["hostname"],
                 body["lan_ip"],
                 *([body["platform"]] if body.get("platform") else []),
+                *([body["device_name"]] if body.get("device_name") else []),
             ],
         )
         body.update(tampered or {})

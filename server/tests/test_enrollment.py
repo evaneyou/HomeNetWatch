@@ -496,3 +496,39 @@ def test_platform_is_covered_by_the_signature(client, room, state_dir):
     unknown = agent.check_in(signed={"platform": "toaster"})
     assert unknown.status_code == 422
 
+
+def test_name_typed_on_the_android_device_becomes_the_sensor_name(client, db, room, state_dir):
+    csrf = login(client)
+    code = new_installer_code()
+    registered = _register(client, csrf, code, f"{room}Placeholder")
+    assert registered.status_code == 201, registered.text
+    agent = FakeAgent(client, code)
+    chosen = f"{room}Living Room Shield"
+    checked = agent.check_in(signed={"wg_wireless_public_key": None, "platform": "android", "device_name": chosen})
+    assert checked.status_code == 200, checked.text
+    card = next(item for item in client.get("/api/v1/enrollment").json() if item["id"] == registered.json()["id"])
+    assert card["checkins"][0]["device_name"] == chosen
+    approved = client.post(
+        f"/api/v1/enrollment/codes/{registered.json()['id']}/approve", json={"replace_monitor_id": None}, headers=csrf
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["name"] == chosen
+
+
+def test_registration_name_is_used_when_the_device_sends_none(client, room, state_dir):
+    csrf = login(client)
+    _agent, created = _enroll(client, csrf, f"{room}FromDashboard")
+    assert created["name"] == f"{room}FromDashboard"
+
+
+def test_device_name_is_covered_by_the_signature(client, room, state_dir):
+    csrf = login(client)
+    code = new_installer_code()
+    _register(client, csrf, code, f"{room}Sig")
+    agent = FakeAgent(client, code)
+    forged = agent.check_in(
+        signed={"wg_wireless_public_key": None, "platform": "android", "device_name": "Real"},
+        tampered={"device_name": "Forged"},
+    )
+    assert forged.status_code == 401
+

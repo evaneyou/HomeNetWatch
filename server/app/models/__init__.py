@@ -452,6 +452,7 @@ class EnrollmentCheckin(Base):
     wg_public_key: Mapped[str] = mapped_column(String(64), nullable=False)
     wg_wireless_public_key: Mapped[Optional[str]] = mapped_column(String(64))
     platform: Mapped[str] = mapped_column(String(16), nullable=False, default="pi", server_default="pi")
+    device_name: Mapped[Optional[str]] = mapped_column(String(128))
     hostname: Mapped[str] = mapped_column(String(253), nullable=False)
     lan_ip: Mapped[str] = mapped_column(String(64), nullable=False)
     observed_ip: Mapped[Optional[str]] = mapped_column(String(64))

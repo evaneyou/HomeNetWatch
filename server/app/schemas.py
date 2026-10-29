@@ -802,6 +802,11 @@ class InternetServiceSettingIn(BaseModel):
     librespeed_interval_seconds: int = Field(ge=300, le=86400)
     librespeed_variance_pct: int = Field(ge=0, le=500)
 
+    @field_validator("librespeed_variance_pct")
+    @classmethod
+    def _clamp_librespeed_variance(cls, value: int) -> int:
+        return max(0, min(value, 50))
+
 
 class IssueOut(BaseModel):
     id: UUID

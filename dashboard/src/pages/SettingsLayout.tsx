@@ -6,6 +6,7 @@ const PAGES = [
   { to: "/settings/synthetic", label: "Real-Time Application Health" },
   { to: "/settings/web-services", label: "Web Services" },
   { to: "/settings/telegram", label: "Configure Telegram" },
+  { to: "/settings/gemini", label: "Configure Gemini AI" },
 ];
 
 export default function SettingsLayout() {

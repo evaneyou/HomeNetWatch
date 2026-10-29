@@ -96,7 +96,7 @@ def ingest_results(
         db.add(row)
         accepted += 1
         ids.append(item.id)
-        if is_web_check(test.slug) or is_path_check(test.slug):
+        if is_web_check(test.slug) or is_path_check(test.slug) or test.slug == "librespeed":
             touched.append(test)
 
     db.flush()

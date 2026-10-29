@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Area,
   AreaChart,
@@ -65,6 +65,30 @@ type Report = {
   incidents: { start: string; link: string; minutes: number; checks: number }[];
   gaps: { start: string; minutes: number; links: "wired" | "wireless" | "both"; ongoing: boolean }[];
 };
+
+type RootCauseReport = {
+  generated_at: string;
+  model: string;
+  started_at: string;
+  root_cause: string;
+  category: string;
+  confidence: "high" | "medium" | "low" | string;
+  summary: string;
+  timeline: { time: string; event: string; impact: string }[];
+  evidence: string[];
+  recommendations: string[];
+};
+
+function parseApiError(err: unknown): string {
+  const text = err instanceof Error ? err.message : "Could not determine root cause.";
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown };
+    if (typeof parsed.detail === "string") return parsed.detail;
+  } catch {
+    // plain text
+  }
+  return text;
+}
 
 const PERIODS: { key: Period; label: string; text: string }[] = [
   { key: "day", label: "Day", text: "the last 24 hours, by hour" },
@@ -518,6 +542,21 @@ export default function KpiPage() {
     placeholderData: (previous) => previous,
   });
 
+  const [rcaOpen, setRcaOpen] = useState(false);
+  const rcaMutation = useMutation({
+    mutationFn: () =>
+      api.kpiRootCause({
+        period,
+        day: day ?? undefined,
+        monitor_id: monitorId || undefined,
+      }) as Promise<RootCauseReport>,
+  });
+
+  function runRootCause() {
+    setRcaOpen(true);
+    rcaMutation.mutate();
+  }
+
   function go(next: { period?: Period; date?: string | null }) {
     const chosen = next.date === undefined ? day : next.date;
     const query: Record<string, string> = { period: next.period ?? period };
@@ -659,8 +698,121 @@ export default function KpiPage() {
               </button>
             ) : null}
           </div>
+          <button
+            type="button"
+            className="kpi-rca-btn"
+            disabled={rcaMutation.isPending}
+            onClick={runRootCause}
+          >
+            {rcaMutation.isPending ? "Analyzing Event Log…" : "Determine Root Cause"}
+          </button>
         </div>
       </header>
+
+      {rcaOpen ? (
+        <section className="kpi-panel kpi-rca-panel" aria-live="polite">
+          <header className="kpi-rca-head">
+            <div>
+              <span className="kpi-rca-eyebrow">Gemini AI · Event & Metric Log Analysis</span>
+              <h3>Root Cause Report</h3>
+            </div>
+            <div className="kpi-rca-actions">
+              <button
+                type="button"
+                className="kpi-print"
+                disabled={rcaMutation.isPending}
+                onClick={() => rcaMutation.mutate()}
+              >
+                {rcaMutation.isPending ? "Running…" : "Re-run Analysis"}
+              </button>
+              <button
+                type="button"
+                className="kpi-print"
+                onClick={() => setRcaOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </header>
+          {rcaMutation.isPending ? (
+            <p className="kpi-rca-loading">
+              Examining bandwidth tests, path latency, application health transitions, and alert logs…
+            </p>
+          ) : rcaMutation.isError ? (
+            <div className="kpi-rca-error">
+              <p>{parseApiError(rcaMutation.error)}</p>
+              {parseApiError(rcaMutation.error).toLowerCase().includes("gemini api key") ? (
+                <p>
+                  <Link to="/settings/gemini" className="kpi-rca-link">
+                    Open Settings → Configure Gemini AI
+                  </Link>{" "}
+                  to save your API key.
+                </p>
+              ) : null}
+            </div>
+          ) : rcaMutation.data ? (
+            <div className="kpi-rca-body">
+              <div className="kpi-rca-meta">
+                <div className="kpi-rca-stat">
+                  <span>When it started</span>
+                  <strong>{rcaMutation.data.started_at}</strong>
+                </div>
+                <div className="kpi-rca-stat">
+                  <span>Primary culprit</span>
+                  <strong>{rcaMutation.data.root_cause}</strong>
+                </div>
+                <div className="kpi-rca-stat">
+                  <span>Confidence</span>
+                  <strong className={`kpi-rca-conf conf-${rcaMutation.data.confidence}`}>
+                    {rcaMutation.data.confidence.toUpperCase()}
+                  </strong>
+                </div>
+              </div>
+              <p className="kpi-rca-summary">{rcaMutation.data.summary}</p>
+
+              {rcaMutation.data.timeline.length > 0 ? (
+                <div className="kpi-rca-section">
+                  <h4>Chronological Event Timeline</h4>
+                  <ul className="kpi-rca-timeline">
+                    {rcaMutation.data.timeline.map((item, idx) => (
+                      <li key={idx}>
+                        <time>{item.time}</time>
+                        <div>
+                          <b>{item.event}</b>
+                          {item.impact ? <span>{item.impact}</span> : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="kpi-rca-cols">
+                {rcaMutation.data.evidence.length > 0 ? (
+                  <div className="kpi-rca-section">
+                    <h4>Supporting Evidence</h4>
+                    <ul className="kpi-rca-list">
+                      {rcaMutation.data.evidence.map((ev, idx) => (
+                        <li key={idx}>{ev}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {rcaMutation.data.recommendations.length > 0 ? (
+                  <div className="kpi-rca-section">
+                    <h4>Recommended Next Steps</h4>
+                    <ul className="kpi-rca-list">
+                      {rcaMutation.data.recommendations.map((rec, idx) => (
+                        <li key={idx}>{rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className={`kpi-verdict tone-${verdict}`} role="status">
         <span className="kpi-verdict-mark" aria-hidden="true">

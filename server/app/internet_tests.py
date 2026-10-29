@@ -332,12 +332,13 @@ def path_variance(setting: InternetServiceSetting, slug: str) -> tuple[int, int 
     if slug == "mtr-path":
         return setting.mtr_variance_pct, None
     if slug == "librespeed":
-        return setting.librespeed_variance_pct, None
+        return min(max(setting.librespeed_variance_pct, 0), 50), None
     return None
 
 
 def classify_transfer(db: Session, test: Test, metrics: dict, variance_pct: int) -> tuple[ResultStatus, str]:
     """Amber when throughput falls past the variance. Red when neither direction answers."""
+    variance_pct = min(max(variance_pct, 0), 50)
     down = _number(metrics.get("down_mbps"))
     up = _number(metrics.get("up_mbps"))
     down_ok = down is not None and down > 0
@@ -699,7 +700,11 @@ def _baseline_value(db: Session, test: Test, metric: str) -> float | None:
     If the path itself changed, every new result is slower than the old normal and
     none count as OK, so the old normal would stay forever. When the latest results
     are loss-free and steady, that steady level becomes the new normal.
+    For bandwidth tests (`librespeed`), look further back for healthy OK samples and
+    never let a sub-1.5 Mbps collapsed pipe become the steady normal.
     """
+    is_transfer = test.slug == "librespeed" or metric in ("down_mbps", "up_mbps")
+    limit = BASELINE_SAMPLES * 4 if is_transfer else BASELINE_SAMPLES
     rows = db.scalars(
         select(TestResult)
         .where(
@@ -707,7 +712,7 @@ def _baseline_value(db: Session, test: Test, metric: str) -> float | None:
             TestResult.status.in_((ResultStatus.ok, ResultStatus.degraded)),
         )
         .order_by(desc(TestResult.started_at))
-        .limit(BASELINE_SAMPLES)
+        .limit(limit)
     ).all()
     ok_values: list[float] = []
     steady_values: list[float] = []
@@ -716,11 +721,15 @@ def _baseline_value(db: Session, test: Test, metric: str) -> float | None:
         sample = _number(metrics.get(metric))
         if sample is None or sample <= 0:
             continue
-        if row.status == ResultStatus.ok:
+        if is_transfer and sample < 1.5:
+            continue
+        if row.status == ResultStatus.ok and len(ok_values) < BASELINE_SAMPLES:
             ok_values.append(sample)
         loss = _number(metrics.get("loss_pct"))
-        if not loss:
+        if not loss and len(steady_values) < BASELINE_SAMPLES:
             steady_values.append(sample)
+    if is_transfer and len(ok_values) >= 3:
+        return _median(ok_values)
     steady = steady_level(steady_values)
     if steady is not None:
         return steady
@@ -785,6 +794,9 @@ def save_web_services(db: Session, updates: list[dict]) -> list[WebServiceSettin
 def load_internet_service(db: Session) -> InternetServiceSetting:
     row = db.get(InternetServiceSetting, 1)
     if row is not None:
+        if row.librespeed_variance_pct > 50 or row.librespeed_variance_pct < 0:
+            row.librespeed_variance_pct = min(max(row.librespeed_variance_pct, 0), 50)
+            db.flush()
         return row
     row = InternetServiceSetting(
         id=1,
@@ -815,7 +827,7 @@ def save_internet_service(db: Session, update: dict) -> InternetServiceSetting:
     row.icmp_variance_pct = int(update["icmp_variance_pct"])
     row.mtr_variance_pct = int(update["mtr_variance_pct"])
     row.variance_pct = row.http_variance_pct
-    row.librespeed_variance_pct = int(update["librespeed_variance_pct"])
+    row.librespeed_variance_pct = min(max(int(update["librespeed_variance_pct"]), 0), 50)
     row.librespeed_enabled = bool(update["librespeed_enabled"])
     row.librespeed_interval_seconds = max(int(update["librespeed_interval_seconds"]), 300)
     db.flush()

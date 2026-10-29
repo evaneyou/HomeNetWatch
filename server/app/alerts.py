@@ -102,10 +102,95 @@ def _utc(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%H:%M UTC")
 
 
-def network_conditions(db: Session, now: datetime, offline_ids: set) -> list[Condition]:
-    """The ISP path is down on a link, or many web services are unreachable while the path is up.
+@dataclass
+class _BandwidthState:
+    test: Test
+    bad: bool
+    since: Optional[datetime]
+    down_mbps: Optional[float]
+    up_mbps: Optional[float]
+    reason: str
+    summary_bit: str
 
-    Public web checks are the access plane. A dead WireGuard tunnel alone is not an internet outage.
+
+def bandwidth_state(db: Session, test: Optional[Test], kind: str) -> Optional[_BandwidthState]:
+    """Inspect an enabled librespeed test on a link and return its current throughput status."""
+    if test is None:
+        return None
+    bad = test.stable_status in (ResultStatus.degraded, ResultStatus.fail)
+    latest = db.scalar(
+        select(TestResult)
+        .where(TestResult.test_id == test.id)
+        .order_by(TestResult.started_at.desc())
+        .limit(1)
+    )
+    metrics = (latest.metrics or {}) if latest else {}
+    down = metrics.get("down_mbps")
+    up = metrics.get("up_mbps")
+    down_val = float(down) if isinstance(down, (int, float)) and not isinstance(down, bool) else None
+    up_val = float(up) if isinstance(up, (int, float)) and not isinstance(up, bool) else None
+    reason = (latest.status_reason or "").strip() if latest else ""
+    if not bad and latest is not None and latest.status in (ResultStatus.degraded, ResultStatus.fail):
+        # Also catch when the latest bandwidth test is degraded/fail even before a multi-sample window completes,
+        # since LibreSpeed runs every 15+ minutes.
+        bad = True
+    parts = []
+    if down_val is not None:
+        parts.append(f"{down_val:.1f} Mbps down")
+    if up_val is not None:
+        parts.append(f"{up_val:.1f} Mbps up")
+    bit = f"{_link_label(kind)} {' / '.join(parts)}" if parts else f"{_link_label(kind)} degraded"
+    return _BandwidthState(
+        test=test,
+        bad=bad,
+        since=test.state_since or (latest.started_at if latest else None),
+        down_mbps=down_val,
+        up_mbps=up_val,
+        reason=reason,
+        summary_bit=bit,
+    )
+
+
+def _link_has_app_failures(db: Session, monitor_id, link: str, now: datetime) -> bool:
+    """True when at least 2 synthetic runs on this link failed in the last 15 minutes."""
+    runs = db.scalars(
+        select(SyntheticRun).where(
+            SyntheticRun.monitor_id == monitor_id,
+            SyntheticRun.mode == "continuous",
+            SyntheticRun.status == "running",
+        )
+    ).all()
+    failing = 0
+    for run in runs:
+        if link not in (run.links or []):
+            continue
+        rows = db.scalars(
+            select(SyntheticSample)
+            .where(
+                SyntheticSample.run_id == run.id,
+                SyntheticSample.link == link,
+                ~SyntheticSample.sample_key.startswith("hour:"),
+                ~SyntheticSample.sample_key.startswith("day:"),
+            )
+            .order_by(SyntheticSample.recorded_at.desc())
+            .limit(3)
+        ).all()
+        if len(rows) >= 3 and all(r.verdict == "fail" for r in rows) and now - rows[0].recorded_at <= timedelta(minutes=15):
+            failing += 1
+    return failing >= 2
+
+
+def network_conditions(
+    db: Session,
+    now: datetime,
+    offline_ids: set,
+    suppressed_links: Optional[set[tuple[object, str]]] = None,
+) -> list[Condition]:
+    """Evaluate network conditions with a strict top-down root-cause hierarchy:
+    1. Both links down -> single `net-down:{monitor_id}:wan`
+    2. Bandwidth collapse across WAN (both links, or one link + sibling path/apps failing) -> `net-bandwidth:{monitor_id}:wan`
+    3. Both links path-degraded -> single `net-degraded:{monitor_id}:wan`
+    4. Single-link fault -> highest of `net-down`, `net-bandwidth`, `net-degraded`, `net-services` on that link.
     """
     from app.services.link_correlation import access_ok_recent, tunnel_is_stale
 
@@ -118,76 +203,210 @@ def network_conditions(db: Session, now: datetime, offline_ids: set) -> list[Con
     ).all()
     path: dict[tuple, dict[str, Test]] = {}
     web: dict[tuple, list[Test]] = {}
+    speed: dict[tuple, Test] = {}
     monitors: dict = {}
+    monitor_kinds: dict[object, set[str]] = {}
     for test, network, monitor in rows:
         if monitor.id in offline_ids:
             continue  # the Pi being offline is its own alert, and its old results say nothing new
+        if network.slug == "wan":
+            continue
+        kind = network.kind.value
         monitors[monitor.id] = monitor
-        slot = (monitor.id, network.kind.value, monitor.name)
+        monitor_kinds.setdefault(monitor.id, set()).add(kind)
+        slot = (monitor.id, kind, monitor.name)
         if test.slug in ("http-path", "icmp-path"):
             path.setdefault(slot, {})[test.slug] = test
+        elif test.slug == "librespeed":
+            speed[slot] = test
         elif test.slug.startswith("http-"):
             web.setdefault(slot, []).append(test)
-    for (monitor_id, kind, name), tests in path.items():
-        link = "wireless" if kind == "wifi" else "wired"
-        monitor = monitors.get(monitor_id)
-        # If the tunnel is stale but recent public web samples still succeed, this is not a net outage.
-        if monitor is not None and tunnel_is_stale(monitor, link, now) and access_ok_recent(db, monitor_id, link, now):
-            continue
-        down = [test for test in tests.values() if test.stable_status == ResultStatus.fail]
-        if len(down) == len(tests) and tests:
-            # Confirm access is actually down: do not alert if a recent web check still passes.
-            if access_ok_recent(db, monitor_id, link, now):
+
+    for monitor_id, monitor in monitors.items():
+        name = monitor.name
+        link_states: dict[str, dict] = {}
+        for kind in sorted(monitor_kinds.get(monitor_id, set())):
+            link = "wireless" if kind == "wifi" else "wired"
+            tests = path.get((monitor_id, kind, name), {})
+            bw = bandwidth_state(db, speed.get((monitor_id, kind, name)), kind)
+            # If the tunnel is stale but recent public web samples still succeed, path/speed over tunnel is not a net fault.
+            if tunnel_is_stale(monitor, link, now) and access_ok_recent(db, monitor_id, link, now):
+                if suppressed_links is not None:
+                    suppressed_links.add((monitor_id, link))
                 continue
-            since = min((test.state_since for test in down if test.state_since), default=None)
+            down_tests = [test for test in tests.values() if test.stable_status == ResultStatus.fail]
+            is_down = bool(tests and len(down_tests) == len(tests) and not access_ok_recent(db, monitor_id, link, now))
+            down_since = min((test.state_since for test in down_tests if test.state_since), default=None) if is_down else None
+
+            degraded_tests = [test for test in tests.values() if test.stable_status == ResultStatus.degraded]
+            is_degraded = bool(degraded_tests and not down_tests)
+            deg_since = min((test.state_since for test in degraded_tests if test.state_since), default=None) if is_degraded else None
+            deg_reason = ""
+            if is_degraded:
+                for probe in degraded_tests:
+                    latest_reason = db.scalar(
+                        select(TestResult.status_reason)
+                        .where(TestResult.test_id == probe.id)
+                        .order_by(TestResult.started_at.desc())
+                        .limit(1)
+                    )
+                    if latest_reason:
+                        deg_reason = f" {latest_reason}"
+                        break
+
+            services = web.get((monitor_id, kind, name), [])
+            failing_services = [test for test in services if test.stable_status == ResultStatus.fail]
+            is_services_bad = len(services) >= 3 and len(failing_services) * 100 >= len(services) * 40
+
+            link_states[kind] = {
+                "link": link,
+                "down": is_down,
+                "down_since": down_since,
+                "bw": bw,
+                "bw_bad": bool(bw and bw.bad),
+                "degraded": is_degraded,
+                "deg_since": deg_since,
+                "deg_reason": deg_reason,
+                "services_bad": is_services_bad,
+                "services_failing": len(failing_services),
+                "services_total": len(services),
+            }
+
+        wired_st = link_states.get("wired")
+        wifi_st = link_states.get("wifi")
+
+        # Level 2a: Both links down -> single WAN outage alert
+        if wired_st and wifi_st and wired_st["down"] and wifi_st["down"]:
+            since = min((s for s in (wired_st["down_since"], wifi_st["down_since"]) if s is not None), default=None)
             out.append(
                 Condition(
-                    key=f"net-down:{monitor_id}:{kind}",
+                    key=f"net-down:{monitor_id}:wan",
                     category="network",
                     severity="critical",
-                    title=f"Internet outage on the {_link_label(kind)} link",
-                    detail=f"{name} cannot reach the internet over this link." + (f" Since {_utc(since)}." if since else ""),
+                    title=f"Internet outage on both Wired and Wi-Fi ({name})",
+                    detail=f"{name} cannot reach the internet over either Wired or Wi-Fi." + (f" Since {_utc(since)}." if since else ""),
                     debounce_s=60,
                 )
             )
+            if suppressed_links is not None:
+                suppressed_links.add((monitor_id, "wired"))
+                suppressed_links.add((monitor_id, "wireless"))
             continue
-        degraded = [test for test in tests.values() if test.stable_status == ResultStatus.degraded]
-        if degraded and not down:
-            since = min((test.state_since for test in degraded if test.state_since), default=None)
-            reason = ""
-            for probe in degraded:
-                latest_reason = db.scalar(
-                    select(TestResult.status_reason)
-                    .where(TestResult.test_id == probe.id)
-                    .order_by(TestResult.started_at.desc())
-                    .limit(1)
-                )
-                if latest_reason:
-                    reason = f" {latest_reason}"
-                    break
+
+        # Level 2b: Bandwidth collapse across WAN (both links bad, or one link bandwidth bad while sibling also has path/app issues)
+        wired_bw_bad = bool(wired_st and wired_st["bw_bad"])
+        wifi_bw_bad = bool(wifi_st and wifi_st["bw_bad"])
+        wan_bw_collapse = False
+        if wired_bw_bad and wifi_bw_bad:
+            wan_bw_collapse = True
+        elif wired_bw_bad and wifi_st and (wifi_st["degraded"] or _link_has_app_failures(db, monitor_id, "wireless", now)):
+            wan_bw_collapse = True
+        elif wifi_bw_bad and wired_st and (wired_st["degraded"] or _link_has_app_failures(db, monitor_id, "wired", now)):
+            wan_bw_collapse = True
+
+        if wan_bw_collapse:
+            bw_items = [st["bw"] for st in (wired_st, wifi_st) if st and st["bw"] and st["bw"].bad]
+            since = min((b.since for b in bw_items if b.since is not None), default=None)
+            primary_reason = next((b.reason for b in bw_items if b.reason), "Throughput dropped below the configured threshold.")
+            bits = ", ".join(b.summary_bit for b in bw_items)
+            detail = f"{primary_reason}" + (f" ({bits})." if bits else "") + (f" Since {_utc(since)}." if since else "")
             out.append(
                 Condition(
-                    key=f"net-degraded:{monitor_id}:{kind}",
+                    key=f"net-bandwidth:{monitor_id}:wan",
                     category="network",
                     severity="warning",
-                    title=f"ISP / {_link_label(kind)} link is degraded",
-                    detail=f"{name} is seeing sustained high latency, jitter, or packet loss on the {_link_label(kind)} path.{reason}" + (f" Since {_utc(since)}." if since else ""),
+                    title=f"ISP bandwidth drop on {name}",
+                    detail=detail,
                     debounce_s=300,
                 )
             )
-        services = web.get((monitor_id, kind, name), [])
-        failing = [test for test in services if test.stable_status == ResultStatus.fail]
-        if len(services) >= 3 and len(failing) * 100 >= len(services) * 40:
+            if suppressed_links is not None:
+                suppressed_links.add((monitor_id, "wired"))
+                suppressed_links.add((monitor_id, "wireless"))
+            continue
+
+        # Level 2c: Both links path-degraded -> single WAN degraded alert
+        if wired_st and wifi_st and wired_st["degraded"] and wifi_st["degraded"] and not wired_st["down"] and not wifi_st["down"]:
+            since = min((s for s in (wired_st["deg_since"], wifi_st["deg_since"]) if s is not None), default=None)
+            reason = wired_st["deg_reason"] or wifi_st["deg_reason"]
             out.append(
                 Condition(
-                    key=f"net-services:{monitor_id}:{kind}",
+                    key=f"net-degraded:{monitor_id}:wan",
                     category="network",
                     severity="warning",
-                    title=f"Many internet services unreachable on the {_link_label(kind)} link",
-                    detail=f"{len(failing)} of {len(services)} web services are failing from {name}, while the path to the server is up.",
-                    debounce_s=120,
+                    title=f"Upstream ISP path is degraded on both Wired and Wi-Fi ({name})",
+                    detail=f"{name} is seeing sustained high latency, jitter, or packet loss across both links.{reason}" + (f" Since {_utc(since)}." if since else ""),
+                    debounce_s=300,
                 )
             )
+            if suppressed_links is not None:
+                suppressed_links.add((monitor_id, "wired"))
+                suppressed_links.add((monitor_id, "wireless"))
+            continue
+
+        # Level 3: Single-link faults (only the highest fault per link fires)
+        for kind, st in link_states.items():
+            link = st["link"]
+            if st["down"]:
+                since = st["down_since"]
+                out.append(
+                    Condition(
+                        key=f"net-down:{monitor_id}:{kind}",
+                        category="network",
+                        severity="critical",
+                        title=f"Internet outage on the {_link_label(kind)} link",
+                        detail=f"{name} cannot reach the internet over this link." + (f" Since {_utc(since)}." if since else ""),
+                        debounce_s=60,
+                    )
+                )
+                if suppressed_links is not None:
+                    suppressed_links.add((monitor_id, link))
+                continue
+            if st["bw_bad"] and st["bw"] is not None:
+                bw = st["bw"]
+                reason = bw.reason or f"Throughput on the {_link_label(kind)} link dropped below normal."
+                out.append(
+                    Condition(
+                        key=f"net-bandwidth:{monitor_id}:{kind}",
+                        category="network",
+                        severity="warning",
+                        title=f"Bandwidth drop on the {_link_label(kind)} link ({name})",
+                        detail=f"{reason}" + (f" Since {_utc(bw.since)}." if bw.since else ""),
+                        debounce_s=300,
+                    )
+                )
+                if suppressed_links is not None:
+                    suppressed_links.add((monitor_id, link))
+                continue
+            if st["degraded"]:
+                since = st["deg_since"]
+                out.append(
+                    Condition(
+                        key=f"net-degraded:{monitor_id}:{kind}",
+                        category="network",
+                        severity="warning",
+                        title=f"ISP / {_link_label(kind)} link is degraded",
+                        detail=f"{name} is seeing sustained high latency, jitter, or packet loss on the {_link_label(kind)} path.{st['deg_reason']}" + (f" Since {_utc(since)}." if since else ""),
+                        debounce_s=300,
+                    )
+                )
+                if suppressed_links is not None:
+                    suppressed_links.add((monitor_id, link))
+                continue
+            if st["services_bad"]:
+                out.append(
+                    Condition(
+                        key=f"net-services:{monitor_id}:{kind}",
+                        category="network",
+                        severity="warning",
+                        title=f"Many internet services unreachable on the {_link_label(kind)} link",
+                        detail=f"{st['services_failing']} of {st['services_total']} web services are failing from {name}, while the path to the server is up.",
+                        debounce_s=120,
+                    )
+                )
+                if suppressed_links is not None:
+                    suppressed_links.add((monitor_id, link))
+
     airwave_issues = db.execute(
         select(Issue, Monitor)
         .join(Monitor, Issue.monitor_id == Monitor.id)
@@ -349,10 +568,16 @@ def server_conditions(now: datetime) -> list[Condition]:
     return out
 
 
-def app_conditions(db: Session, now: datetime, offline_ids: set) -> list[Condition]:
+def app_conditions(
+    db: Session,
+    now: datetime,
+    offline_ids: set,
+    suppressed_links: Optional[set[tuple[object, str]]] = None,
+) -> list[Condition]:
     """A running application check (voice, video and so on) failed its last three reports.
 
-    When the measurement tunnel is down, skip per-app spam; tunnel-down covers that case.
+    When the measurement tunnel is down, or when the link/WAN already has an active network/bandwidth condition,
+    skip per-app spam; the higher-level alert covers that case.
     """
     from app.services.link_correlation import access_ok_recent, tunnel_is_stale
 
@@ -368,6 +593,8 @@ def app_conditions(db: Session, now: datetime, offline_ids: set) -> list[Conditi
         monitor = monitors.get(run.monitor_id)
         for link in run.links or []:
             if link not in ("wired", "wireless"):
+                continue
+            if suppressed_links and (run.monitor_id, link) in suppressed_links:
                 continue
             if monitor is not None and tunnel_is_stale(monitor, link, now) and access_ok_recent(db, run.monitor_id, link, now):
                 continue
@@ -485,7 +712,9 @@ def evaluate(db: Session, now: datetime) -> list[Condition]:
     monitors = list(db.scalars(select(Monitor).where(Monitor.token_hash.is_not(None), Monitor.token_hash != "")).all())
     refresh_handshakes(db, monitors)
     pi, offline = pi_conditions(db, now)
-    return [*network_conditions(db, now, offline), *pi, *server_conditions(now), *app_conditions(db, now, offline)]
+    suppressed_links: set[tuple[object, str]] = set()
+    net = network_conditions(db, now, offline, suppressed_links)
+    return [*net, *pi, *server_conditions(now), *app_conditions(db, now, offline, suppressed_links)]
 
 
 # ---- announcing

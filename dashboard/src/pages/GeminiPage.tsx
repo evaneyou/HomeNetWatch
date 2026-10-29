@@ -113,7 +113,8 @@ export default function GeminiPage() {
       <section className="tg-card">
         <h3>1. Google AI Studio API key</h3>
         <p className="tg-help">
-          Create a Gemini API key in Google AI Studio and paste it below. Saving verifies the key immediately.
+          Create a Gemini API key in Google AI Studio and paste it below. Newer keys start with{" "}
+          <code>AQ.</code>; older ones with <code>AIza</code>. Saving verifies the key immediately.
         </p>
         <div className="tg-grid">
           <label className="tg-field">
@@ -126,7 +127,7 @@ export default function GeminiPage() {
             <input
               type="password"
               autoComplete="off"
-              placeholder={data.key_set ? "Leave blank to keep the saved key" : "AIza..."}
+              placeholder={data.key_set ? "Leave blank to keep the saved key" : "AIza… or AQ.…"}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
             />

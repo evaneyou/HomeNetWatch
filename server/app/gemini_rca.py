@@ -42,7 +42,8 @@ API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 EASTERN = ZoneInfo("America/New_York")
 DEFAULT_MODEL = "gemini-2.5-flash"
 ALLOWED_MODELS = ("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash")
-_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{20,120}$")
+# Older AI Studio keys: AIzaSy… (no dots). Newer auth keys (May 2026+): AQ.… with dots.
+_KEY_RE = re.compile(r"^(?:AIza[A-Za-z0-9_-]{20,80}|AQ\.[A-Za-z0-9._-]{20,200})$")
 
 
 class GeminiError(Exception):

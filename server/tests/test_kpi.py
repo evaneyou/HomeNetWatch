@@ -692,6 +692,16 @@ def test_tunnel_only_failures_diagnose_as_tunnel_not_wifi(db):
     assert rep["diagnosis"] is not None and rep["diagnosis"]["cause"] == "tunnel"
 
 
+def test_gemini_key_format_accepts_legacy_and_new_auth_keys():
+    from app import gemini_rca
+
+    assert gemini_rca.valid_key("AIzaSyTestKeyForHomeNetWatch1234567890")
+    assert gemini_rca.valid_key("AQ." + "A" * 40)
+    assert not gemini_rca.valid_key("short")
+    assert not gemini_rca.valid_key("not-a-gemini-key-with spaces!")
+    assert not gemini_rca.valid_key("sk-openai-style-key-1234567890abcdef")
+
+
 def test_gemini_settings_and_on_demand_root_cause_analysis(client: TestClient, db, monkeypatch):
     from app import gemini_rca
     from app.models import GeminiSetting
@@ -699,7 +709,7 @@ def test_gemini_settings_and_on_demand_root_cause_analysis(client: TestClient, d
     db.execute(delete(GeminiSetting))
     db.commit()
 
-    fake_key = "AIzaSyTestKeyForHomeNetWatch1234567890"
+    fake_key = "AQ." + "B" * 40
     monkeypatch.setattr(gemini_rca, "verify_key", lambda key, model="gemini-2.5-flash": None)
 
     headers = login(client)
@@ -712,7 +722,7 @@ def test_gemini_settings_and_on_demand_root_cause_analysis(client: TestClient, d
     body = saved.json()
     assert body["configured"] is True
     assert body["key_set"] is True
-    assert body["key_hint"] == "7890"
+    assert body["key_hint"] == fake_key[-4:]
     assert fake_key not in saved.text
 
     def fake_call_gemini(api_key, model, system_prompt, user_payload, json_mode=True):

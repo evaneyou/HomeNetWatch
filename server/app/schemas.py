@@ -43,6 +43,8 @@ class CheckInIn(BaseModel):
     identity_public_key: str = _KEY
     wg_public_key: str = _KEY
     wg_wireless_public_key: Optional[str] = None
+    # Left out by the Pi agent. An Android agent sends "android" and signs it with the other fields.
+    platform: Optional[str] = Field(default=None, pattern="^(pi|android)$")
     installer_code: str = Field(min_length=1, max_length=32)
     hostname: str = Field(min_length=1, max_length=253)
     lan_ip: str = Field(min_length=1, max_length=64)

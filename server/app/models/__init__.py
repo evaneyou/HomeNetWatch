@@ -105,6 +105,8 @@ class Monitor(Base):
     group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), nullable=False)
     slug: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # "pi" runs the full set of checks. "android" (a TV or phone) runs only the speed test and synthetic traffic.
+    platform: Mapped[str] = mapped_column(String(16), nullable=False, default="pi", server_default="pi")
     # "sha256:<hex>" for tokens issued by enrollment, bcrypt for older keys.
     # Empty until the remote agent's first poll after approval.
     token_hash: Mapped[Optional[str]] = mapped_column(String(255))
@@ -449,6 +451,7 @@ class EnrollmentCheckin(Base):
     identity_public_key: Mapped[str] = mapped_column(String(64), nullable=False)
     wg_public_key: Mapped[str] = mapped_column(String(64), nullable=False)
     wg_wireless_public_key: Mapped[Optional[str]] = mapped_column(String(64))
+    platform: Mapped[str] = mapped_column(String(16), nullable=False, default="pi", server_default="pi")
     hostname: Mapped[str] = mapped_column(String(253), nullable=False)
     lan_ip: Mapped[str] = mapped_column(String(64), nullable=False)
     observed_ip: Mapped[Optional[str]] = mapped_column(String(64))

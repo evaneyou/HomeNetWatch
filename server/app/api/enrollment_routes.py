@@ -138,6 +138,8 @@ def agent_check_in(body: CheckInIn, request: Request, db: Annotated[Session, Dep
         _check_key(body.wg_wireless_public_key)
         signed_fields.append(body.wg_wireless_public_key)
     signed_fields.extend([body.installer_code, body.hostname, body.lan_ip])
+    if body.platform:
+        signed_fields.append(body.platform)
     _rate_limit(db, request, body.identity_public_key)
     _verify(
         CHECK_IN_PATH,
@@ -192,6 +194,7 @@ def agent_check_in(body: CheckInIn, request: Request, db: Annotated[Session, Dep
         db.add(row)
     row.wg_public_key = body.wg_public_key
     row.wg_wireless_public_key = body.wg_wireless_public_key
+    row.platform = body.platform or "pi"
     row.hostname = hostname
     row.lan_ip = lan_ip
     row.observed_ip = _client_ip(request)
@@ -439,6 +442,7 @@ def approve(
             scan_interval_seconds=300,
             wg_address=address,
             wg_wireless_address=wireless_address,
+            platform=checkin.platform,
         )
         db.add(monitor)
         action = "approve"
@@ -466,6 +470,7 @@ def approve(
         action = "replace"
 
     monitor.identity_public_key = checkin.identity_public_key
+    monitor.platform = checkin.platform
     monitor.wg_public_key = checkin.wg_public_key
     if checkin.wg_wireless_public_key:
         monitor.wg_wireless_public_key = checkin.wg_wireless_public_key

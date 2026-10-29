@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import fault_simulation, gemini_rca
-from app.auth import require_reader
+from app.auth import require_admin, require_reader
 from app.db import get_db
 from app.models import User
 from app.server_health import package_detail, report
@@ -47,9 +47,9 @@ def get_software_package(
 def post_fault_simulation(
     body: FaultSimulationIn,
     db: Annotated[Session, Depends(get_db)],
-    _reader: Annotated[User, Depends(require_reader)],
+    _admin: Annotated[User, Depends(require_admin)],
 ) -> dict[str, Any]:
-    """Explain what HomeNetWatch would do for a described failure. Does not inject data."""
+    """Explain what HomeNetWatch would do for a described failure. Admin only; guests use the UI demo."""
     try:
         return fault_simulation.simulate_fault(db, body.prompt)
     except gemini_rca.GeminiError as exc:

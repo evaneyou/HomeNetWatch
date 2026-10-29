@@ -2102,6 +2102,15 @@
   font-size: 0.8rem;
 }
 
+.fault-sim-demo-note {
+  margin: 0.35rem 0 0.9rem;
+}
+
+.fault-sim-prompt[readonly] {
+  opacity: 0.92;
+  cursor: default;
+}
+
 .fault-sim-examples {
   display: flex;
   flex-direction: column;

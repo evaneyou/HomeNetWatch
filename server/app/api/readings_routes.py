@@ -235,6 +235,43 @@ def _attribute_root_causes(
                     cell.cause = "agent"
             continue
 
+        from app.services.link_correlation import tunnel_configured, tunnel_is_stale
+
+        # Measurement tunnel down: public web on that link still works, path/apps to the server do not.
+        tunnel_hit = False
+        for link_name, inet, web, apps, label in (
+            ("wireless", f_inet, f_web, f_apps, "Wi-Fi"),
+            ("wired", w_inet, w_web, w_apps, "Wired"),
+        ):
+            web_ok = web is not None and web.status == "ok"
+            path_or_apps_bad = (inet is not None and inet.status in bad_states) or (
+                apps is not None and apps.status in bad_states
+            )
+            if not (
+                web_ok
+                and path_or_apps_bad
+                and tunnel_configured(monitor, link_name)
+                and tunnel_is_stale(monitor, link_name, now_utc)
+            ):
+                continue
+            if inet is not None:
+                inet.cause = "tunnel"
+            if apps is not None and apps.status in bad_states:
+                apps.cause = "tunnel"
+            if str(monitor.id) not in diagnoses:
+                diagnoses[str(monitor.id)] = {
+                    "cause": "tunnel",
+                    "title": f"{label} measurement tunnel is down",
+                    "summary": (
+                        f"Public web on {label} still works, but the WireGuard measurement tunnel "
+                        "to the server has no recent handshake. Path and app checks on that link "
+                        "will fail until the tunnel is restored."
+                    ),
+                }
+            tunnel_hit = True
+        if tunnel_hit:
+            continue
+
         both_inet_bad = (
             w_inet is not None
             and f_inet is not None

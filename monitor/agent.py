@@ -265,8 +265,12 @@ def ensure_health_loop() -> None:
     if start_synthetic:
         threading.Thread(target=scheduler.synthetic_loop, name="synthetic", daemon=True).start()
     if start_tunnel:
-        from tunnel_watch import tunnel_loop
+        from tunnel_watch import check_once, tunnel_loop
 
+        try:
+            check_once()
+        except Exception as exc:
+            print(f"tunnel_watch: startup check failed: {exc}", flush=True)
         threading.Thread(target=tunnel_loop, name="tunnel-watch", daemon=True).start()
     if start_speedtest:
         def _locked_config() -> dict:

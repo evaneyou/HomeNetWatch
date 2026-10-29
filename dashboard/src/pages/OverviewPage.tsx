@@ -97,6 +97,7 @@ function columnDetail(cells: HealthCell[], monitorId: string, key: string, colum
   if ((key === "wifi" || key === "wired") && (state === "slow" || state === "down")) {
     const matches = checkCells(cells, monitorId, key, column);
     if (matches.some((cell) => cell.cause === "bandwidth")) return "Bandwidth drop";
+    if (matches.some((cell) => cell.cause === "tunnel")) return "Tunnel down";
     if (matches.some((cell) => cell.cause === "wan")) return state === "down" ? "ISP / WAN outage" : "ISP path / bandwidth";
   }
   if (key === "wifi" && (state === "slow" || state === "down")) {
@@ -223,6 +224,10 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
     } else if (diag?.cause === "wan" && (down.length > 0 || slow.length > 0)) {
       mood = down.length > 0 ? "down" : "slow";
       blurb = "Shared ISP / WAN degradation across Wired and Wi-Fi.";
+      reason = diag.summary;
+    } else if (diag?.cause === "tunnel" && (down.length > 0 || slow.length > 0)) {
+      mood = down.length > 0 ? "down" : "slow";
+      blurb = "Wi-Fi measurement tunnel to the server is down.";
       reason = diag.summary;
     } else if (diag?.cause === "server" && (down.length > 0 || slow.length > 0)) {
       mood = down.length > 0 ? "down" : "slow";

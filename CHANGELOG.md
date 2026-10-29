@@ -19,6 +19,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **Wi-Fi measurement tunnel self-heal after ISP recovery (agent 0.8.6):** when home internet comes back but `wg1` stays dead, Overview was blaming local Wi-Fi, and the agent waited up to 15 minutes between restores even though a restore during the outage had pinned a stale default route. Overview now labels that case as a measurement tunnel fault. The agent re-checks every 30s, retries within about a minute once the access plane is up again, fully stops/starts `wg-quick` so PostUp re-pins routes, and bounces both tunnels on a probe restart.
 - **Bandwidth Test variance cap and Real-Time Application Health correlation:** `librespeed_variance_pct` is now capped at 50% (default 25%) so a 100% variance setting can no longer set the throughput floor to 0 Mbps and mask a severe upload collapse as `ok`. Ingest now refreshes `Test.stable_status` for `librespeed`, and `/api/v1/synthetic/health` correlates collapsed upload/download throughput as the root cause on the Real-Time Application Health banner.
 
 - **KPI internet vs tunnel:** `icmp-path` / `http-path` target the WireGuard peer (`10.7.x.1`), not the open internet. Internet availability, outage minutes, and the outage list no longer count a path fail when a public web check on the same link still succeeds. Access-plane correlation for alerts uses public web only. Rebuild affected KPI hours after deploy.

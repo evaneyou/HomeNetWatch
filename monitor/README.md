@@ -59,7 +59,7 @@ On-demand scans from the dashboard use Scapy (ARP discovery) and Nmap (common TC
 
 ## Tunnel watch
 
-The agent pings `10.7.0.1` (wired `wg0`) and `10.7.1.1` (Wi-Fi `wg1`) about once a minute. After two misses it runs `sudo -n /opt/monitor/restore_tunnel.sh wgN` (at most once per interface every 15 minutes). Install and update install a sudoers drop-in that allows only that script for user `monitor`. Home Wi-Fi can stay up while the measurement tunnel is down; restoring the tunnel is not the same as fixing ISP or radio problems.
+The agent pings `10.7.0.1` (wired `wg0`) and `10.7.1.1` (Wi-Fi `wg1`) about every 30 seconds. After two misses it runs `sudo -n /opt/monitor/restore_tunnel.sh wgN`, which stops and starts that `wg-quick` unit so PostUp re-pins the current default route. While home internet on that link is also down, restores are limited to once per 15 minutes. Once public access is back (probe of `1.1.1.1` / `8.8.8.8` on the NIC) but the tunnel peer is still dead, it retries about once a minute so a stale pin from the outage does not leave Wi-Fi apps stranded. A dashboard **Restart probe** also bounces both tunnels before the agent process replaces itself. Install and update install a sudoers drop-in that allows only that script for user `monitor`.
 
 ## Airwave memory
 

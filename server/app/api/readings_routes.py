@@ -333,11 +333,8 @@ def _attribute_root_causes(
         for cause_key, a_inet, a_web, a_apps, b_inet, b_web, b_apps, title, a_label, b_label in link_pairs:
             link_degraded = False
             worst_promoted = "degraded"
-            # Only attribute to a single link when the sibling link's corresponding check is genuinely OK
-            sibling_all_ok = all(
-                c is None or c.status == "ok" for c in (b_inet, b_web, b_apps)
-            )
-            if not sibling_all_ok:
+            # Only attribute to a single link when the sibling link has no degraded/failing checks
+            if any(c is not None and c.status in bad_states for c in (b_inet, b_web, b_apps)):
                 continue
             for a_cell, b_cell in ((a_web, b_web), (a_apps, b_apps)):
                 if (

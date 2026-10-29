@@ -79,7 +79,11 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
             if (key.isEmpty()) null else key to URLDecoder.decode(it.substringAfter("=", ""), "UTF-8")
         }.toMap()
         return try {
+            val name = form["device_name"].orEmpty().trim().replace(Regex("\\s+"), " ")
+            require(name.isNotEmpty()) { "Give this device a name, for example Living Room Shield." }
+            require(name.length <= 128) { "The name can be up to 128 characters." }
             val key = Wire.parseSetupKey(form["setup_key"].orEmpty())
+            store.deviceName = name
             store.serverUrl = key.serverUrl
             store.pins = key.pins.joinToString(" ")
             store.state = "waiting_for_approval"
@@ -106,12 +110,14 @@ button{margin-top:18px;padding:12px 20px;border:0;border-radius:10px;background:
 .code{font:700 26px ui-monospace,monospace;letter-spacing:2px;background:#161d2f;padding:12px;border-radius:10px;display:inline-block}
 .note{background:#1d2a2b;padding:10px;border-radius:10px}small{color:#9aa6c4}</style></head><body>
 <h1>HomeNetWatch Android agent</h1>
-<p>This device: <b>${escape(Enroller.deviceLabel())}</b> <small>(reports as ${escape(Enroller.hostname())})</small></p>
+<p>This device: <b>${escape(Enroller.deviceLabel())}</b></p>
 <p>$status</p>$note
 <p>Installer code<br><span class=code>${escape(code)}</span></p>
-<ol><li>In the dashboard, open <b>Remote Agent Onboarding</b>. Enter the installer code above and the device name, then register it.</li>
+<ol><li>Name this device below. The name is what it is called on the dashboard.</li>
+<li>In the dashboard, open <b>Remote Agent Onboarding</b>, enter the installer code above (any name is fine there) and register it.</li>
 <li>The dashboard shows a <b>Setup key</b>. Copy it and paste it below.</li></ol>
 <form method="post" action="/save">
+<label>Device name</label><input name="device_name" value="${escape(store.deviceName)}" placeholder="Living Room Shield" maxlength="128" required>
 <label>Setup key</label><textarea name="setup_key" rows="4" placeholder="hnw1...." autocapitalize="off" spellcheck="false">${if (store.serverUrl.isEmpty()) "" else "Saved for " + escape(store.serverUrl)}</textarea>
 <button type="submit">Save</button></form></body></html>"""
     }

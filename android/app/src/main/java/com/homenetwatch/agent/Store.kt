@@ -17,6 +17,11 @@ class Store(context: Context) {
         get() = prefs.getString("pins", "").orEmpty()
         set(value) = prefs.edit().putString("pins", value).apply()
 
+    /** The name the owner gave this device during setup. It becomes the sensor's name on the dashboard. */
+    var deviceName: String
+        get() = prefs.getString("device_name", "").orEmpty()
+        set(value) = prefs.edit().putString("device_name", value).apply()
+
     var installerCode: String
         get() = prefs.getString("installer_code", "").orEmpty()
         set(value) = prefs.edit().putString("installer_code", value).apply()

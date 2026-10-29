@@ -10,14 +10,24 @@ import org.json.JSONObject
 object Payloads {
     const val PLATFORM = "android"
 
-    fun checkIn(seed: ByteArray, wgPublic: String, code: String, hostname: String, lan: String, nonce: String): JSONObject {
+    fun checkIn(
+        seed: ByteArray,
+        wgPublic: String,
+        code: String,
+        hostname: String,
+        lan: String,
+        nonce: String,
+        deviceName: String,
+    ): JSONObject {
         val identity = Wire.publicKey(seed)
-        // The same fields the Pi signs, in the same order, plus the platform. One tunnel, so no wireless key.
-        val signed = listOf(identity, wgPublic, code, hostname, lan, PLATFORM)
+        // The same fields the Pi signs, in the same order, plus the platform and the name the owner chose.
+        // One tunnel, so no wireless key.
+        val signed = listOf(identity, wgPublic, code, hostname, lan, PLATFORM) + listOfNotNull(deviceName.ifEmpty { null })
         return JSONObject()
             .put("identity_public_key", identity)
             .put("wg_public_key", wgPublic)
             .put("platform", PLATFORM)
+            .apply { if (deviceName.isNotEmpty()) put("device_name", deviceName) }
             .put("installer_code", code)
             .put("hostname", hostname)
             .put("lan_ip", lan)
@@ -45,7 +55,7 @@ class Enroller(private val store: Store) {
             store.state = "approved"
             return
         }
-        if (store.serverUrl.isEmpty() || store.pins.isEmpty()) {
+        if (store.serverUrl.isEmpty() || store.pins.isEmpty() || store.deviceName.isEmpty()) {
             store.state = "waiting_for_setup"
             return
         }
@@ -59,7 +69,7 @@ class Enroller(private val store: Store) {
                 store.lastError = "No network address yet. Check that the device is connected."
                 return
             }
-            val check = Pinned.post(base + Wire.CHECK_IN_PATH, Payloads.checkIn(seed, wgPublic, code, hostname(), lan, nonce(base, seed, pins)), pins)
+            val check = Pinned.post(base + Wire.CHECK_IN_PATH, Payloads.checkIn(seed, wgPublic, code, hostname(), lan, nonce(base, seed, pins), store.deviceName), pins)
             store.state = "waiting_for_approval"
             store.lastError = if (check.optBoolean("conflict")) "More than one device used this code. Start over on the dashboard." else ""
             val poll = Pinned.post(base + Wire.POLL_PATH, Payloads.poll(seed, false, nonce(base, seed, pins)), pins)

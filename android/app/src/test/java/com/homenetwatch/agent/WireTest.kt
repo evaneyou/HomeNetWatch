@@ -29,10 +29,21 @@ class WireTest {
 
     @Test
     fun checkInBodyListsTheSignedFieldsInServerOrder() {
-        val body = Payloads.checkIn(seed, "WGKEY", "CODE-1234-ABCD", "android-shield", "192.168.1.50", "nonce-value")
+        val body = Payloads.checkIn(seed, "WGKEY", "CODE-1234-ABCD", "android-shield", "192.168.1.50", "nonce-value", "")
         assertEquals(signature, body.getString("signature"))
         assertEquals("android", body.getString("platform"))
         assertTrue(!body.has("wg_wireless_public_key"))
+    }
+
+    @Test
+    fun theNameTheOwnerChoseIsSentAndSigned() {
+        val body = Payloads.checkIn(seed, "WGKEY", "CODE-1234-ABCD", "android-shield", "192.168.1.50", "nonce-value", "Living Room Shield")
+        assertEquals("Living Room Shield", body.getString("device_name"))
+        // Computed with the server's own Ed25519 code over the same fields, with the name last.
+        assertEquals(
+            "kWd1udJQDYN/l25haJ0Fp63lOsSpmrMsPnqhc+qSqGhJMBxKNWAg4q4aOxAeuEhUe8esjWSS782Q+yHzsc38Dg==",
+            body.getString("signature"),
+        )
     }
 
     @Test

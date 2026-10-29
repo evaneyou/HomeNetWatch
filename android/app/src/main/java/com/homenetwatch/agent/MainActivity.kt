@@ -74,7 +74,8 @@ class MainActivity : Activity() {
 
     private fun draw() {
         val address = Enroller.localIpv4()
-        device.text = "This device: ${Enroller.deviceLabel()}  (reports as ${Enroller.hostname()})"
+        device.text = if (store.deviceName.isEmpty()) "Not named yet. Name this device on the setup page."
+        else "Device name: ${store.deviceName}  (${Enroller.deviceLabel()})"
         code.text = store.ensureInstallerCode()
         status.text = when (store.state) {
             "approved" -> "Approved as ${store.name.ifEmpty { "this device" }}"
@@ -82,8 +83,8 @@ class MainActivity : Activity() {
             else -> "Not set up yet"
         }
         where.text = if (store.state == "approved") "" else
-            "1. Register this code on the dashboard with a device name.\n" +
-                "2. On your phone, open  http://${address ?: "this device's address"}:${SetupServer.PORT}  and paste the setup key the dashboard shows."
+            "1. On your phone, open  http://${address ?: "this device's address"}:${SetupServer.PORT}  and name this device.\n" +
+                "2. Register the code above on the dashboard, then paste the setup key it shows into the same page."
         detail.text = store.lastError
     }
 }

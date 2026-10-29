@@ -26,7 +26,12 @@ class RootCauseIn(BaseModel):
 
 class GeminiSettingIn(BaseModel):
     api_key: Optional[str] = None
-    model: str = "gemini-2.5-flash"
+    model: Optional[str] = None
+
+
+def _chosen_model(value: Optional[str]) -> str:
+    model = (value or "").strip()
+    return model if model in gemini_rca.ALLOWED_MODELS else gemini_rca.DEFAULT_MODEL
 
 
 def _gemini_out(row: GeminiSetting) -> dict[str, Any]:
@@ -34,7 +39,7 @@ def _gemini_out(row: GeminiSetting) -> dict[str, Any]:
         "configured": gemini_rca.is_configured(row),
         "key_set": bool(row.api_key_enc or gemini_rca.resolve_api_key(row)),
         "key_hint": row.key_hint or ("env" if gemini_rca.resolve_api_key(row) and not row.api_key_enc else ""),
-        "model": row.model or gemini_rca.DEFAULT_MODEL,
+        "model": _chosen_model(row.model),
         "allowed_models": list(gemini_rca.ALLOWED_MODELS),
         "last_ok_at": row.last_ok_at,
         "last_error": row.last_error,
@@ -103,9 +108,7 @@ def save_gemini_settings(
     _admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> dict[str, Any]:
     row = gemini_rca.get_settings_row(db)
-    model = (body.model or gemini_rca.DEFAULT_MODEL).strip()
-    if model not in gemini_rca.ALLOWED_MODELS:
-        raise HTTPException(status_code=400, detail=f"Choose one of: {', '.join(gemini_rca.ALLOWED_MODELS)}")
+    model = _chosen_model(body.model)
     key = (body.api_key or "").strip()
     if key:
         if not gemini_rca.valid_key(key):

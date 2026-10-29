@@ -523,7 +523,7 @@ class GeminiSetting(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     api_key_enc: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     key_hint: Mapped[str] = mapped_column(String(8), nullable=False, default="", server_default="")
-    model: Mapped[str] = mapped_column(String(64), nullable=False, default="gemini-2.5-flash", server_default="gemini-2.5-flash")
+    model: Mapped[str] = mapped_column(String(64), nullable=False, default="gemini-3.8-flash", server_default="gemini-2.5-flash")
     last_ok_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

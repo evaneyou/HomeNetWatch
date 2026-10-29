@@ -30,7 +30,9 @@ RESTORE_SETTLE_S = 5
 ACCESS_PROBES = ("1.1.1.1", "8.8.8.8")
 
 _fail_counts: dict[str, int] = {"wg0": 0, "wg1": 0}
-_last_restore_at: dict[str, float] = {"wg0": 0.0, "wg1": 0.0}
+# None means never restored; do not seed 0.0 or a fresh boot's small monotonic clock
+# looks like "just restored" for the outage cooldown window.
+_last_restore_at: dict[str, float | None] = {"wg0": None, "wg1": None}
 
 
 def _configured(iface: str) -> bool:
@@ -177,8 +179,8 @@ def check_once(now: float | None = None) -> None:
         if _fail_counts[iface] < FAILS_BEFORE_RESTORE:
             continue
         cooldown = COOLDOWN_RECOVERY_S if access_ok else COOLDOWN_OUTAGE_S
-        last = _last_restore_at.get(iface, 0.0)
-        if moment - last < cooldown:
+        last = _last_restore_at.get(iface)
+        if last is not None and moment - last < cooldown:
             continue
         # Record the attempt time even when restore fails, so we do not spin sudo.
         _last_restore_at[iface] = moment

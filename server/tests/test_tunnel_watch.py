@@ -44,7 +44,7 @@ def test_recovery_retries_within_a_minute_when_access_is_up(monkeypatch):
     monkeypatch.setattr(tw, "_restore", lambda iface: restores.append(iface) or True)
     monkeypatch.setattr(tw.time, "sleep", lambda _s: None)
     tw._fail_counts["wg1"] = 0
-    tw._last_restore_at["wg1"] = 0.0
+    tw._last_restore_at["wg1"] = None
 
     tw.check_once(now=100.0)
     tw.check_once(now=101.0)
@@ -67,7 +67,7 @@ def test_outage_keeps_long_cooldown_when_access_is_down(monkeypatch):
     monkeypatch.setattr(tw, "_restore", lambda iface: restores.append(iface) or True)
     monkeypatch.setattr(tw.time, "sleep", lambda _s: None)
     tw._fail_counts["wg1"] = 0
-    tw._last_restore_at["wg1"] = 0.0
+    tw._last_restore_at["wg1"] = None
 
     tw.check_once(now=100.0)
     tw.check_once(now=101.0)

@@ -712,6 +712,7 @@ def test_gemini_settings_and_on_demand_root_cause_analysis(client: TestClient, d
     _ensure_guest(db)
     guest = TestClient(app, base_url="https://testserver")
     login(guest, "guest", "guest")
+    assert guest.get("/api/v1/kpi?period=day").status_code == 200
     assert guest.post("/api/v1/kpi/root-cause", json={"period": "day"}).status_code == 403
 
     fake_key = "AQ." + "B" * 40

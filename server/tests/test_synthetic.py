@@ -836,3 +836,76 @@ def test_agent_has_no_daily_traffic_cap(tmp_path: Path):
     assert module._charge(payload) is True
     module._budget_mem = {"day": today, "bytes": 0, "run": 0}
     assert module._charge({"interval_s": 1, "flows": [{"sent": module.MAX_PPS + 1, "tx_kbps": 1}]}) is True
+
+
+def test_bandwidth_collapse_diagnosed_as_root_cause_on_synthetic_health(client, db, monitor_token):
+    from app.models import Network, ResultStatus, Test, TestResult
+
+    monitor = _monitor(db)
+    ensure_internet_tests(db, monitor)
+    db.commit()
+    if db.scalar(select(User).where(User.username == "admin")) is None:
+        db.add(User(username="admin", password_hash=hash_password("admin-change-me"), role=UserRole.admin, is_active=True))
+        db.commit()
+
+    now = datetime.now(timezone.utc)
+    for slug, up_val in (("wired", 0.6), ("wifi", 0.5)):
+        net = db.scalar(select(Network).where(Network.group_id == monitor.group_id, Network.slug == slug))
+        speed = db.scalar(select(Test).where(Test.monitor_id == monitor.id, Test.network_id == net.id, Test.slug == "librespeed"))
+        for i in range(4):
+            t = now - timedelta(hours=5 - i)
+            db.add(
+                TestResult(
+                    external_id=f"bw-base-{monitor.id.hex[:6]}-{slug}-{i}",
+                    test_id=speed.id,
+                    started_at=t,
+                    finished_at=t + timedelta(seconds=10),
+                    status=ResultStatus.ok,
+                    metrics={"down_mbps": 280.0, "up_mbps": 31.0},
+                )
+            )
+        db.add(
+            TestResult(
+                external_id=f"bw-drop-{monitor.id.hex[:6]}-{slug}",
+                test_id=speed.id,
+                started_at=now - timedelta(minutes=5),
+                finished_at=now - timedelta(minutes=4),
+                status=ResultStatus.degraded,
+                status_reason=f"Upload {up_val} Mbps is more than 25% below the recent normal of 31.0 Mbps.",
+                metrics={"down_mbps": 250.0, "up_mbps": up_val},
+            )
+        )
+
+    for profile in ("voip-g711a", "video-conference"):
+        run = SyntheticRun(
+            monitor_id=monitor.id,
+            profile_slug=profile,
+            mode="continuous",
+            links=["wired", "wireless"],
+            options={},
+            status="running",
+            finished_links=[],
+        )
+        db.add(run)
+        db.commit()
+        for idx in range(3):
+            _post_sample(client, monitor_token, run.id, "wired", now - timedelta(seconds=30 - idx * 10), 40, 8, 9.5, False, idx + 1)
+            _post_sample(client, monitor_token, run.id, "wireless", now - timedelta(seconds=30 - idx * 10), 45, 9, 11.0, False, idx + 1)
+
+    headers = login(client)
+    res = client.get(f"/api/v1/synthetic/health?monitor_id={monitor.id}&link=wired", headers=headers)
+    assert res.status_code == 200
+    diag = res.json()["diagnosis"]
+    assert diag is not None
+    assert diag["cause"] == "bandwidth"
+    assert "0.6 Mbps" in diag["summary"]
+    assert "0.5 Mbps" in diag["summary"]
+
+    summary = client.get("/api/v1/summary", headers=headers).json()
+    assert summary["diagnoses"][str(monitor.id)]["cause"] == "bandwidth"
+    wired_inet = next(c for c in summary["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wired" and c["column"] == "internet")
+    wifi_inet = next(c for c in summary["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wifi" and c["column"] == "internet")
+    assert wired_inet["status"] in ("degraded", "fail") and wired_inet["cause"] == "bandwidth"
+    assert wifi_inet["status"] in ("degraded", "fail") and wifi_inet["cause"] == "bandwidth"
+
+

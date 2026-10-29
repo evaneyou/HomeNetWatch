@@ -94,6 +94,11 @@ function columnState(cells: HealthCell[], monitorId: string, key: string, column
 }
 
 function columnDetail(cells: HealthCell[], monitorId: string, key: string, column: string, state: CheckState): string {
+  if ((key === "wifi" || key === "wired") && (state === "slow" || state === "down")) {
+    const matches = checkCells(cells, monitorId, key, column);
+    if (matches.some((cell) => cell.cause === "bandwidth")) return "Bandwidth drop";
+    if (matches.some((cell) => cell.cause === "wan")) return state === "down" ? "ISP / WAN outage" : "ISP path / bandwidth";
+  }
   if (key === "wifi" && (state === "slow" || state === "down")) {
     const wifiCell = checkCells(cells, monitorId, key, column).find((cell) => cell.cause === "wifi");
     if (wifiCell) return state === "down" ? "Failing on Wi-Fi" : "Packet loss / slow";
@@ -211,9 +216,13 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
       blurb = "Remote probe is offline and has stopped checking in.";
       reason =
         "The face is coral red with a frown because the remote Raspberry Pi probe has stopped checking in for over 5 minutes, so live network health cannot be verified.";
+    } else if (diag?.cause === "bandwidth" && (down.length > 0 || slow.length > 0)) {
+      mood = down.length > 0 ? "down" : "slow";
+      blurb = "ISP bandwidth drop is degrading Wired, Wi-Fi, and Apps.";
+      reason = diag.summary;
     } else if (diag?.cause === "wan" && (down.length > 0 || slow.length > 0)) {
       mood = down.length > 0 ? "down" : "slow";
-      blurb = "All checks failing — possible ISP, remote agent, or server outage.";
+      blurb = "Shared ISP / WAN degradation across Wired and Wi-Fi.";
       reason = diag.summary;
     } else if (diag?.cause === "server" && (down.length > 0 || slow.length > 0)) {
       mood = down.length > 0 ? "down" : "slow";

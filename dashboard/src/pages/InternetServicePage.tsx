@@ -99,7 +99,7 @@ function ToolRow({
           aria-label={varianceLabel}
           type="number"
           min={0}
-          max={500}
+          max={varianceField === "librespeed_variance_pct" ? 50 : 500}
           step={5}
           value={row[varianceField]}
           disabled={locked}

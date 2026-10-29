@@ -193,8 +193,9 @@ def _attribute_root_causes(
     networks: list[Network],
     cell_map: dict[tuple[UUID, UUID, str], HealthCell],
     now_utc: datetime,
+    bandwidth_bad_links: Optional[dict[UUID, set[str]]] = None,
 ) -> dict[str, dict[str, str]]:
-    """Correlate Wired vs Wi-Fi, ISP Path vs External Web vs Synthetic Apps, and probe check-in."""
+    """Correlate Wired vs Wi-Fi, ISP Path/Bandwidth vs External Web vs Synthetic Apps, and probe check-in."""
     rank = {"ok": 0, "degraded": 1, "fail": 2, "unknown": -1}
     bad_states = {"degraded", "fail"}
     net_by_slug = {(n.group_id, n.slug): n for n in networks}
@@ -221,6 +222,7 @@ def _attribute_root_causes(
         w_inet, f_inet = _cell(wired_net, "internet"), _cell(wifi_net, "internet")
         w_web, f_web = _cell(wired_net, "web"), _cell(wifi_net, "web")
         w_apps, f_apps = _cell(wired_net, "apps"), _cell(wifi_net, "apps")
+        bw_links = (bandwidth_bad_links or {}).get(monitor.id, set())
 
         if is_offline:
             diagnoses[str(monitor.id)] = {
@@ -255,7 +257,24 @@ def _attribute_root_causes(
             and f_apps.status in bad_states
         )
 
-        # Case 1: All tests failing across both Wired and Wi-Fi (ISP/WAN + Web)
+        # Case 1a: Bandwidth collapse across both links (or one link with both apps failing) -> shared ISP bandwidth issue
+        if ("wired" in bw_links and "wifi" in bw_links) or (bw_links and both_apps_bad):
+            diagnoses[str(monitor.id)] = {
+                "cause": "bandwidth",
+                "title": "Upstream ISP bandwidth collapse",
+                "summary": "Bandwidth Test throughput dropped below normal across the internet connection, starving real-time voice and video streams on both Wired and Wi-Fi.",
+            }
+            for cell in (w_inet, f_inet):
+                if cell is not None and rank["degraded"] > rank[cell.status]:
+                    cell.status = "degraded"
+                if cell is not None:
+                    cell.cause = "bandwidth"
+            for cell in (w_web, f_web, w_apps, f_apps):
+                if cell is not None and cell.status in bad_states:
+                    cell.cause = "bandwidth"
+            continue
+
+        # Case 1b: All tests failing across both Wired and Wi-Fi (ISP/WAN + Web)
         if both_inet_bad and both_web_bad:
             diagnoses[str(monitor.id)] = {
                 "cause": "wan",
@@ -263,6 +282,26 @@ def _attribute_root_causes(
                 "summary": "All checks across both Wired and Wi-Fi are failing simultaneously. This indicates an ISP outage, modem/router issue, or unreachable server rather than individual apps.",
             }
             for cell in (w_inet, f_inet, w_web, f_web, w_apps, f_apps):
+                if cell is not None and cell.status in bad_states:
+                    cell.cause = "wan"
+            continue
+
+        # Case 1c: Both links have degraded/failing Apps (e.g., upstream upload starvation before next LibreSpeed run)
+        # Do NOT let single-link logic blame only Wi-Fi when Wired Apps are also degraded/failing!
+        if both_apps_bad:
+            diagnoses[str(monitor.id)] = {
+                "cause": "wan",
+                "title": "Upstream ISP or shared network degradation",
+                "summary": "Real-time application streams are experiencing packet loss or jitter across both Wired and Wi-Fi simultaneously, pointing to upstream ISP bandwidth or path congestion.",
+            }
+            for cell in (w_inet, f_inet):
+                if cell is not None and rank["degraded"] > rank[cell.status]:
+                    cell.status = "degraded"
+                    if cell.failing_tests == 0:
+                        cell.failing_tests = 1
+                if cell is not None and cell.status in bad_states:
+                    cell.cause = "wan"
+            for cell in (w_web, f_web, w_apps, f_apps):
                 if cell is not None and cell.status in bad_states:
                     cell.cause = "wan"
             continue
@@ -294,6 +333,9 @@ def _attribute_root_causes(
         for cause_key, a_inet, a_web, a_apps, b_inet, b_web, b_apps, title, a_label, b_label in link_pairs:
             link_degraded = False
             worst_promoted = "degraded"
+            # Only attribute to a single link when the sibling link has no degraded/failing checks
+            if any(c is not None and c.status in bad_states for c in (b_inet, b_web, b_apps)):
+                continue
             for a_cell, b_cell in ((a_web, b_web), (a_apps, b_apps)):
                 if (
                     a_cell is not None
@@ -388,6 +430,7 @@ def summary(
                 )
 
     rank = {"ok": 0, "degraded": 1, "fail": 2, "unknown": -1}
+    bandwidth_bad_links: dict[UUID, set[str]] = {}
     for test in tests:
         if not test.enabled:
             continue
@@ -402,9 +445,13 @@ def summary(
             continue
         status_val = (
             test.stable_status.value
-            if test.slug in ("http-path", "icmp-path") and test.stable_status is not None
+            if test.slug in ("http-path", "icmp-path", "librespeed") and test.stable_status is not None
             else result.status.value
         )
+        if test.slug == "librespeed" and result.status in (ResultStatus.degraded, ResultStatus.fail):
+            status_val = result.status.value
+        if test.slug == "librespeed" and status_val in ("degraded", "fail"):
+            bandwidth_bad_links.setdefault(test.monitor_id, set()).add(test.network.slug)
         if cell.last_test_at is None or result.started_at > cell.last_test_at:
             cell.last_test_at = result.started_at
         if test.slug == "mtr-path":
@@ -419,7 +466,7 @@ def summary(
     _fill_web_quorum(tests, latest_by_test, cell_map, stability_config(load_web_stability(db)))
     _fill_app_cells(db, monitors, networks, cell_map)
     now_utc = datetime.now(timezone.utc)
-    diagnoses = _attribute_root_causes(monitors, networks, cell_map, now_utc)
+    diagnoses = _attribute_root_causes(monitors, networks, cell_map, now_utc, bandwidth_bad_links)
 
     open_issues = db.scalars(
         select(Issue)

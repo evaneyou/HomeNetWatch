@@ -691,3 +691,58 @@ def test_tunnel_only_failures_diagnose_as_tunnel_not_wifi(db):
     assert rep["links"]["voice"]["wireless"]["availability"] == pytest.approx(0.0)
     assert rep["diagnosis"] is not None and rep["diagnosis"]["cause"] == "tunnel"
 
+
+def test_gemini_settings_and_on_demand_root_cause_analysis(client: TestClient, db, monkeypatch):
+    from app import gemini_rca
+    from app.models import GeminiSetting
+
+    db.execute(delete(GeminiSetting))
+    db.commit()
+
+    fake_key = "AIzaSyTestKeyForHomeNetWatch1234567890"
+    monkeypatch.setattr(gemini_rca, "verify_key", lambda key, model="gemini-2.5-flash": None)
+
+    headers = login(client)
+    saved = client.put(
+        "/api/v1/settings/gemini",
+        headers=headers,
+        json={"api_key": fake_key, "model": "gemini-2.5-flash"},
+    )
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["configured"] is True
+    assert body["key_set"] is True
+    assert body["key_hint"] == "7890"
+    assert fake_key not in saved.text
+
+    def fake_call_gemini(api_key, model, system_prompt, user_payload, json_mode=True):
+        assert api_key == fake_key
+        assert "bandwidth_test_log" in user_payload
+        return {
+            "started_at": "Oct 16, 2026 at 08:00 ET",
+            "root_cause": "Upstream ISP upload bandwidth collapse across both Wired and Wi-Fi",
+            "category": "bandwidth",
+            "confidence": "high",
+            "summary": "Upload throughput dropped from 31 Mbps to 0.6 Mbps on both links, starving real-time UDP streams.",
+            "timeline": [
+                {"time": "2026-10-16 08:00 ET", "event": "LibreSpeed upload fell to 0.6 Mbps", "impact": "Voice and Video packet loss began"}
+            ],
+            "evidence": ["Wired upload 0.6 Mbps vs 31 Mbps baseline"],
+            "recommendations": ["Reboot cable/fiber modem and check ISP upstream channel power"],
+        }
+
+    monkeypatch.setattr(gemini_rca, "call_gemini", fake_call_gemini)
+    monitor = _pi(db)
+    rca = client.post(
+        "/api/v1/kpi/root-cause",
+        headers=headers,
+        json={"period": "day", "monitor_id": str(monitor.id)},
+    )
+    assert rca.status_code == 200, rca.text
+    report = rca.json()
+    assert report["started_at"] == "Oct 16, 2026 at 08:00 ET"
+    assert "upload bandwidth collapse" in report["root_cause"]
+    assert report["confidence"] == "high"
+    assert len(report["timeline"]) == 1
+
+

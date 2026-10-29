@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     rtnp_state_dir: str = ""
     rtnp_udp_port: int = 8998
     rtnp_control_port: int = 8999
+    gemini_api_key: str = ""
 
     @model_validator(mode="after")
     def _no_default_secret_in_production(self) -> "Settings":

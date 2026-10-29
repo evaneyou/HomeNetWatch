@@ -262,6 +262,126 @@ def _limit(options: dict[str, Any], key: str, default: float) -> float:
         return float(default)
 
 
+def _diagnose_bandwidth(
+    db: Session,
+    monitor_id: uuid.UUID,
+    link: str,
+    latest_fail_at: datetime,
+    both_links_failing: bool,
+) -> Optional[dict[str, str]]:
+    """Check if LibreSpeed upload/download collapsed around the time of the application failures."""
+    from app.internet_tests import _baseline_value, load_internet_service
+
+    setting = load_internet_service(db)
+    variance = min(max(setting.librespeed_variance_pct, 0), 50)
+    floor = max(0.0, 1.0 - variance / 100.0)
+    tests = db.execute(
+        select(Test, Network)
+        .join(Network, Test.network_id == Network.id)
+        .where(
+            Test.monitor_id == monitor_id,
+            Test.slug == "librespeed",
+            Network.slug.in_(("wired", "wifi")),
+        )
+    ).all()
+    if not tests:
+        return None
+    by_link: dict[str, dict[str, Any]] = {}
+    for test, network in tests:
+        lnk = "wireless" if network.kind == NetworkKind.wifi else "wired"
+        latest = db.scalar(
+            select(TestResult)
+            .where(
+                TestResult.test_id == test.id,
+                TestResult.started_at >= latest_fail_at - timedelta(hours=2),
+                TestResult.started_at <= latest_fail_at + timedelta(minutes=30),
+            )
+            .order_by(TestResult.started_at.desc())
+            .limit(1)
+        )
+        if latest is None:
+            continue
+        metrics = latest.metrics or {}
+        down = metrics.get("down_mbps")
+        up = metrics.get("up_mbps")
+        down_val = float(down) if isinstance(down, (int, float)) and not isinstance(down, bool) else None
+        up_val = float(up) if isinstance(up, (int, float)) and not isinstance(up, bool) else None
+        base_down = _baseline_value(db, test, "down_mbps")
+        base_up = _baseline_value(db, test, "up_mbps")
+        up_bad = up_val is not None and (
+            (base_up is not None and up_val < base_up * floor) or up_val < 2.0
+        )
+        down_bad = down_val is not None and (
+            (base_down is not None and down_val < base_down * floor) or down_val < 5.0
+        )
+        is_bad = latest.status in (ResultStatus.degraded, ResultStatus.fail) or up_bad or down_bad
+        if is_bad:
+            by_link[lnk] = {
+                "down": down_val,
+                "up": up_val,
+                "base_down": base_down,
+                "base_up": base_up,
+                "up_bad": up_bad,
+                "down_bad": down_bad,
+                "reason": latest.status_reason or "",
+            }
+    if not by_link:
+        return None
+    if both_links_failing or ("wired" in by_link and "wireless" in by_link):
+        w = by_link.get("wired")
+        f = by_link.get("wireless")
+        sample = w or f or {}
+        if (w and w["up_bad"]) or (f and f["up_bad"]):
+            parts = []
+            if w and w["up"] is not None:
+                parts.append(f"{w['up']:.1f} Mbps on Wired")
+            if f and f["up"] is not None:
+                parts.append(f"{f['up']:.1f} Mbps on Wi-Fi")
+            norm = sample.get("base_up")
+            norm_txt = f" (normal ~{norm:.0f} Mbps)" if norm else ""
+            return {
+                "cause": "bandwidth",
+                "title": "Upstream ISP bandwidth collapse",
+                "summary": (
+                    f"Upload throughput dropped to {' and '.join(parts)}{norm_txt}, "
+                    "starving real-time voice, video, and remote desktop streams across both links."
+                ),
+            }
+        parts = []
+        if w and w["down"] is not None:
+            parts.append(f"{w['down']:.1f} Mbps down / {w['up'] or 0:.1f} Mbps up on Wired")
+        if f and f["down"] is not None:
+            parts.append(f"{f['down']:.1f} Mbps down / {f['up'] or 0:.1f} Mbps up on Wi-Fi")
+        return {
+            "cause": "bandwidth",
+            "title": "Upstream ISP bandwidth collapse",
+            "summary": (
+                f"Bandwidth Test throughput dropped ({'; '.join(parts)}), "
+                "degrading real-time voice, video, and remote desktop streams across both links."
+            ),
+        }
+    if link in by_link:
+        item = by_link[link]
+        label = "Wi-Fi" if link == "wireless" else "Wired"
+        if item["up_bad"] and item["up"] is not None:
+            norm = item.get("base_up")
+            norm_txt = f" (normal ~{norm:.0f} Mbps)" if norm else ""
+            return {
+                "cause": "bandwidth",
+                "title": f"{label} bandwidth drop",
+                "summary": (
+                    f"Upload throughput on {label} dropped to {item['up']:.1f} Mbps{norm_txt}, "
+                    "causing real-time application packet loss and latency on that link."
+                ),
+            }
+        return {
+            "cause": "bandwidth",
+            "title": f"{label} bandwidth drop",
+            "summary": item["reason"] or f"Bandwidth Test throughput on {label} dropped below normal.",
+        }
+    return None
+
+
 def _diagnose_health(
     db: Session,
     monitor_id: uuid.UUID,
@@ -275,10 +395,11 @@ def _diagnose_health(
     failed_samples = [row for row in raw_link if row.verdict == "fail"]
     if not failed_samples:
         return None
+    latest_fail_at = max(row.recorded_at for row in failed_samples)
     sibling_link = "wired" if link == "wireless" else "wireless"
     sibling_runs = [run for run in all_runs if sibling_link in (run.links or [])]
     if not sibling_runs:
-        return None
+        return _diagnose_bandwidth(db, monitor_id, link, latest_fail_at, both_links_failing=False)
     sibling_samples = list(
         db.scalars(
             select(SyntheticSample).where(
@@ -291,7 +412,7 @@ def _diagnose_health(
         ).all()
     )
     if not sibling_samples:
-        return None
+        return _diagnose_bandwidth(db, monitor_id, link, latest_fail_at, both_links_failing=False)
 
     sib_failed = [row for row in sibling_samples if row.verdict == "fail"]
     my_fails = len(failed_samples)
@@ -304,7 +425,9 @@ def _diagnose_health(
 
     # If this link has far more failures than the sibling link (>= 3x, or sibling had 0), attribute carefully.
     if my_fails >= 3 and (sib_fails == 0 or my_fails >= sib_fails * 3):
-        latest_fail_at = max(row.recorded_at for row in failed_samples)
+        bw_diag = _diagnose_bandwidth(db, monitor_id, link, latest_fail_at, both_links_failing=False)
+        if bw_diag is not None:
+            return bw_diag
         web_ok = db.scalar(
             select(TestResult.id)
             .join(Test, TestResult.test_id == Test.id)
@@ -399,6 +522,9 @@ def _diagnose_health(
                     "This points to a temporary restart in the HomeNetWatch synthetic receiver or remote agent sender."
                 ),
             }
+        bw_diag = _diagnose_bandwidth(db, monitor_id, link, latest_fail_at, both_links_failing=True)
+        if bw_diag is not None:
+            return bw_diag
         return {
             "cause": "wan",
             "title": "Upstream ISP or shared network spike",
@@ -407,6 +533,9 @@ def _diagnose_health(
                 "indicating an upstream ISP blip, router congestion, or shared path issue."
             ),
         }
+    bw_diag = _diagnose_bandwidth(db, monitor_id, link, latest_fail_at, both_links_failing=bool(my_fails >= 3 and sib_fails >= 3))
+    if bw_diag is not None:
+        return bw_diag
     return None
 
 

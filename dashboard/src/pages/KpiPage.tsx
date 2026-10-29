@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Area,
@@ -78,6 +78,9 @@ type RootCauseReport = {
   evidence: string[];
   recommendations: string[];
 };
+
+/** Guest analysis waits about as long as a typical Gemini round trip. */
+const KPI_RCA_DEMO_WAIT_MS = 3500;
 
 const KPI_RCA_DEMO: RootCauseReport = {
   generated_at: "",
@@ -584,6 +587,8 @@ export default function KpiPage() {
   const admin = me.data?.role === "admin";
   const [rcaOpen, setRcaOpen] = useState(false);
   const [demoRca, setDemoRca] = useState<RootCauseReport | null>(null);
+  const [demoPending, setDemoPending] = useState(false);
+  const demoTimer = useRef<number | null>(null);
   const rcaMutation = useMutation({
     mutationFn: () =>
       api.kpiRootCause({
@@ -593,13 +598,32 @@ export default function KpiPage() {
       }) as Promise<RootCauseReport>,
   });
   const rcaReport = admin ? rcaMutation.data : demoRca;
-  const rcaPending = admin && rcaMutation.isPending;
+  const rcaPending = admin ? rcaMutation.isPending : demoPending;
   const rcaError = admin && rcaMutation.isError ? parseApiError(rcaMutation.error) : null;
+  const isGuestDemo = !admin && rcaReport != null;
+
+  useEffect(
+    () => () => {
+      if (demoTimer.current != null) window.clearTimeout(demoTimer.current);
+    },
+    [],
+  );
+
+  function runGuestDemo() {
+    if (demoTimer.current != null) window.clearTimeout(demoTimer.current);
+    setDemoRca(null);
+    setDemoPending(true);
+    demoTimer.current = window.setTimeout(() => {
+      setDemoRca({ ...KPI_RCA_DEMO, generated_at: new Date().toISOString() });
+      setDemoPending(false);
+      demoTimer.current = null;
+    }, KPI_RCA_DEMO_WAIT_MS);
+  }
 
   function runRootCause() {
     setRcaOpen(true);
     if (!admin) {
-      setDemoRca({ ...KPI_RCA_DEMO, generated_at: new Date().toISOString() });
+      runGuestDemo();
       return;
     }
     setDemoRca(null);
@@ -608,7 +632,7 @@ export default function KpiPage() {
 
   function rerunRootCause() {
     if (!admin) {
-      setDemoRca({ ...KPI_RCA_DEMO, generated_at: new Date().toISOString() });
+      runGuestDemo();
       return;
     }
     rcaMutation.mutate();
@@ -761,11 +785,7 @@ export default function KpiPage() {
             disabled={rcaPending}
             onClick={runRootCause}
           >
-            {rcaPending
-              ? "Analyzing Event Log…"
-              : admin
-                ? "Determine Root Cause"
-                : "Run root-cause demo"}
+            {rcaPending ? "Analyzing Event Log…" : "Determine Root Cause"}
           </button>
         </div>
       </header>
@@ -774,9 +794,7 @@ export default function KpiPage() {
         <section className="kpi-panel kpi-rca-panel" aria-live="polite">
           <header className="kpi-rca-head">
             <div>
-              <span className="kpi-rca-eyebrow">
-                {admin ? "Gemini AI · Event & Metric Log Analysis" : "Demo sample · Event & Metric Log Analysis"}
-              </span>
+              <span className="kpi-rca-eyebrow">Gemini AI · Event & Metric Log Analysis</span>
               <h3>Root Cause Report</h3>
             </div>
             <div className="kpi-rca-actions">
@@ -786,7 +804,7 @@ export default function KpiPage() {
                 disabled={rcaPending}
                 onClick={rerunRootCause}
               >
-                {rcaPending ? "Running…" : admin ? "Re-run Analysis" : "Re-run demo"}
+                {rcaPending ? "Running…" : "Re-run Analysis"}
               </button>
               <button
                 type="button"
@@ -815,9 +833,9 @@ export default function KpiPage() {
             </div>
           ) : rcaReport ? (
             <div className="kpi-rca-body">
-              {!admin ? (
-                <p className="kpi-rca-summary muted">
-                  Guests see this canned bandwidth-collapse example. Live Gemini analysis is admin-only.
+              {isGuestDemo ? (
+                <p className="kpi-rca-demo-banner" role="status">
+                  Demo for guests — this sample report does not call Gemini. Live analysis is available to admins.
                 </p>
               ) : null}
               <div className="kpi-rca-meta">

@@ -2102,13 +2102,15 @@
   font-size: 0.8rem;
 }
 
-.fault-sim-demo-note {
-  margin: 0.35rem 0 0.9rem;
-}
-
-.fault-sim-prompt[readonly] {
-  opacity: 0.92;
-  cursor: default;
+.fault-sim-demo-banner {
+  margin: 0 0 0.85rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .fault-sim-examples {

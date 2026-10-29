@@ -709,6 +709,11 @@ def test_gemini_settings_and_on_demand_root_cause_analysis(client: TestClient, d
     db.execute(delete(GeminiSetting))
     db.commit()
 
+    _ensure_guest(db)
+    guest = TestClient(app, base_url="https://testserver")
+    login(guest, "guest", "guest")
+    assert guest.post("/api/v1/kpi/root-cause", json={"period": "day"}).status_code == 403
+
     fake_key = "AQ." + "B" * 40
     monkeypatch.setattr(gemini_rca, "verify_key", lambda key, model="gemini-3.8-flash": None)
 

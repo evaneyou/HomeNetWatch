@@ -60,7 +60,7 @@ The Pi stays on the LAN and reaches the server over outbound HTTPS. Only server 
 | `GET` | `/api/v1/issues` | Issue list |
 | `GET` | `/api/v1/issues/{id}` | Issue detail |
 | `GET` | `/api/v1/kpi` | KPI summary, per-link breakdown, hourly/daily series, and rule-based diagnosis |
-| `POST` | `/api/v1/kpi/root-cause` | On-demand Google Gemini LLM root cause analysis over the KPI window's event and metric log |
+| `POST` | `/api/v1/kpi/root-cause` | Admin. On-demand Google Gemini LLM root cause analysis over the KPI window's event and metric log. Guests see a canned demo in the KPI UI instead |
 | `GET`/`PUT`/`DELETE` | `/api/v1/settings/gemini` | Admin + CSRF. Encrypted Google Gemini API key and model selection |
 
 Enrollment / config ETag matrix and webhooks are deferred.

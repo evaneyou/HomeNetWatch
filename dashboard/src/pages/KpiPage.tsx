@@ -19,7 +19,7 @@ import {
 } from "recharts";
 import { api } from "../api";
 import SelectMenu from "../components/SelectMenu";
-import type { MonitorAdmin } from "../types";
+import type { MonitorAdmin, User } from "../types";
 import "../kpi.css";
 
 type Period = "day" | "week" | "month" | "year";
@@ -77,6 +77,44 @@ type RootCauseReport = {
   timeline: { time: string; event: string; impact: string }[];
   evidence: string[];
   recommendations: string[];
+};
+
+const KPI_RCA_DEMO: RootCauseReport = {
+  generated_at: "",
+  model: "demo",
+  started_at: "Oct 16, 2026 at 08:00 ET",
+  root_cause: "Upstream ISP upload bandwidth collapse across both Wired and Wi-Fi",
+  category: "bandwidth",
+  confidence: "high",
+  summary:
+    "LibreSpeed upload on both links fell from about 31 Mbps to under 1 Mbps while download stayed relatively high. Real-time voice and video over Wired and Wi-Fi then showed rising loss and jitter because upstream queues were starved. This is a shared WAN bandwidth problem, not a single-link Wi-Fi radio fault.",
+  timeline: [
+    {
+      time: "2026-10-16 08:00 ET",
+      event: "LibreSpeed upload fell to ~0.6 Mbps on Wired and Wi-Fi",
+      impact: "Egress capacity collapsed for real-time UDP streams",
+    },
+    {
+      time: "2026-10-16 08:05 ET",
+      event: "Voice and video synthetic samples began failing on both links",
+      impact: "Application availability dropped while light HTTP path checks still often passed",
+    },
+    {
+      time: "2026-10-16 08:10 ET",
+      event: "Telegram net-bandwidth alert for the WAN",
+      impact: "Per-app alerts stayed suppressed under the bandwidth hierarchy",
+    },
+  ],
+  evidence: [
+    "Wired and Wi-Fi LibreSpeed upload ~0.6 Mbps vs ~31 Mbps baseline",
+    "Both links show correlated voice/video loss after the bandwidth drop",
+    "Public web checks did not show a full ISP outage",
+  ],
+  recommendations: [
+    "Check the modem/ONT upstream channel power and reboot the gateway",
+    "Confirm with the ISP whether upstream capacity or congestion is reported",
+    "Compare a second LibreSpeed run after recovery before blaming individual apps",
+  ],
 };
 
 function parseApiError(err: unknown): string {
@@ -542,7 +580,10 @@ export default function KpiPage() {
     placeholderData: (previous) => previous,
   });
 
+  const me = useQuery({ queryKey: ["me"], queryFn: () => api.me() as Promise<User> });
+  const admin = me.data?.role === "admin";
   const [rcaOpen, setRcaOpen] = useState(false);
+  const [demoRca, setDemoRca] = useState<RootCauseReport | null>(null);
   const rcaMutation = useMutation({
     mutationFn: () =>
       api.kpiRootCause({
@@ -551,9 +592,25 @@ export default function KpiPage() {
         monitor_id: monitorId || undefined,
       }) as Promise<RootCauseReport>,
   });
+  const rcaReport = admin ? rcaMutation.data : demoRca;
+  const rcaPending = admin && rcaMutation.isPending;
+  const rcaError = admin && rcaMutation.isError ? parseApiError(rcaMutation.error) : null;
 
   function runRootCause() {
     setRcaOpen(true);
+    if (!admin) {
+      setDemoRca({ ...KPI_RCA_DEMO, generated_at: new Date().toISOString() });
+      return;
+    }
+    setDemoRca(null);
+    rcaMutation.mutate();
+  }
+
+  function rerunRootCause() {
+    if (!admin) {
+      setDemoRca({ ...KPI_RCA_DEMO, generated_at: new Date().toISOString() });
+      return;
+    }
     rcaMutation.mutate();
   }
 
@@ -701,10 +758,14 @@ export default function KpiPage() {
           <button
             type="button"
             className="kpi-rca-btn"
-            disabled={rcaMutation.isPending}
+            disabled={rcaPending}
             onClick={runRootCause}
           >
-            {rcaMutation.isPending ? "Analyzing Event Log…" : "Determine Root Cause"}
+            {rcaPending
+              ? "Analyzing Event Log…"
+              : admin
+                ? "Determine Root Cause"
+                : "Run root-cause demo"}
           </button>
         </div>
       </header>
@@ -713,17 +774,19 @@ export default function KpiPage() {
         <section className="kpi-panel kpi-rca-panel" aria-live="polite">
           <header className="kpi-rca-head">
             <div>
-              <span className="kpi-rca-eyebrow">Gemini AI · Event & Metric Log Analysis</span>
+              <span className="kpi-rca-eyebrow">
+                {admin ? "Gemini AI · Event & Metric Log Analysis" : "Demo sample · Event & Metric Log Analysis"}
+              </span>
               <h3>Root Cause Report</h3>
             </div>
             <div className="kpi-rca-actions">
               <button
                 type="button"
                 className="kpi-print"
-                disabled={rcaMutation.isPending}
-                onClick={() => rcaMutation.mutate()}
+                disabled={rcaPending}
+                onClick={rerunRootCause}
               >
-                {rcaMutation.isPending ? "Running…" : "Re-run Analysis"}
+                {rcaPending ? "Running…" : admin ? "Re-run Analysis" : "Re-run demo"}
               </button>
               <button
                 type="button"
@@ -734,14 +797,14 @@ export default function KpiPage() {
               </button>
             </div>
           </header>
-          {rcaMutation.isPending ? (
+          {rcaPending ? (
             <p className="kpi-rca-loading">
               Examining bandwidth tests, path latency, application health transitions, and alert logs…
             </p>
-          ) : rcaMutation.isError ? (
+          ) : rcaError ? (
             <div className="kpi-rca-error">
-              <p>{parseApiError(rcaMutation.error)}</p>
-              {parseApiError(rcaMutation.error).toLowerCase().includes("gemini api key") ? (
+              <p>{rcaError}</p>
+              {rcaError.toLowerCase().includes("gemini api key") ? (
                 <p>
                   <Link to="/settings/gemini" className="kpi-rca-link">
                     Open Settings → Configure Gemini AI
@@ -750,31 +813,36 @@ export default function KpiPage() {
                 </p>
               ) : null}
             </div>
-          ) : rcaMutation.data ? (
+          ) : rcaReport ? (
             <div className="kpi-rca-body">
+              {!admin ? (
+                <p className="kpi-rca-summary muted">
+                  Guests see this canned bandwidth-collapse example. Live Gemini analysis is admin-only.
+                </p>
+              ) : null}
               <div className="kpi-rca-meta">
                 <div className="kpi-rca-stat">
                   <span>When it started</span>
-                  <strong>{rcaMutation.data.started_at}</strong>
+                  <strong>{rcaReport.started_at}</strong>
                 </div>
                 <div className="kpi-rca-stat">
                   <span>Primary culprit</span>
-                  <strong>{rcaMutation.data.root_cause}</strong>
+                  <strong>{rcaReport.root_cause}</strong>
                 </div>
                 <div className="kpi-rca-stat">
                   <span>Confidence</span>
-                  <strong className={`kpi-rca-conf conf-${rcaMutation.data.confidence}`}>
-                    {rcaMutation.data.confidence.toUpperCase()}
+                  <strong className={`kpi-rca-conf conf-${rcaReport.confidence}`}>
+                    {rcaReport.confidence.toUpperCase()}
                   </strong>
                 </div>
               </div>
-              <p className="kpi-rca-summary">{rcaMutation.data.summary}</p>
+              <p className="kpi-rca-summary">{rcaReport.summary}</p>
 
-              {rcaMutation.data.timeline.length > 0 ? (
+              {rcaReport.timeline.length > 0 ? (
                 <div className="kpi-rca-section">
                   <h4>Chronological Event Timeline</h4>
                   <ul className="kpi-rca-timeline">
-                    {rcaMutation.data.timeline.map((item, idx) => (
+                    {rcaReport.timeline.map((item, idx) => (
                       <li key={idx}>
                         <time>{item.time}</time>
                         <div>
@@ -788,21 +856,21 @@ export default function KpiPage() {
               ) : null}
 
               <div className="kpi-rca-cols">
-                {rcaMutation.data.evidence.length > 0 ? (
+                {rcaReport.evidence.length > 0 ? (
                   <div className="kpi-rca-section">
                     <h4>Supporting Evidence</h4>
                     <ul className="kpi-rca-list">
-                      {rcaMutation.data.evidence.map((ev, idx) => (
+                      {rcaReport.evidence.map((ev, idx) => (
                         <li key={idx}>{ev}</li>
                       ))}
                     </ul>
                   </div>
                 ) : null}
-                {rcaMutation.data.recommendations.length > 0 ? (
+                {rcaReport.recommendations.length > 0 ? (
                   <div className="kpi-rca-section">
                     <h4>Recommended Next Steps</h4>
                     <ul className="kpi-rca-list">
-                      {rcaMutation.data.recommendations.map((rec, idx) => (
+                      {rcaReport.recommendations.map((rec, idx) => (
                         <li key={idx}>{rec}</li>
                       ))}
                     </ul>

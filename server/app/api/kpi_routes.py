@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import gemini_rca, kpi, telegram
-from app.auth import require_admin, require_admin_csrf
+from app.auth import get_current_user, require_admin, require_admin_csrf
 from app.db import get_db
 from app.models import GeminiSetting, User
 

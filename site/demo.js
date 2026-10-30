@@ -1,9 +1,5 @@
 // One click into the live demo: sign in as the read-only guest, then open the dashboard.
-// The guest account is public by design. It cannot change anything, never sees the public IP,
-// and its session ends after three idle minutes. If sign-in fails the link still opens the normal login.
-//
-// This page is also served from the bare domain, where the app's API is not. There the button hands
-// over to this same page on the app's own host (with #demo), which signs in and opens the dashboard.
+// Also drives the interactive 5-layer topology tabs on the welcome page.
 (function () {
   var APP = "https://live.homenetwatch.com";
   var buttons = document.querySelectorAll("[data-demo]");
@@ -40,7 +36,10 @@
         buttons.forEach(function (button) {
           button.removeAttribute("aria-busy");
         });
-        say("Hmm, the demo sign-in did not work. I will take you to the app: sign in with the username guest and the password guest.", true);
+        say(
+          "Sign-in did not complete; opening login (username guest, password guest)...",
+          true
+        );
         window.setTimeout(function () {
           window.location.assign("/");
         }, 2500);
@@ -49,6 +48,33 @@
 
   buttons.forEach(function (button) {
     button.addEventListener("click", enter);
+  });
+
+  // Interactive topology layer switcher
+  var nodeTabs = document.querySelectorAll("[data-node]");
+  var panels = document.querySelectorAll("[data-panel]");
+
+  function selectNode(nodeKey) {
+    nodeTabs.forEach(function (tab) {
+      var active = tab.getAttribute("data-node") === nodeKey;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    panels.forEach(function (panel) {
+      var match = panel.getAttribute("data-panel") === nodeKey;
+      if (match) {
+        panel.removeAttribute("hidden");
+      } else {
+        panel.setAttribute("hidden", "");
+      }
+    });
+  }
+
+  nodeTabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      var key = tab.getAttribute("data-node");
+      if (key) selectNode(key);
+    });
   });
 
   if (onApp && window.location.hash === "#demo") enter();

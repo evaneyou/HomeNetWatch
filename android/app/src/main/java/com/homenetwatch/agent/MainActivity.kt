@@ -1,8 +1,10 @@
 package com.homenetwatch.agent
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.net.VpnService
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -13,8 +15,13 @@ import android.widget.TextView
 
 /** One screen for a TV: what the agent is doing, the installer code and where to open the setup page. */
 class MainActivity : Activity() {
+    private companion object {
+        const val VPN_REQUEST = 1
+    }
+
     private lateinit var store: Store
     private val handler = Handler(Looper.getMainLooper())
+    private var asking = false
     private lateinit var device: TextView
     private lateinit var status: TextView
     private lateinit var code: TextView
@@ -56,6 +63,24 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         handler.post(refresh)
+        askForVpn()
+    }
+
+    /**
+     * Android asks the owner once before an app may make a VPN connection, which the tunnel is. It can only ask
+     * from a screen, so the TV asks as soon as the device is approved. After that it starts by itself, also on boot.
+     */
+    private fun askForVpn() {
+        if (!store.enrolled || asking) return
+        val consent = VpnService.prepare(this) ?: return
+        asking = true
+        startActivityForResult(consent, VPN_REQUEST)
+    }
+
+    @Deprecated("The platform Activity has no replacement without AndroidX")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == VPN_REQUEST) asking = false
     }
 
     override fun onPause() {
@@ -72,6 +97,17 @@ class MainActivity : Activity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    /** The agent's state once it is approved: tunnel, health report, voice stream and the last speed test. */
+    private fun running(): String {
+        val status = AgentService.Status
+        return listOfNotNull(
+            status.tunnel.ifEmpty { "Starting the tunnel" },
+            status.health.takeIf { it.isNotEmpty() },
+            status.voice?.summary(),
+            status.speed?.lastResult?.takeIf { it.isNotEmpty() },
+        ).joinToString("\n")
+    }
+
     /** Dots that count up once a second while the device waits for the dashboard, so the screen never looks frozen. */
     private fun waitingDots(step: Int): String =
         if (step == Wizard.APPROVE) ".".repeat(((System.currentTimeMillis() / 1000) % 4).toInt()).padEnd(3, ' ') else ""
@@ -83,7 +119,7 @@ class MainActivity : Activity() {
         status.text = if (step == Wizard.DONE) "Setup complete: on the dashboard as ${store.name.ifEmpty { store.deviceName }}"
         else "Step $step of ${Wizard.COUNT}: ${Wizard.title(step)}" + waitingDots(step)
         code.text = if (step == Wizard.DONE) "" else store.ensureInstallerCode()
-        where.text = if (step == Wizard.DONE) "" else
+        where.text = if (step == Wizard.DONE) running() else
             "Follow the steps on your phone or computer: open  http://${address ?: "this device's address"}:${SetupServer.PORT}"
         detail.text = if (step == Wizard.APPROVE) store.lastError.ifEmpty {
             if (store.checkedIn) "Checked in. Choose Approve on the dashboard." else "Contacting the server"

@@ -10,11 +10,14 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.os.PowerManager
 
-/** Keeps the agent running in the background: the setup page, then enrollment, and later the tests. */
+/**
+ * Keeps the agent running in the background: the setup page and enrollment, then, once approved, the tunnel, the
+ * health report, the voice stream and the speed test, each on its own loop like the Pi's.
+ */
 class AgentService : Service() {
     private lateinit var store: Store
     private var setup: SetupServer? = null
-    private var worker: Thread? = null
+    private val threads = mutableListOf<Thread>()
     private var wakeLock: PowerManager.WakeLock? = null
     @Volatile private var running = false
 
@@ -45,31 +48,76 @@ class AgentService : Service() {
             val power = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "homenetwatch:agent").apply { acquire() }
             setup = SetupServer(store).also { it.start() }
+            val tunnel = TunnelManager(this, store)
+            val voice = Voice(this, store).also { Status.voice = it }
+            val speed = SpeedTest(store).also { Status.speed = it }
             val enroller = Enroller(store)
-            worker = Thread({
-                while (running) {
+            loop("agent-loop") {
+                if (!store.enrolled) {
+                    enroller.step()
+                    return@loop 10_000L
+                }
+                val problem = try {
+                    tunnel.ensureUp()
+                } catch (failure: Exception) {
+                    "The tunnel did not start: ${failure.message ?: failure.javaClass.simpleName}"
+                }
+                Status.tunnel = problem ?: "Tunnel up"
+                if (problem == null) {
                     try {
-                        enroller.step()
-                    } catch (_: Exception) {
-                        // One bad pass must not take the app down. The next pass tries again.
-                    }
-                    try {
-                        Thread.sleep(if (store.enrolled) 60_000 else 10_000)
-                    } catch (_: InterruptedException) {
-                        break
+                        Health.report(this, store, voice.lastFailure)
+                        Status.health = "Reported at ${java.time.LocalTime.now().withNano(0)}"
+                    } catch (failure: Exception) {
+                        Status.health = "Report failed: ${failure.message ?: failure.javaClass.simpleName}"
                     }
                 }
-            }, "agent-loop").apply { isDaemon = true; start() }
+                maxOf(store.healthInterval, 15) * 1000L
+            }
+            loop("voice-loop") {
+                if (store.enrolled && tunnel.isUp()) voice.sync() else voice.stopAll()
+                15_000L
+            }
+            loop("speedtest-loop") {
+                if (store.enrolled && tunnel.isUp()) speed.pollOnce()
+                3_000L
+            }
         }
         return START_STICKY
     }
 
+    /** Runs one pass after another. A failed pass must not take the app down; the next one tries again. */
+    private fun loop(name: String, pass: () -> Long) {
+        threads += Thread({
+            while (running) {
+                val wait = try {
+                    pass()
+                } catch (_: Exception) {
+                    10_000L
+                }
+                try {
+                    Thread.sleep(wait)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+        }, name).apply { isDaemon = true; start() }
+    }
+
     override fun onDestroy() {
         running = false
-        worker?.interrupt()
+        threads.forEach { it.interrupt() }
+        Status.voice?.stopAll()
         setup?.stop()
         wakeLock?.let { if (it.isHeld) it.release() }
         super.onDestroy()
+    }
+
+    /** What the TV screen shows about the running agent. */
+    object Status {
+        @Volatile var tunnel = ""
+        @Volatile var health = ""
+        @Volatile var voice: Voice? = null
+        @Volatile var speed: SpeedTest? = null
     }
 
     companion object {

@@ -52,12 +52,22 @@ class Store(context: Context) {
         get() = prefs.getString("last_error", "").orEmpty()
         set(value) = prefs.edit().putString("last_error", value).apply()
 
-    /** True once the server accepted a check-in with this device's code, so Approve is available on the dashboard. */
     /** When the setup key was saved, in epoch milliseconds: the wait for approval is counted from here. */
     var keySavedAt: Long
         get() = prefs.getLong("key_saved_at", 0L)
         set(value) = prefs.edit().putLong("key_saved_at", value).apply()
 
+    /** Seconds between health reports, as the dashboard set it. */
+    var healthInterval: Int
+        get() = prefs.getInt("health_interval", 60)
+        set(value) = prefs.edit().putInt("health_interval", value).apply()
+
+    /** The settings version the server last sent, echoed back in each report so it knows they arrived. */
+    var configVersion: Int
+        get() = prefs.getInt("config_version", 0)
+        set(value) = prefs.edit().putInt("config_version", value).apply()
+
+    /** True once the server accepted a check-in with this device's code, so Approve is available on the dashboard. */
     var checkedIn: Boolean
         get() = prefs.getBoolean("checked_in", false)
         set(value) = prefs.edit().putBoolean("checked_in", value).apply()

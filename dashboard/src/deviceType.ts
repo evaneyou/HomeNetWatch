@@ -12,3 +12,8 @@ export function isAndroid(platform: string | null | undefined): boolean {
 export function deviceTypeLabel(platform: string | null | undefined): string {
   return isAndroid(platform) ? "Android TV" : "Raspberry Pi";
 }
+
+/** The links an agent can test. An Android agent is on Wi-Fi only; the server refuses Wired for it too. */
+export function agentLinks(platform: string | null | undefined): ("wired" | "wireless")[] {
+  return isAndroid(platform) ? ["wireless"] : ["wired", "wireless"];
+}

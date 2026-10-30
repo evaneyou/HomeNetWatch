@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { canOperate, useGuestGate } from "../guestGate";
-import type { User } from "../types";
+import { isAndroid } from "../deviceType";
+import type { MonitorAdmin, User } from "../types";
 import { FIELD_LIMITS, rangeError } from "./syntheticList";
 
 type Options = {
@@ -39,10 +40,18 @@ export function PresetForm({
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.me() as Promise<User> });
   const operate = canOperate(me.data?.role);
   const run = useGuestGate();
+  const monitorsQ = useQuery({ queryKey: ["monitors"], queryFn: () => api.monitors() as Promise<MonitorAdmin[]> });
+  // An Android agent is on Wi-Fi only, so Wi-Fi is its one path (the server refuses Wired for it).
+  const wifiOnly = isAndroid(monitorsQ.data?.find((item) => item.id === monitorId)?.platform);
   const source = profile.continuous?.options ?? profile.options;
   const running = profile.continuous?.status === "running" || profile.continuous?.status === "pending";
   const [path, setPath] = useState<PathChoice>(running ? pathOf(profile.continuous?.links) : "both");
   const [manualPath, setManualPath] = useState<PathChoice>("both");
+  useEffect(() => {
+    if (!wifiOnly) return;
+    setPath("wireless");
+    setManualPath("wireless");
+  }, [wifiOnly]);
   const [reportInterval, setReportInterval] = useState(source.report_interval_s);
   const [maxRtt, setMaxRtt] = useState(source.max_rtt_ms);
   const [maxJitter, setMaxJitter] = useState(source.max_jitter_ms);
@@ -114,7 +123,7 @@ export function PresetForm({
         ) : null}
       </div>
       <div className="app-health-actions">
-        <PathControl label="Continuous path" value={path} onChange={setPath} />
+        <PathControl label="Continuous path" value={path} onChange={setPath} wifiOnly={wifiOnly} />
         {operate ? (
           <button
             className="app-health-primary"
@@ -132,7 +141,7 @@ export function PresetForm({
         <h4>Timed run</h4>
         <div className="app-health-timed">
           <NumberField label="Duration" unit="s" value={duration} limits={FIELD_LIMITS.duration_seconds} error={errors.duration} onChange={setDuration} />
-          <PathControl label="Timed run path" value={manualPath} onChange={setManualPath} />
+          <PathControl label="Timed run path" value={manualPath} onChange={setManualPath} wifiOnly={wifiOnly} />
           {operate ? (
             <button
               className="app-health-outline"
@@ -193,16 +202,19 @@ function PathControl({
   label,
   value,
   onChange,
+  wifiOnly = false,
 }: {
   label: string;
   value: PathChoice;
   onChange: (value: PathChoice) => void;
+  wifiOnly?: boolean;
 }) {
-  const choices: { id: PathChoice; text: string }[] = [
+  const all: { id: PathChoice; text: string }[] = [
     { id: "wired", text: "Wired" },
     { id: "wireless", text: "Wi-Fi" },
     { id: "both", text: "Both" },
   ];
+  const choices = wifiOnly ? all.filter((choice) => choice.id === "wireless") : all;
   return (
     <div className="app-health-path" role="group" aria-label={label}>
       {choices.map((choice) => (

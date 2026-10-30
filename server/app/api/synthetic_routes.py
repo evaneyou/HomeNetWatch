@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.common import _resolve_monitor_identity
+from app.api.common import _resolve_monitor_identity, require_agent_links
 from app.auth import get_current_user, require_admin_csrf
 from app.config import get_settings
 from app.db import get_db
@@ -156,13 +156,14 @@ def save_continuous(
     db: Annotated[Session, Depends(get_db)],
     _admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> dict[str, Any]:
-    _monitor(db, body.monitor_id)
+    monitor = _monitor(db, body.monitor_id)
     profile = _profile(db, body.profile_slug)
     options = _options(profile, body.options)
     try:
         links = normalize_links(body.links) if body.links else []
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    require_agent_links(monitor, links)
     run = db.scalar(
         select(SyntheticRun).where(
             SyntheticRun.monitor_id == body.monitor_id,
@@ -201,13 +202,14 @@ def start_manual(
     db: Annotated[Session, Depends(get_db)],
     _admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> dict[str, Any]:
-    _monitor(db, body.monitor_id)
+    monitor = _monitor(db, body.monitor_id)
     profile = _profile(db, body.profile_slug)
     options = _options(profile, body.options)
     try:
         links = normalize_links(body.links)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    require_agent_links(monitor, links)
     run = SyntheticRun(
         monitor_id=body.monitor_id,
         profile_slug=profile.slug,

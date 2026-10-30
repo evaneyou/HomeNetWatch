@@ -5,6 +5,7 @@ import { api } from "../api";
 import SelectMenu from "../components/SelectMenu";
 import SpeedFlow, { type SpeedPhase } from "../components/SpeedFlow";
 import { useGuestGate } from "../guestGate";
+import { agentLinks } from "../deviceType";
 import type { MonitorAdmin, User } from "../types";
 import "../speedtest.css";
 
@@ -202,6 +203,7 @@ export default function SpeedTestPage() {
   const monitors = monitorsQ.data ?? [];
   const agent = monitors.find((item) => item.id === agentId) ?? monitors[0];
   const sensorValue = draft ?? agent?.id ?? "";
+  const links = agentLinks(agent?.platform);
 
   const activeQ = useQuery({
     queryKey: ["speedtest-active", agent?.id],
@@ -223,6 +225,10 @@ export default function SpeedTestPage() {
     enabled: Boolean(agent),
   });
   const { live, samples } = useLiveTest(testId, link);
+  // An agent without a Wired link (the Android agent) starts on, and only offers, Wi-Fi.
+  useEffect(() => {
+    if (!testId && !links.includes(link)) setLink(links[0]);
+  }, [links, link, testId]);
 
   const status = live?.status ?? "idle";
   const running = status === "pending" || status === "running";
@@ -344,7 +350,7 @@ export default function SpeedTestPage() {
         ) : null}
         <div className="st-controls">
           <div className="st-seg" role="group" aria-label="Connection to test">
-            {(["wired", "wireless"] as const).map((item) => (
+            {links.map((item) => (
               <button key={item} type="button" className={link === item ? "active" : ""} aria-pressed={link === item} disabled={running} onClick={() => setLink(item)}>
                 {item === "wired" ? "Wired" : "Wi-Fi"}
               </button>

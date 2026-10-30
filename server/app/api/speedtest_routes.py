@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
-from app.api.common import _resolve_monitor_identity
+from app.api.common import _resolve_monitor_identity, require_agent_links
 from app.auth import get_current_user, require_admin_csrf
 from app.db import get_db
 from app.models import Monitor, SpeedSample, SpeedTest, User
@@ -107,12 +107,13 @@ def start(
     monitor = db.get(Monitor, body.monitor_id)
     if monitor is None:
         raise HTTPException(status_code=404, detail="Remote agent not found")
+    require_agent_links(monitor, [body.link])
     expire(db, monitor.id)
     open_test = db.scalar(select(SpeedTest).where(SpeedTest.monitor_id == monitor.id, SpeedTest.status.in_(("pending", "running"))))
     if open_test is not None:
         raise HTTPException(status_code=409, detail="A speed test is already running on this agent.")
     if monitor.last_seen_at is None or _now() - monitor.last_seen_at > timedelta(minutes=5):
-        raise HTTPException(status_code=409, detail="The Pi is offline, so it cannot run a speed test.")
+        raise HTTPException(status_code=409, detail="The agent is offline, so it cannot run a speed test.")
     recent = db.scalar(select(func.count()).select_from(SpeedTest).where(SpeedTest.monitor_id == monitor.id, SpeedTest.requested_at >= _now() - timedelta(hours=1))) or 0
     if recent >= MAX_PER_HOUR:
         raise HTTPException(status_code=429, detail="Too many speed tests in the last hour. Try again later.")

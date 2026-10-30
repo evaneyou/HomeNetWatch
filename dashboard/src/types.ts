@@ -310,6 +310,8 @@ export type MonitorAdmin = {
   id: string;
   slug: string;
   name: string;
+  /** pi | android, from the device's signed check-in */
+  platform?: string;
   status: string;
   last_seen_at: string | null;
   lan_ip: string | null;
@@ -332,6 +334,8 @@ export type MonitorAdmin = {
 export type EnrollmentCheckin = {
   id: string;
   hostname: string;
+  device_name?: string | null;
+  platform?: string;
   lan_ip: string;
   observed_ip: string | null;
   first_seen_at: string;
@@ -346,6 +350,7 @@ export type EnrollmentRegistration = {
   created_at: string | null;
   expires_at: string;
   conflict: boolean;
+  setup_key?: string | null;
   checkins: EnrollmentCheckin[];
 };
 
@@ -372,6 +377,7 @@ export type MonitorDetail = {
   id: string;
   slug: string;
   name: string;
+  platform?: string;
   status: string;
   last_seen_at: string | null;
   latitude: number | string | null;

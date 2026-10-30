@@ -43,6 +43,10 @@ class CheckInIn(BaseModel):
     identity_public_key: str = _KEY
     wg_public_key: str = _KEY
     wg_wireless_public_key: Optional[str] = None
+    # Left out by the Pi agent. An Android agent sends "android" and signs it with the other fields.
+    platform: Optional[str] = Field(default=None, pattern="^(pi|android)$")
+    # The name the owner typed on the device during setup. It becomes the sensor's name when approved.
+    device_name: Optional[str] = Field(default=None, max_length=128)
     installer_code: str = Field(min_length=1, max_length=32)
     hostname: str = Field(min_length=1, max_length=253)
     lan_ip: str = Field(min_length=1, max_length=64)
@@ -96,6 +100,9 @@ class ApproveIn(BaseModel):
 class CheckinOut(BaseModel):
     id: UUID
     hostname: str
+    device_name: Optional[str] = None
+    # pi | android, as the device signed it at check-in. The dashboard shows the device type from it.
+    platform: str = "pi"
     lan_ip: str
     observed_ip: Optional[str] = None
     first_seen_at: datetime
@@ -110,6 +117,8 @@ class RegistrationOut(BaseModel):
     created_at: Optional[datetime] = None
     expires_at: datetime
     conflict: bool
+    # One string to paste into the agent: the server address and the TLS key pins. Not a secret.
+    setup_key: Optional[str] = None
     checkins: list[CheckinOut] = Field(default_factory=list)
 
 
@@ -117,6 +126,7 @@ class MonitorAdminOut(BaseModel):
     id: UUID
     slug: str
     name: str
+    platform: str = "pi"
     status: str
     last_seen_at: Optional[datetime] = None
     lan_ip: Optional[str] = None

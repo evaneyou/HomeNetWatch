@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import base64
+import json
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
+from app import tls
 from app.api.enrollment_routes import NONCE_PATH
+from app.config import get_settings
 from app.auth import hash_password
 from app.enrollment import RATE_LIMIT, nonces
 from app.main import app
-from app.models import AuditEvent, EnrollmentCheckin, InstallerCode, Monitor, User, UserRole
+from app.models import AuditEvent, EnrollmentCheckin, InstallerCode, Monitor, Test, User, UserRole
 from conftest import FakeAgent, login, new_installer_code
 
 WAITING = "Waiting for this code to be registered"
@@ -441,3 +445,145 @@ def test_onboarding_issues_a_wired_and_a_wireless_tunnel(client, room, state_dir
     listed = next(item for item in client.get("/api/v1/monitors").json() if item["id"] == created["id"])
     assert listed["tunnel_address"] == body["address"]
     assert listed["wireless_tunnel_address"] == body["wireless_address"]
+
+
+def _android_agent(client, csrf, device_name: str):
+    code = new_installer_code()
+    registered = _register(client, csrf, code, device_name)
+    assert registered.status_code == 201, registered.text
+    agent = FakeAgent(client, code)
+    # An Android device has one link, so it sends one WireGuard key and says what it is. Both are signed.
+    checked = agent.check_in(signed={"wg_wireless_public_key": None, "platform": "android"})
+    assert checked.status_code == 200, checked.text
+    approved = client.post(
+        f"/api/v1/enrollment/codes/{registered.json()['id']}/approve", json={"replace_monitor_id": None}, headers=csrf
+    )
+    assert approved.status_code == 200, approved.text
+    return agent, approved.json()
+
+
+def test_android_agent_enrolls_with_one_tunnel_and_no_pi_checks(client, db, room, state_dir):
+    csrf = login(client)
+    agent, created = _android_agent(client, csrf, f"{room}Shield")
+    monitor = db.get(Monitor, uuid.UUID(created["id"]))
+    assert monitor.platform == "android"
+    assert monitor.wg_address.startswith("10.7.0.")
+    assert monitor.wg_wireless_address is None
+
+    polled = agent.poll()
+    assert polled.status_code == 200, polled.text
+    assert [item["link"] for item in polled.json()["tunnels"]] == ["wired"]
+    assert agent.token
+    assert _health(client, agent.token).status_code == 200
+    db.expire_all()
+    assert db.scalar(select(func.count(Test.id)).where(Test.monitor_id == monitor.id)) == 0
+
+
+def test_pi_agent_still_gets_the_internet_checks(client, db, room, state_dir):
+    csrf = login(client)
+    agent, created = _enroll(client, csrf, f"{room}Pi")
+    assert agent.poll().status_code == 200
+    assert _health(client, agent.token).status_code == 200
+    db.expire_all()
+    monitor = db.get(Monitor, uuid.UUID(created["id"]))
+    assert monitor.platform == "pi"
+    assert db.scalar(select(func.count(Test.id)).where(Test.monitor_id == monitor.id)) > 0
+
+
+def test_platform_is_covered_by_the_signature(client, room, state_dir):
+    csrf = login(client)
+    code = new_installer_code()
+    _register(client, csrf, code, f"{room}Tamper")
+    agent = FakeAgent(client, code)
+    forged = agent.check_in(signed={"wg_wireless_public_key": None, "platform": "android"}, tampered={"platform": "pi"})
+    assert forged.status_code == 401
+    unknown = agent.check_in(signed={"platform": "toaster"})
+    assert unknown.status_code == 422
+
+
+def test_name_typed_on_the_android_device_becomes_the_sensor_name(client, db, room, state_dir):
+    csrf = login(client)
+    code = new_installer_code()
+    registered = _register(client, csrf, code, f"{room}Placeholder")
+    assert registered.status_code == 201, registered.text
+    agent = FakeAgent(client, code)
+    chosen = f"{room}Living Room Shield"
+    checked = agent.check_in(signed={"wg_wireless_public_key": None, "platform": "android", "device_name": chosen})
+    assert checked.status_code == 200, checked.text
+    card = next(item for item in client.get("/api/v1/enrollment").json() if item["id"] == registered.json()["id"])
+    assert card["checkins"][0]["device_name"] == chosen
+    approved = client.post(
+        f"/api/v1/enrollment/codes/{registered.json()['id']}/approve", json={"replace_monitor_id": None}, headers=csrf
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["name"] == chosen
+
+
+def test_registration_name_is_used_when_the_device_sends_none(client, room, state_dir):
+    csrf = login(client)
+    _agent, created = _enroll(client, csrf, f"{room}FromDashboard")
+    assert created["name"] == f"{room}FromDashboard"
+
+
+def test_device_name_is_covered_by_the_signature(client, room, state_dir):
+    csrf = login(client)
+    code = new_installer_code()
+    _register(client, csrf, code, f"{room}Sig")
+    agent = FakeAgent(client, code)
+    forged = agent.check_in(
+        signed={"wg_wireless_public_key": None, "platform": "android", "device_name": "Real"},
+        tampered={"device_name": "Forged"},
+    )
+    assert forged.status_code == 401
+
+
+def _decode_setup_key(value: str) -> dict:
+    assert value.startswith("hnw1.")
+    raw = value[len("hnw1.") :]
+    return json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+
+
+def test_registration_carries_a_setup_key_with_the_server_address_and_pins(client, room, state_dir, tmp_path, monkeypatch):
+    tls_dir = tmp_path / "tls"
+    tls.ensure(tls_dir)
+    monkeypatch.setattr(get_settings(), "tls_dir", str(tls_dir))
+    csrf = login(client)
+    registered = _register(client, csrf, new_installer_code(), f"{room}Shield")
+    assert registered.status_code == 201, registered.text
+    key = registered.json()["setup_key"]
+    assert _decode_setup_key(key) == {"u": "https://testserver", "p": tls.pin_list(tls_dir)}
+    listed = client.get("/api/v1/enrollment").json()
+    assert any(item["setup_key"] == key for item in listed if item["id"] == registered.json()["id"])
+
+
+def test_registration_has_no_setup_key_without_a_server_key(client, room, state_dir, tmp_path, monkeypatch):
+    monkeypatch.setattr(get_settings(), "tls_dir", str(tmp_path / "missing"))
+    csrf = login(client)
+    registered = _register(client, csrf, new_installer_code(), f"{room}NoKey")
+    assert registered.status_code == 201, registered.text
+    assert registered.json()["setup_key"] is None
+
+
+def test_dashboard_is_told_the_device_type(client, room, state_dir):
+    csrf = login(client)
+    code = new_installer_code()
+    registered = _register(client, csrf, code, f"{room}Kind")
+    agent = FakeAgent(client, code)
+    assert agent.check_in(signed={"wg_wireless_public_key": None, "platform": "android"}).status_code == 200
+    # The type comes from the device's signed check-in, so the admin sees it before approving.
+    waiting = next(item for item in client.get("/api/v1/enrollment").json() if item["id"] == registered.json()["id"])
+    assert [row["platform"] for row in waiting["checkins"]] == ["android"]
+    approved = client.post(
+        f"/api/v1/enrollment/codes/{registered.json()['id']}/approve", json={"replace_monitor_id": None}, headers=csrf
+    )
+    assert approved.json()["platform"] == "android"
+    listed = next(item for item in client.get("/api/v1/monitors").json() if item["id"] == approved.json()["id"])
+    assert listed["platform"] == "android"
+    assert client.get(f"/api/v1/monitors/{approved.json()['id']}").json()["platform"] == "android"
+
+
+def test_a_pi_reports_its_type_too(client, room, state_dir):
+    csrf = login(client)
+    _agent, created = _enroll(client, csrf, f"{room}PiKind")
+    assert created["platform"] == "pi"
+    assert client.get(f"/api/v1/monitors/{created['id']}").json()["platform"] == "pi"

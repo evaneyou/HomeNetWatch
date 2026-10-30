@@ -605,3 +605,82 @@
   flex: none;
   color: var(--accent);
 }
+
+/* A greyed-out onboarding action is unavailable, not loading: the progress cursor read as "still working". */
+.app-shell.ui-compact .main .monitor-card .btn:disabled {
+  cursor: not-allowed;
+}
+
+/* Waiting on another device: a radar pulse and animated dots, so the wait reads as live rather than stuck. */
+.waiting-pulse {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin: 8px 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.waiting-pulse-mark {
+  position: relative;
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+
+.waiting-pulse-mark span {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: waiting-pulse-ring 1.8s ease-out infinite;
+}
+
+.waiting-pulse-mark span + span {
+  animation-delay: 0.9s;
+}
+
+.waiting-pulse-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.waiting-pulse-dots::after {
+  content: "";
+  display: inline-block;
+  width: 1.2em;
+  text-align: left;
+  animation: waiting-pulse-dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes waiting-pulse-ring {
+  0% { transform: scale(0.35); opacity: 0.9; }
+  100% { transform: scale(1.25); opacity: 0; }
+}
+
+@keyframes waiting-pulse-dots {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75%, 100% { content: "..."; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waiting-pulse-mark span { animation: none; transform: scale(0.6); }
+  .waiting-pulse-mark span + span { display: none; }
+  .waiting-pulse-dots::after { animation: none; content: "…"; }
+}
+
+.device-type {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--ink);
+}

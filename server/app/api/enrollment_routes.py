@@ -6,7 +6,11 @@ Admin endpoints need an admin session and a CSRF token, and each one writes an a
 
 from __future__ import annotations
 
+import base64
+import json
+import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
@@ -14,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app import tls
 from app.api.common import _device_name, _home_group, _name_taken, _unique_slug, monitor_admin_out
 from app.auth import get_current_user, require_admin_csrf
 from app.config import get_settings
@@ -138,6 +143,10 @@ def agent_check_in(body: CheckInIn, request: Request, db: Annotated[Session, Dep
         _check_key(body.wg_wireless_public_key)
         signed_fields.append(body.wg_wireless_public_key)
     signed_fields.extend([body.installer_code, body.hostname, body.lan_ip])
+    if body.platform:
+        signed_fields.append(body.platform)
+    if body.device_name:
+        signed_fields.append(body.device_name)
     _rate_limit(db, request, body.identity_public_key)
     _verify(
         CHECK_IN_PATH,
@@ -192,6 +201,8 @@ def agent_check_in(body: CheckInIn, request: Request, db: Annotated[Session, Dep
         db.add(row)
     row.wg_public_key = body.wg_public_key
     row.wg_wireless_public_key = body.wg_wireless_public_key
+    row.platform = body.platform or "pi"
+    row.device_name = _clean_chosen_name(body.device_name)
     row.hostname = hostname
     row.lan_ip = lan_ip
     row.observed_ip = _client_ip(request)
@@ -271,7 +282,28 @@ def _tunnel_config(monitor: Monitor, now: datetime, link: str = "wired") -> Tunn
     )
 
 
-def _registration_out(code: InstallerCode, now: datetime) -> RegistrationOut:
+def setup_key(request: Request) -> str | None:
+    """`hnw1.` and the URL-safe base64 of {"u": server address, "p": [TLS key pins]}.
+
+    The address is the host the dashboard was opened on, so it is the one the agent can reach. Without a key file
+    there is nothing to pin, and the dashboard says so instead of showing a key that would not work.
+    """
+    pins = tls.pin_list(Path(get_settings().tls_dir))
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
+    name = host.rsplit(":", 1)[0] if not host.startswith("[") else ""
+    if not pins or not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", name):
+        return None
+    payload = json.dumps({"u": f"https://{name}", "p": pins}, separators=(",", ":"))
+    return "hnw1." + base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+
+def _clean_chosen_name(raw: str | None) -> str | None:
+    """The name an agent asked for. Empty means the dashboard's registration name is used."""
+    name = " ".join((raw or "").split())
+    return name[:128] or None
+
+
+def _registration_out(code: InstallerCode, now: datetime, key: str | None = None) -> RegistrationOut:
     fresh = sorted(
         (row for row in code.checkins if row.last_seen_at >= now - CHECKIN_TTL),
         key=lambda row: row.first_seen_at,
@@ -284,10 +316,13 @@ def _registration_out(code: InstallerCode, now: datetime) -> RegistrationOut:
         created_at=code.created_at,
         expires_at=code.expires_at,
         conflict=len(fresh) > 1,
+        setup_key=key,
         checkins=[
             CheckinOut(
                 id=row.id,
                 hostname=row.hostname,
+                device_name=row.device_name,
+                platform=row.platform or "pi",
                 lan_ip=row.lan_ip,
                 observed_ip=row.observed_ip,
                 first_seen_at=row.first_seen_at,
@@ -315,6 +350,7 @@ def _audit(db: Session, admin: User, action: str, detail: str, monitor_id: UUID 
 
 @router.get("/enrollment", response_model=list[RegistrationOut])
 def list_registrations(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     _user: Annotated[User, Depends(get_current_user)],
 ) -> list[RegistrationOut]:
@@ -325,12 +361,14 @@ def list_registrations(
         .options(selectinload(InstallerCode.checkins))
         .order_by(InstallerCode.created_at)
     ).all()
-    return [_registration_out(code, now) for code in codes]
+    key = setup_key(request)
+    return [_registration_out(code, now, key) for code in codes]
 
 
 @router.post("/enrollment/codes", response_model=RegistrationOut, status_code=201)
 def register_code(
     body: InstallerCodeIn,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> RegistrationOut:
@@ -360,7 +398,7 @@ def register_code(
     _audit(db, admin, "register_code", device_name)
     db.commit()
     db.expire_all()
-    return _registration_out(_open_code(db, code.id), now)
+    return _registration_out(_open_code(db, code.id), now, setup_key(request))
 
 
 @router.delete("/enrollment/codes/{code_id}", status_code=204)
@@ -378,6 +416,7 @@ def remove_code(
 @router.post("/enrollment/codes/{code_id}/start-over", response_model=RegistrationOut)
 def start_over(
     code_id: UUID,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> RegistrationOut:
@@ -386,7 +425,7 @@ def start_over(
     _audit(db, admin, "start_over", code.device_name)
     db.commit()
     db.expire_all()
-    return _registration_out(_open_code(db, code_id), _now())
+    return _registration_out(_open_code(db, code_id), _now(), setup_key(request))
 
 
 @router.post("/enrollment/codes/{code_id}/approve", response_model=MonitorAdminOut)
@@ -412,13 +451,15 @@ def approve(
             detail="More than one device used this code. Choose Start over before approving.",
         )
     checkin = fresh[0]
+    # A device that was given a name during its own setup keeps it. Otherwise the registration name is used.
+    final_name = checkin.device_name or code.device_name
     if _approved(db, checkin.identity_public_key) is not None:
         raise HTTPException(status_code=409, detail="This remote agent is already on the dashboard")
 
     name_taken = HTTPException(status_code=409, detail="A remote agent with this device name already exists")
     if body.replace_monitor_id is None:
         group = _home_group(db)
-        if _name_taken(db, group.id, code.device_name):
+        if _name_taken(db, group.id, final_name):
             raise name_taken
         try:
             address = allocate_address(db)
@@ -429,8 +470,8 @@ def approve(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         monitor = Monitor(
             group_id=group.id,
-            slug=_unique_slug(db, group.id, code.device_name),
-            name=code.device_name,
+            slug=_unique_slug(db, group.id, final_name),
+            name=final_name,
             location_label=code.location_label,
             status=MonitorStatus.unknown,
             config_version=1,
@@ -439,6 +480,7 @@ def approve(
             scan_interval_seconds=300,
             wg_address=address,
             wg_wireless_address=wireless_address,
+            platform=checkin.platform,
         )
         db.add(monitor)
         action = "approve"
@@ -446,10 +488,10 @@ def approve(
         monitor = db.get(Monitor, body.replace_monitor_id)
         if monitor is None:
             raise HTTPException(status_code=404, detail="Remote agent not found")
-        if _name_taken(db, monitor.group_id, code.device_name, monitor.id):
+        if _name_taken(db, monitor.group_id, final_name, monitor.id):
             raise name_taken
-        if monitor.name != code.device_name:
-            monitor.name = code.device_name
+        if monitor.name != final_name:
+            monitor.name = final_name
             monitor.config_version += 1
         if code.location_label:
             monitor.location_label = code.location_label
@@ -466,6 +508,7 @@ def approve(
         action = "replace"
 
     monitor.identity_public_key = checkin.identity_public_key
+    monitor.platform = checkin.platform
     monitor.wg_public_key = checkin.wg_public_key
     if checkin.wg_wireless_public_key:
         monitor.wg_wireless_public_key = checkin.wg_wireless_public_key

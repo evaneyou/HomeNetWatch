@@ -33,6 +33,7 @@ services:
       WIREGUARD_ENDPOINT: ${WIREGUARD_ENDPOINT:-10.0.0.123:51820}
       WIREGUARD_STATE_DIR: /var/lib/hns-wireguard
       RTNP_STATE_DIR: /var/lib/hns-rtnp
+      TLS_DIR: /var/lib/hns-tls
       RUN_BACKGROUND_TASKS: "1"
       HNS_BACKUP_DIR: /var/lib/hns-backups
     ports:
@@ -40,6 +41,8 @@ services:
     volumes:
       - wgstate:/var/lib/hns-wireguard
       - rtnpstate:/var/lib/hns-rtnp
+      # Read-only: registration shows the agent TLS key pins inside the setup key.
+      - servertls:/var/lib/hns-tls:ro
       - ./geoip:/geoip:ro
       # The host, read-only, so Server Health can see the machine rather than the container.
       - /proc:/host/proc:ro
@@ -74,10 +77,12 @@ services:
     depends_on:
       - server
     restart: unless-stopped
-    command: >
-      sh -c "python -m app.tls ensure &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8848
-             --ssl-keyfile /var/lib/hns-tls/key.pem --ssl-certfile /var/lib/hns-tls/cert.pem"
+    # One command on one line. Written as a folded block it split before the --ssl flags, and the port served plain
+    # HTTP while the agents expect TLS with a pinned key.
+    command:
+      - sh
+      - -c
+      - python -m app.tls ensure && exec uvicorn app.main:app --host 0.0.0.0 --port 8848 --ssl-keyfile /var/lib/hns-tls/key.pem --ssl-certfile /var/lib/hns-tls/cert.pem
 
   librespeed:
     build:

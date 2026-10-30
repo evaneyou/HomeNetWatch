@@ -16,7 +16,7 @@ from app.config import get_settings
 from app.auth import hash_password
 from app.enrollment import RATE_LIMIT, nonces
 from app.main import app
-from app.models import AuditEvent, EnrollmentCheckin, InstallerCode, Monitor, Test, User, UserRole
+from app.models import AuditEvent, EnrollmentCheckin, InstallerCode, Monitor, Network, Test, User, UserRole
 from conftest import FakeAgent, login, new_installer_code
 
 WAITING = "Waiting for this code to be registered"
@@ -26,6 +26,7 @@ WAITING = "Waiting for this code to be registered"
 def room(db):
     """A unique device-name prefix. Everything enrolled under it is removed afterwards."""
     prefix = f"T{uuid.uuid4().hex[:6]} "
+    networks_before = set(db.scalars(select(Network.id)).all())
     yield prefix
     db.rollback()
     like = {"p": f"{prefix}%"}
@@ -34,6 +35,11 @@ def room(db):
     db.execute(text(f"DELETE FROM test_results WHERE test_id IN (SELECT id FROM tests WHERE monitor_id IN ({owned}))"), like)
     db.execute(text(f"DELETE FROM tests WHERE monitor_id IN ({owned})"), like)
     db.execute(text("DELETE FROM monitors WHERE name LIKE :p"), like)
+    # An enrolled Pi that reports gets Wired and Wi-Fi networks in the shared home group. Left behind, they give every
+    # later monitor a second "Wi-Fi" cell in /summary, and tests that read the first one passed or failed by chance.
+    for network_id in set(db.scalars(select(Network.id)).all()) - networks_before:
+        if db.scalar(select(func.count(Test.id)).where(Test.network_id == network_id)) == 0:
+            db.execute(text("DELETE FROM networks WHERE id = :id"), {"id": network_id})
     db.execute(text("DELETE FROM installer_codes WHERE device_name LIKE :p"), like)
     db.execute(text("DELETE FROM audit_events WHERE detail LIKE :p"), like)
     db.commit()

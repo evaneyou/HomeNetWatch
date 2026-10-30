@@ -56,7 +56,7 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
             val method = request.substringBefore(' ')
             val path = request.substringAfter(' ').substringBefore(' ')
             val out = it.getOutputStream()
-            if (method == "POST" && path == "/save" && length in 1..4096) {
+            if (method == "POST" && (path == "/save-name" || path == "/save-key") && length in 1..4096) {
                 val chars = CharArray(length)
                 var read = 0
                 while (read < length) {
@@ -64,7 +64,7 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
                     if (n < 0) break
                     read += n
                 }
-                respond(out, page(save(String(chars, 0, read))))
+                respond(out, page(save(path, String(chars, 0, read))))
             } else if (method == "GET" && (path == "/" || path.startsWith("/?"))) {
                 respond(out, page(""))
             } else {
@@ -73,29 +73,39 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
         }
     }
 
-    private fun save(body: String): String {
+    private fun save(path: String, body: String): String {
         val form = body.split("&").mapNotNull {
             val key = it.substringBefore("=", "")
             if (key.isEmpty()) null else key to URLDecoder.decode(it.substringAfter("=", ""), "UTF-8")
         }.toMap()
         return try {
-            val name = form["device_name"].orEmpty().trim().replace(Regex("\\s+"), " ")
-            require(name.isNotEmpty()) { "Give this device a name, for example Living Room Shield." }
-            require(name.length <= 128) { "The name can be up to 128 characters." }
-            val key = Wire.parseSetupKey(form["setup_key"].orEmpty())
-            store.deviceName = name
-            store.serverUrl = key.serverUrl
-            store.pins = key.pins.joinToString(" ")
-            store.state = "waiting_for_approval"
-            store.lastError = ""
-            "Saved. Waiting for the dashboard to approve this device."
+            if (path == "/save-name") saveName(form["device_name"].orEmpty()) else saveKey(form["setup_key"].orEmpty())
         } catch (failure: IllegalArgumentException) {
-            "Not saved: " + (failure.message ?: "check the setup key")
+            "Not saved: " + (failure.message ?: "check what you entered")
         }
+    }
+
+    private fun saveName(raw: String): String {
+        val name = raw.trim().replace(Regex("\\s+"), " ")
+        require(name.isNotEmpty()) { "Give this device a name, for example Living Room Shield." }
+        require(name.length <= 128) { "The name can be up to 128 characters." }
+        store.deviceName = name
+        return "Saved the name: $name."
+    }
+
+    private fun saveKey(raw: String): String {
+        val key = Wire.parseSetupKey(raw)
+        store.serverUrl = key.serverUrl
+        store.pins = key.pins.joinToString(" ")
+        store.state = "waiting_for_approval"
+        store.lastError = ""
+        return if (store.deviceName.isEmpty()) "Saved the setup key. Now name the device in step 1 so it can check in."
+        else "Saved the setup key. Waiting for the dashboard to approve this device."
     }
 
     private fun page(message: String): String {
         val code = store.ensureInstallerCode()
+        val keyStatus = if (store.serverUrl.isEmpty()) "" else "<p class=note>Setup key saved for ${escape(store.serverUrl)}.</p>"
         val note = if (message.isEmpty()) "" else "<p class=note>${escape(message)}</p>"
         val status = when (store.state) {
             "approved" -> "Approved. This device is on the dashboard as ${escape(store.name)}."
@@ -105,7 +115,7 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
         return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HomeNetWatch Android agent</title>
 <style>body{font:16px system-ui;margin:0;padding:20px;background:#0f1424;color:#e8ecf8;max-width:560px}
-h1{font-size:22px}label{display:block;margin:14px 0 6px;font-weight:700}input,textarea{width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;padding:12px;border-radius:10px;border:1px solid #2a3556;background:#161d2f;color:#e8ecf8;font-size:16px}
+h1{font-size:22px}h2{font-size:17px;margin:22px 0 4px}label{display:block;margin:14px 0 6px;font-weight:700}input,textarea{width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;padding:12px;border-radius:10px;border:1px solid #2a3556;background:#161d2f;color:#e8ecf8;font-size:16px}
 button{margin-top:18px;padding:12px 20px;border:0;border-radius:10px;background:#4fd1b5;color:#06201b;font-weight:800;font-size:16px}
 .code{font:700 26px ui-monospace,monospace;letter-spacing:2px;background:#161d2f;padding:12px;border-radius:10px;display:inline-block}
 .note{background:#1d2a2b;padding:10px;border-radius:10px}small{color:#9aa6c4}</style></head><body>
@@ -113,13 +123,19 @@ button{margin-top:18px;padding:12px 20px;border:0;border-radius:10px;background:
 <p>This device: <b>${escape(Enroller.deviceLabel())}</b></p>
 <p>$status</p>$note
 <p>Installer code<br><span class=code>${escape(code)}</span></p>
-<ol><li>Name this device below. The name is what it is called on the dashboard.</li>
-<li>In the dashboard, open <b>Remote Agent Onboarding</b>, enter the installer code above (any name is fine there) and register it.</li>
-<li>The dashboard shows a <b>Setup key</b>. Copy it and paste it below.</li></ol>
-<form method="post" action="/save">
-<label>Device name</label><input name="device_name" value="${escape(store.deviceName)}" placeholder="Living Room Shield" maxlength="128" required>
-<label>Setup key</label><textarea name="setup_key" rows="4" placeholder="hnw1...." autocapitalize="off" spellcheck="false">${if (store.serverUrl.isEmpty()) "" else "Saved for " + escape(store.serverUrl)}</textarea>
-<button type="submit">Save</button></form></body></html>"""
+<h2>1. Name this device</h2>
+<p><small>This is what it is called on the dashboard.</small></p>
+<form method="post" action="/save-name">
+<input name="device_name" value="${escape(store.deviceName)}" placeholder="Living Room Shield" maxlength="128" required>
+<button type="submit">Save name</button></form>
+<h2>2. Register the installer code</h2>
+<p><small>In the dashboard, open <b>Remote Agent Onboarding</b>, enter the installer code above (any name is fine there) and register it.</small></p>
+<h2>3. Paste the setup key</h2>
+<p><small>The dashboard shows the <b>Setup key</b> on the registered code's card. Copy it and paste it here.</small></p>
+$keyStatus
+<form method="post" action="/save-key">
+<textarea name="setup_key" rows="4" placeholder="hnw1...." autocapitalize="off" spellcheck="false" required></textarea>
+<button type="submit">Save setup key</button></form></body></html>"""
     }
 
     private fun escape(text: String): String =

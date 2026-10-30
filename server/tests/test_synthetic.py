@@ -932,6 +932,8 @@ def test_every_agent_shares_the_one_srtp_key_the_receiver_reads(tmp_path, monkey
         # RTNP 0.2.1's receiver will not start with more than one key file.
         assert [item.name for item in (tmp_path / "rtnp" / "keys").iterdir()] == ["shared"]
     finally:
+        # Put the environment back before clearing, so later tests do not cache these temporary folders.
+        monkeypatch.undo()
         get_settings.cache_clear()
 
 
@@ -964,4 +966,6 @@ def test_a_server_with_per_agent_keys_keeps_the_oldest(tmp_path, monkeypatch):
         assert [item.name for item in keys.iterdir()] == ["shared"]
         assert (keys / "shared").read_bytes() == oldest
     finally:
+        # Put the environment back before clearing, so later tests do not cache these temporary folders.
+        monkeypatch.undo()
         get_settings.cache_clear()

@@ -6,14 +6,20 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
+import java.security.SecureRandom
 
 /**
  * The setup page, like the one the Pi serves on its own address. Typing on a TV remote is slow, so the owner opens
- * this page from a phone on the same network and enters the server address and its TLS key pin there.
+ * this page from a phone on the same network, names the device and pastes the setup key there.
+ *
+ * Anyone on the network can reach this page, so it only accepts changes before the device is approved (starting over
+ * takes the Menu button on the TV remote), and each form carries a token from the page itself, so another web page
+ * open on a phone cannot post to it.
  */
 class SetupServer(private val store: Store, private val port: Int = PORT) {
     @Volatile private var socket: ServerSocket? = null
     @Volatile private var running = false
+    private val formToken = Wire.b64(ByteArray(16).also { SecureRandom().nextBytes(it) })
 
     fun start() {
         if (running) return
@@ -42,7 +48,19 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
         }
     }
 
+    /**
+     * One browser request. Phones open spare connections that never send anything and drop them, so a timeout or a
+     * reset is normal here. Any failure must stay inside this thread: an uncaught exception in an Android app kills
+     * the whole process, and the setup page and the agent with it.
+     */
     private fun handle(client: Socket) {
+        try {
+            handleRequest(client)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun handleRequest(client: Socket) {
         client.use {
             it.soTimeout = 5000
             val reader = BufferedReader(InputStreamReader(it.getInputStream(), Charsets.UTF_8))
@@ -78,6 +96,8 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
             val key = it.substringBefore("=", "")
             if (key.isEmpty()) null else key to URLDecoder.decode(it.substringAfter("=", ""), "UTF-8")
         }.toMap()
+        if (form["t"] != formToken) return "Not saved: this page is out of date. Reload it and try again."
+        if (store.enrolled) return "Not saved: this device is already approved. To set it up again, press Menu on the TV remote."
         return try {
             if (path == "/save-name") saveName(form["device_name"].orEmpty()) else saveKey(form["setup_key"].orEmpty())
         } catch (failure: IllegalArgumentException) {
@@ -112,6 +132,22 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
             "waiting_for_approval" -> "Waiting for approval on the dashboard."
             else -> "Not set up yet."
         }
+        val token = "<input type=hidden name=t value=\"$formToken\">"
+        val steps = if (store.enrolled) "<p><small>To set this device up again, press the Menu button on the TV remote.</small></p>" else """
+<p>Installer code<br><span class=code>${escape(code)}</span></p>
+<h2>1. Name this device</h2>
+<p><small>This is what it is called on the dashboard.</small></p>
+<form method="post" action="/save-name">$token
+<input name="device_name" value="${escape(store.deviceName)}" placeholder="Living Room Shield" maxlength="128" required>
+<button type="submit">Save name</button></form>
+<h2>2. Register the installer code</h2>
+<p><small>In the dashboard, open <b>Remote Agent Onboarding</b>, enter the installer code above exactly as shown and register it.</small></p>
+<h2>3. Paste the setup key</h2>
+<p><small>The dashboard shows the <b>Setup key</b> on the registered code's card. Copy it and paste it here. Then choose <b>Approve</b> on the dashboard.</small></p>
+$keyStatus
+<form method="post" action="/save-key">$token
+<textarea name="setup_key" rows="4" placeholder="hnw1...." autocapitalize="off" spellcheck="false" required></textarea>
+<button type="submit">Save setup key</button></form>"""
         return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HomeNetWatch Android agent</title>
 <style>body{font:16px system-ui;margin:0;padding:20px;background:#0f1424;color:#e8ecf8;max-width:560px}
@@ -122,20 +158,7 @@ button{margin-top:18px;padding:12px 20px;border:0;border-radius:10px;background:
 <h1>HomeNetWatch Android agent</h1>
 <p>This device: <b>${escape(Enroller.deviceLabel())}</b></p>
 <p>$status</p>$note
-<p>Installer code<br><span class=code>${escape(code)}</span></p>
-<h2>1. Name this device</h2>
-<p><small>This is what it is called on the dashboard.</small></p>
-<form method="post" action="/save-name">
-<input name="device_name" value="${escape(store.deviceName)}" placeholder="Living Room Shield" maxlength="128" required>
-<button type="submit">Save name</button></form>
-<h2>2. Register the installer code</h2>
-<p><small>In the dashboard, open <b>Remote Agent Onboarding</b>, enter the installer code above (any name is fine there) and register it.</small></p>
-<h2>3. Paste the setup key</h2>
-<p><small>The dashboard shows the <b>Setup key</b> on the registered code's card. Copy it and paste it here.</small></p>
-$keyStatus
-<form method="post" action="/save-key">
-<textarea name="setup_key" rows="4" placeholder="hnw1...." autocapitalize="off" spellcheck="false" required></textarea>
-<button type="submit">Save setup key</button></form></body></html>"""
+$steps</body></html>"""
     }
 
     private fun escape(text: String): String =

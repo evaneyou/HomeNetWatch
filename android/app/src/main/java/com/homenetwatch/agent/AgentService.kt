@@ -48,7 +48,11 @@ class AgentService : Service() {
             val enroller = Enroller(store)
             worker = Thread({
                 while (running) {
-                    enroller.step()
+                    try {
+                        enroller.step()
+                    } catch (_: Exception) {
+                        // One bad pass must not take the app down. The next pass tries again.
+                    }
                     try {
                         Thread.sleep(if (store.enrolled) 60_000 else 10_000)
                     } catch (_: InterruptedException) {

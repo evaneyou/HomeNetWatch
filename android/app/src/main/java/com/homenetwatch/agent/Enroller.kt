@@ -77,7 +77,7 @@ class Enroller(private val store: Store) {
         } catch (failure: HttpFailure) {
             // 403 means the code is not registered on the dashboard yet. Keep waiting.
             store.state = "waiting_for_approval"
-            store.lastError = if (failure.code == 403) "Waiting for the installer code to be registered on the dashboard." else failure.detail
+            store.lastError = if (failure.code == 403) "The server does not know installer code ${store.installerCode} yet. Register exactly this code on the dashboard." else failure.detail
         } catch (failure: Exception) {
             store.lastError = failure.message ?: failure.javaClass.simpleName
         }

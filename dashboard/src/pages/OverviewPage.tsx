@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { joinAnon } from "../anonymized";
+import { isAndroid } from "../deviceType";
 import type { HealthCell, MonitorAdmin, Summary } from "../types";
 import "../overview.css";
 
@@ -42,6 +43,17 @@ const CHECK_WHAT: Record<string, string> = {
   web: "DNS & 8 major websites quorum",
   apps: "Live voice & video UDP flows",
 };
+// An Android agent (an NVIDIA Shield) is on Wi-Fi only and runs the voice stream and the Speed Test, so its card
+// shows Wi-Fi and Apps, and its Wi-Fi tile is the voice stream over Wi-Fi rather than the Pi's path checks.
+const ANDROID_CHECKS = new Set(["wifi", "apps"]);
+const ANDROID_WIFI_DETAIL: Record<CheckState, string> = {
+  ok: "Voice clear",
+  slow: "Jitter / loss",
+  down: "Failing",
+  unknown: "Not running",
+};
+const ANDROID_WIFI_WHAT = "Voice stream and Speed Test over Wi-Fi";
+
 const MOOD_RANK: Record<Mood, number> = { down: 0, slow: 1, curious: 2, happy: 3 };
 const STATE_RANK: Record<CheckState, number> = { unknown: -1, ok: 0, slow: 1, down: 2 };
 
@@ -173,6 +185,26 @@ function Icon({ name }: { name: string }) {
   );
 }
 
+/** A small drawing of the agent's hardware: the Shield's black wedge, or a green Pi board. */
+function DeviceArt({ android }: { android: boolean }) {
+  if (android) {
+    return (
+      <svg className="device-art" viewBox="0 0 24 24" aria-hidden="true">
+        <path className="device-shield" d="M3 8.5 21 6v11.5L3 19.5z" />
+        <path className="device-shield-light" d="M6 17.2 18 15.6" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="device-art" viewBox="0 0 24 24" aria-hidden="true">
+      <rect className="device-pi" x="2.5" y="5.5" width="19" height="13" rx="2" />
+      <rect className="device-pi-chip" x="6" y="9" width="5.5" height="5.5" rx="0.8" />
+      <rect className="device-pi-port" x="14" y="8.5" width="5.5" height="2.5" rx="0.6" />
+      <rect className="device-pi-port" x="14" y="12.5" width="5.5" height="3.5" rx="0.6" />
+    </svg>
+  );
+}
+
 function Face({ mood }: { mood: Mood }) {
   return (
     <svg viewBox="0 0 64 44" aria-hidden="true">
@@ -185,10 +217,23 @@ function Face({ mood }: { mood: Mood }) {
   );
 }
 
+/** The worst voice result on this agent's Wi-Fi link. */
+function androidWifiState(cells: HealthCell[], monitorId: string): CheckState {
+  return cells
+    .filter((cell) => cell.monitor_id === monitorId && cell.column === "apps" && cell.network_slug === "wifi")
+    .map((cell) => mapState(cell.status))
+    .reduce<CheckState>((worst, state) => (STATE_RANK[state] > STATE_RANK[worst] ? state : worst), "unknown");
+}
+
 function viewOf(data: Summary, regionById: Map<string, string | null>) {
   const locations = data.monitors.map((monitor) => {
     const diag = data.diagnoses?.[monitor.id];
-    const checks = CHECKS.map((check) => {
+    const android = isAndroid(monitor.platform);
+    const checks = CHECKS.filter((check) => !android || ANDROID_CHECKS.has(check.key)).map((check) => {
+      if (android && check.key === "wifi") {
+        const state = androidWifiState(data.matrix, monitor.id);
+        return { ...check, state, detail: ANDROID_WIFI_DETAIL[state], what: ANDROID_WIFI_WHAT, href: `/monitors/${monitor.id}` };
+      }
       const state = columnState(data.matrix, monitor.id, check.key, check.column);
       const wifiId = slugNetworkId(data.matrix, monitor.id, "wifi");
       const networkId =
@@ -199,6 +244,7 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
         ...check,
         state,
         detail: columnDetail(data.matrix, monitor.id, check.key, check.column, state),
+        what: CHECK_WHAT[check.key],
         href: checkHref(monitor.id, check.key, networkId),
       };
     });
@@ -210,13 +256,12 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
       .map((check) => check.label);
     let mood: Mood = "happy";
     let blurb = "Everything here is happy and humming.";
-    let reason =
-      "The remote probe is online and all active checks (Wi-Fi, Wired, Web, and Apps) are passing within their latency, jitter, and packet-loss thresholds.";
+    let reason = `The remote probe is online and all active checks (${join(checks.map((check) => check.label))}) are passing within their latency, jitter, and packet-loss thresholds.`;
     if (monitor.status === "offline") {
       mood = "down";
       blurb = "Remote probe is offline and has stopped checking in.";
       reason =
-        "The face is coral red with a frown because the remote Raspberry Pi probe has stopped checking in for over 5 minutes, so live network health cannot be verified.";
+        `The face is coral red with a frown because the remote ${android ? "Android" : "Raspberry Pi"} probe has stopped checking in for over 5 minutes, so live network health cannot be verified.`;
     } else if (diag?.cause === "bandwidth" && (down.length > 0 || slow.length > 0)) {
       mood = down.length > 0 ? "down" : "slow";
       blurb = "ISP bandwidth drop is degrading Wired, Wi-Fi, and Apps.";
@@ -257,6 +302,7 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
     return {
       id: monitor.id,
       name: monitor.name,
+      android,
       place: place || null,
       checks,
       mood,
@@ -354,7 +400,7 @@ export default function OverviewPage() {
                         <span className={`dot ${check.state}`} />
                         <span>
                           <strong>{check.label}:</strong> {check.detail}{" "}
-                          <em className="orb-popover-meta">({CHECK_WHAT[check.key]})</em>
+                          <em className="orb-popover-meta">({check.what})</em>
                         </span>
                       </li>
                     ))}
@@ -363,11 +409,15 @@ export default function OverviewPage() {
               </div>
               <div className="probe-text">
                 <h2 id={`loc-${index + 1}`}>{location.name}</h2>
+                <span className="device-chip">
+                  <DeviceArt android={location.android} />
+                  {location.android ? "NVIDIA Shield · Android" : "Raspberry Pi · Linux"}
+                </span>
                 <p>{location.blurb}</p>
                 {location.place ? <p className="probe-id">{location.place}</p> : null}
               </div>
             </div>
-            <ul className="checks">
+            <ul className={`checks${location.android ? " checks-stacked" : ""}`}>
               {location.checks.map((check) => (
                 <li key={check.key}>
                   <Link className={`chip ${check.state}`} to={check.href}>

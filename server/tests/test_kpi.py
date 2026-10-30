@@ -505,6 +505,10 @@ def test_the_daily_health_score_weights_internet_most():
 def test_a_missing_service_shares_its_weight_and_no_internet_means_no_score():
     # No voice that day: the other three are scored on their own weights (60, 10, 10 out of 80).
     assert kpi.health_score(100.0, None, 100.0, 0.0)["score"] == 100.0
+    # An Android agent runs no internet checks; it is scored on its voice stream and packet drop.
+    assert kpi.health_score(None, 100.0, None, 0.0)["score"] is None
+    assert kpi.health_score(None, 100.0, None, 0.0, needs_internet=False)["score"] == 100.0
+    assert kpi.health_score(None, None, None, None, needs_internet=False)["score"] is None
     partial = kpi.health_score(100.0, None, 98.0, 0.0)
     assert partial["score"] == pytest.approx(100 * (60 + 0 + 10) / 80)
     none = kpi.health_score(None, 100.0, 100.0, 0.0)

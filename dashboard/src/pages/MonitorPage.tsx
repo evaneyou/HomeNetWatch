@@ -15,6 +15,7 @@ import MonitorStatusDialog from "../components/MonitorStatusDialog";
 import MonitorTabs, { monitorNetworks } from "../components/MonitorTabs";
 import RealtimeHealth from "../components/RealtimeHealth";
 import WifiScans from "../components/WifiScans";
+import { isAndroid } from "../deviceType";
 import type { MonitorDetail } from "../types";
 
 const MONITOR_ZONE = "America/New_York";
@@ -91,6 +92,8 @@ export default function MonitorPage() {
   }
 
   const monitor = monitorQ.data;
+  // An Android agent runs only the Wi-Fi voice stream and the Speed Test: no wired link, internet checks or vitals.
+  const android = isAndroid(monitor.platform);
   const activeNetwork = networks.find((n) => n.id === activeTab);
   const tests =
     activeNetwork?.slug === "wan"
@@ -125,6 +128,11 @@ export default function MonitorPage() {
           </span>
         </button>
       </div>
+      {android ? (
+        <div className="page-tabs">
+          <RangeTabs range={chartRange} onChange={setChartRange} />
+        </div>
+      ) : (
       <div className="page-tabs">
         <MonitorTabs
           tests={monitor.tests}
@@ -142,12 +150,39 @@ export default function MonitorPage() {
             <RangeTabs range={chartRange} onChange={setChartRange} />
           ) : null}
         </div>
+      )}
       {statusOpen ? <MonitorStatusDialog monitor={monitor} onClose={() => setStatusOpen(false)} /> : null}
 
-      {activeNetwork?.slug === "wan" || statusOpen ? null : <DevicePanel monitorId={monitor.id} />}
+      {android || activeNetwork?.slug === "wan" || statusOpen ? null : <DevicePanel monitorId={monitor.id} />}
 
-      {activeNetwork?.slug === "wifi-main" ? <WifiScans monitorId={monitor.id} /> : null}
-      {onApps ? (
+      {!android && activeNetwork?.slug === "wifi-main" ? <WifiScans monitorId={monitor.id} /> : null}
+      {android && !(onApps && checkParam) ? (
+        <>
+          <section className="panel network-health">
+            <RealtimeHealth
+              monitorId={monitor.id}
+              link="wireless"
+              range={chartRange}
+              title="Wi-Fi · Real-Time Application Health"
+              onOpen={(slug) => {
+                const next = new URLSearchParams(searchParams);
+                next.set("detail", "apps");
+                next.set("link", "wireless");
+                next.set("check", `rtnp:${slug}`);
+                setSearchParams(next);
+              }}
+            />
+          </section>
+          <section className="panel">
+            <p className="muted" style={{ marginTop: 0 }}>
+              This Android agent tests over Wi-Fi only: the voice stream above and the Speed Test.
+            </p>
+            <Link className="btn" to="/speed-test">
+              Open Speed Test
+            </Link>
+          </section>
+        </>
+      ) : onApps ? (
         <AppsDashboard
           monitorId={monitor.id}
           range={chartRange}

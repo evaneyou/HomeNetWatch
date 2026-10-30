@@ -114,6 +114,7 @@ def monitor_admin_out(monitor: Monitor) -> MonitorAdminOut:
         id=monitor.id,
         slug=monitor.slug,
         name=monitor.name,
+        platform=monitor.platform,
         status=monitor.status.value,
         last_seen_at=monitor.last_seen_at,
         lan_ip=monitor.lan_ip,

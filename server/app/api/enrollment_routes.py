@@ -322,6 +322,7 @@ def _registration_out(code: InstallerCode, now: datetime, key: str | None = None
                 id=row.id,
                 hostname=row.hostname,
                 device_name=row.device_name,
+                platform=row.platform or "pi",
                 lan_ip=row.lan_ip,
                 observed_ip=row.observed_ip,
                 first_seen_at=row.first_seen_at,

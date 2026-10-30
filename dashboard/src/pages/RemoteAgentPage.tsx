@@ -9,6 +9,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import SelectMenu from "../components/SelectMenu";
 import LocationForm from "../components/LocationForm";
 import StatusMark from "../components/StatusMark";
+import { deviceTypeLabel, isAndroid } from "../deviceType";
 import type { DeviceReport, MonitorAdmin, User } from "../types";
 
 const INTERVALS = [
@@ -138,6 +139,7 @@ export default function RemoteAgentPage() {
   if (monitorsQ.isLoading || deviceQ.isLoading) return <div className="state-box">Loading remote agent…</div>;
   if (!monitor) return <div className="state-box">Remote agent not found.</div>;
 
+  const android = isAndroid(monitor.platform);
   const renamed = name.trim() !== monitor.name;
   // Agents added before installer codes send their name with every report.
   const legacy = monitor.tunnel_state === null;
@@ -174,6 +176,10 @@ export default function RemoteAgentPage() {
         </div>
         <div className="device-stats">
           <div>
+            <span>Device type</span>
+            <strong>{deviceTypeLabel(monitor.platform)}</strong>
+          </div>
+          <div>
             <span>Last seen</span>
             <strong>{formatSeen(report?.last_seen_at ?? monitor.last_seen_at)}</strong>
           </div>
@@ -187,14 +193,24 @@ export default function RemoteAgentPage() {
               <AnonText value={report?.lan_ip || monitor.lan_ip} />
             </strong>
           </div>
-          <div>
-            <span>Wired tunnel</span>
-            <strong>{tunnelLine(monitor.tunnel_state, monitor.tunnel_address)}</strong>
-          </div>
-          <div>
-            <span>Wi-Fi tunnel</span>
-            <strong>{tunnelLine(monitor.wireless_tunnel_state, monitor.wireless_tunnel_address)}</strong>
-          </div>
+          {android ? (
+            // An Android agent is on Wi-Fi only and has a single tunnel.
+            <div>
+              <span>Tunnel</span>
+              <strong>{tunnelLine(monitor.tunnel_state, monitor.tunnel_address)}</strong>
+            </div>
+          ) : (
+            <>
+              <div>
+                <span>Wired tunnel</span>
+                <strong>{tunnelLine(monitor.tunnel_state, monitor.tunnel_address)}</strong>
+              </div>
+              <div>
+                <span>Wi-Fi tunnel</span>
+                <strong>{tunnelLine(monitor.wireless_tunnel_state, monitor.wireless_tunnel_address)}</strong>
+              </div>
+            </>
+          )}
           <div>
             <span>External IP</span>
             <strong>
@@ -212,7 +228,12 @@ export default function RemoteAgentPage() {
         {report?.restart_requested_at ? (
           <p className="muted">A restart is waiting. The probe picks it up within about 15 seconds.</p>
         ) : null}
-        {operate ? (
+        {android ? (
+          <p className="muted">
+            This Android agent runs the Wi-Fi voice stream and the Speed Test only. Restart it from the TV if needed.
+          </p>
+        ) : null}
+        {operate && !android ? (
           <div className="form-actions">
             <button className="btn" type="button" disabled={busy} onClick={() => run(() => setConfirmingRestart(true))}>
               Restart probe

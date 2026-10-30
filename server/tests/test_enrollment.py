@@ -562,3 +562,28 @@ def test_registration_has_no_setup_key_without_a_server_key(client, room, state_
     registered = _register(client, csrf, new_installer_code(), f"{room}NoKey")
     assert registered.status_code == 201, registered.text
     assert registered.json()["setup_key"] is None
+
+
+def test_dashboard_is_told_the_device_type(client, room, state_dir):
+    csrf = login(client)
+    code = new_installer_code()
+    registered = _register(client, csrf, code, f"{room}Kind")
+    agent = FakeAgent(client, code)
+    assert agent.check_in(signed={"wg_wireless_public_key": None, "platform": "android"}).status_code == 200
+    # The type comes from the device's signed check-in, so the admin sees it before approving.
+    waiting = next(item for item in client.get("/api/v1/enrollment").json() if item["id"] == registered.json()["id"])
+    assert [row["platform"] for row in waiting["checkins"]] == ["android"]
+    approved = client.post(
+        f"/api/v1/enrollment/codes/{registered.json()['id']}/approve", json={"replace_monitor_id": None}, headers=csrf
+    )
+    assert approved.json()["platform"] == "android"
+    listed = next(item for item in client.get("/api/v1/monitors").json() if item["id"] == approved.json()["id"])
+    assert listed["platform"] == "android"
+    assert client.get(f"/api/v1/monitors/{approved.json()['id']}").json()["platform"] == "android"
+
+
+def test_a_pi_reports_its_type_too(client, room, state_dir):
+    csrf = login(client)
+    _agent, created = _enroll(client, csrf, f"{room}PiKind")
+    assert created["platform"] == "pi"
+    assert client.get(f"/api/v1/monitors/{created['id']}").json()["platform"] == "pi"

@@ -77,10 +77,12 @@ services:
     depends_on:
       - server
     restart: unless-stopped
-    command: >
-      sh -c "python -m app.tls ensure &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8848
-             --ssl-keyfile /var/lib/hns-tls/key.pem --ssl-certfile /var/lib/hns-tls/cert.pem"
+    # One command on one line. Written as a folded block it split before the --ssl flags, and the port served plain
+    # HTTP while the agents expect TLS with a pinned key.
+    command:
+      - sh
+      - -c
+      - python -m app.tls ensure && exec uvicorn app.main:app --host 0.0.0.0 --port 8848 --ssl-keyfile /var/lib/hns-tls/key.pem --ssl-certfile /var/lib/hns-tls/cert.pem
 
   librespeed:
     build:

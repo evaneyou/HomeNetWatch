@@ -21,6 +21,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **Agent enrollment port served plain HTTP:** the TLS flags for the agent API were on a separate line in `docker-compose.yml` and were dropped, so port 8848 answered plain HTTP and an agent that pins the server's TLS key could not enroll. The command is now one line and the port serves HTTPS.
 - **Wi-Fi measurement tunnel self-heal after ISP recovery (agent 0.8.6):** when home internet comes back but `wg1` stays dead, Overview was blaming local Wi-Fi, and the agent waited up to 15 minutes between restores even though a restore during the outage had pinned a stale default route. Overview now labels that case as a measurement tunnel fault. The agent re-checks every 30s, retries within about a minute once the access plane is up again, fully stops/starts `wg-quick` so PostUp re-pins routes, and bounces both tunnels on a probe restart.
 - **Bandwidth Test variance cap and Real-Time Application Health correlation:** `librespeed_variance_pct` is now capped at 50% (default 25%) so a 100% variance setting can no longer set the throughput floor to 0 Mbps and mask a severe upload collapse as `ok`. Ingest now refreshes `Test.stable_status` for `librespeed`, and `/api/v1/synthetic/health` correlates collapsed upload/download throughput as the root cause on the Real-Time Application Health banner.
 

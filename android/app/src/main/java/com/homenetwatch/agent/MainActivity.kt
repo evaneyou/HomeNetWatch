@@ -74,17 +74,15 @@ class MainActivity : Activity() {
 
     private fun draw() {
         val address = Enroller.localIpv4()
-        device.text = if (store.deviceName.isEmpty()) "Not named yet. Name this device on the setup page."
-        else "Device name: ${store.deviceName}  (${Enroller.deviceLabel()})"
-        code.text = store.ensureInstallerCode()
-        status.text = when (store.state) {
-            "approved" -> "Approved as ${store.name.ifEmpty { "this device" }}"
-            "waiting_for_approval" -> "Waiting for approval on the dashboard"
-            else -> "Not set up yet"
-        }
-        where.text = if (store.state == "approved") "" else
-            "1. On your phone, open  http://${address ?: "this device's address"}:${SetupServer.PORT}  and name this device.\n" +
-                "2. Register the code above on the dashboard, then paste the setup key it shows into the same page."
-        detail.text = store.lastError
+        val step = Wizard.show(store)
+        device.text = if (store.deviceName.isEmpty()) "Not named yet" else "Device name: ${store.deviceName}"
+        status.text = if (step == Wizard.DONE) "Setup complete: on the dashboard as ${store.name.ifEmpty { store.deviceName }}"
+        else "Step $step of ${Wizard.COUNT}: ${Wizard.title(step)}"
+        code.text = if (step == Wizard.DONE) "" else store.ensureInstallerCode()
+        where.text = if (step == Wizard.DONE) "" else
+            "Follow the steps on your phone or computer: open  http://${address ?: "this device's address"}:${SetupServer.PORT}"
+        detail.text = if (step == Wizard.APPROVE) store.lastError.ifEmpty {
+            if (store.checkedIn) "Checked in. Choose Approve on the dashboard." else ""
+        } else ""
     }
 }

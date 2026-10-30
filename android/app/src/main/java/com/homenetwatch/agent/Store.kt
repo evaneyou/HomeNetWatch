@@ -52,6 +52,11 @@ class Store(context: Context) {
         get() = prefs.getString("last_error", "").orEmpty()
         set(value) = prefs.edit().putString("last_error", value).apply()
 
+    /** True once the server accepted a check-in with this device's code, so Approve is available on the dashboard. */
+    var checkedIn: Boolean
+        get() = prefs.getBoolean("checked_in", false)
+        set(value) = prefs.edit().putBoolean("checked_in", value).apply()
+
     val enrolled: Boolean get() = token.isNotEmpty()
 
     fun identitySeed(): ByteArray {

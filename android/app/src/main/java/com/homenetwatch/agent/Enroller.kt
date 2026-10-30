@@ -71,12 +71,14 @@ class Enroller(private val store: Store) {
             }
             val check = Pinned.post(base + Wire.CHECK_IN_PATH, Payloads.checkIn(seed, wgPublic, code, hostname(), lan, nonce(base, seed, pins), store.deviceName), pins)
             store.state = "waiting_for_approval"
+            store.checkedIn = true
             store.lastError = if (check.optBoolean("conflict")) "More than one device used this code. Start over on the dashboard." else ""
             val poll = Pinned.post(base + Wire.POLL_PATH, Payloads.poll(seed, false, nonce(base, seed, pins)), pins)
             if (poll.optString("state") == "approved") remember(poll)
         } catch (failure: HttpFailure) {
             // 403 means the code is not registered on the dashboard yet. Keep waiting.
             store.state = "waiting_for_approval"
+            store.checkedIn = false
             store.lastError = if (failure.code == 403) "The server does not know installer code ${store.installerCode} yet. Register exactly this code on the dashboard." else failure.detail
         } catch (failure: Exception) {
             store.lastError = failure.message ?: failure.javaClass.simpleName

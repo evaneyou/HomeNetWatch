@@ -204,10 +204,12 @@ class FakeAgent:
             nonce,
             [
                 body["wg_public_key"],
-                body["wg_wireless_public_key"],
+                *([body["wg_wireless_public_key"]] if body.get("wg_wireless_public_key") else []),
                 body["installer_code"],
                 body["hostname"],
                 body["lan_ip"],
+                *([body["platform"]] if body.get("platform") else []),
+                *([body["device_name"]] if body.get("device_name") else []),
             ],
         )
         body.update(tampered or {})

@@ -101,6 +101,8 @@ class CheckinOut(BaseModel):
     id: UUID
     hostname: str
     device_name: Optional[str] = None
+    # pi | android, as the device signed it at check-in. The dashboard shows the device type from it.
+    platform: str = "pi"
     lan_ip: str
     observed_ip: Optional[str] = None
     first_seen_at: datetime
@@ -124,6 +126,7 @@ class MonitorAdminOut(BaseModel):
     id: UUID
     slug: str
     name: str
+    platform: str = "pi"
     status: str
     last_seen_at: Optional[datetime] = None
     lan_ip: Optional[str] = None

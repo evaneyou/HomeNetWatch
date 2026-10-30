@@ -279,6 +279,7 @@ def get_monitor(
         "id": str(monitor.id),
         "slug": monitor.slug,
         "name": monitor.name,
+        "platform": monitor.platform,
         "status": monitor.status.value,
         "last_seen_at": monitor.last_seen_at.isoformat() if monitor.last_seen_at else None,
         "latitude": monitor.latitude,

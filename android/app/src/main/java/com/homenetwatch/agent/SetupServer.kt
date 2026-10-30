@@ -142,54 +142,78 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
         else -> "Contacting the server…"
     }
 
+    /**
+     * The whole setup as a checklist: finished steps collapse to a tick and a summary, the current step is the only
+     * one open, and later steps are greyed out until their turn.
+     */
     private fun page(step: Int, error: String): String {
         val code = escape(store.ensureInstallerCode())
         val token = "<input type=hidden name=t value=\"$formToken\">"
         val alert = if (error.isEmpty()) "" else "<p class=error>${escape(error)}</p>"
-        fun back(to: Int) = "<a class=\"btn ghost\" href=\"/?step=$to\">Back</a>"
-        val body = when (step) {
+        val hasKey = store.serverUrl.isNotEmpty()
+        fun done(item: Int) = when (item) {
+            Wizard.NAME -> store.deviceName.isNotEmpty()
+            Wizard.REGISTER -> hasKey || step >= Wizard.KEY
+            Wizard.KEY -> hasKey
+            else -> store.enrolled
+        }
+        fun summary(item: Int) = when (item) {
+            Wizard.NAME -> escape(store.deviceName)
+            Wizard.REGISTER -> "Code <span class=nowrap>$code</span>"
+            Wizard.KEY -> "Saved for ${escape(store.serverUrl.removePrefix("https://"))}"
+            else -> "On the dashboard as ${escape(store.name.ifEmpty { store.deviceName })}"
+        }
+        fun open(item: Int) = when (item) {
             Wizard.NAME -> """
-<p class=lead>Pick a name you will recognise on the dashboard.</p>
+<p class=hint>Pick a name you will recognise on the dashboard.</p>
 <form method="post" action="/save-name">$token
 <input name="device_name" value="${escape(store.deviceName)}" placeholder="Living Room Shield" maxlength="128" required autofocus>
-$alert<button class=btn type="submit">Save and continue</button></form>"""
+$alert<button class=btn type="submit">Save name</button></form>"""
             Wizard.REGISTER -> """
-<p class=lead>On your computer, open the HomeNetWatch dashboard, go to <b>Remote Agent Onboarding</b> and register this installer code.</p>
+<p class=hint>On your computer, open the dashboard, go to <b>Remote Agent Onboarding</b> and register this code, typed exactly as shown. The name you enter there does not matter: this device keeps <b>${escape(store.deviceName)}</b>.</p>
 <div class=code><span id=code>$code</span><button type=button class="btn small" id=copy onclick="copyCode()">Copy</button></div>
-<p class=hint>Type it exactly as shown. The name you enter there does not matter: this device keeps the name <b>${escape(store.deviceName)}</b>.</p>
-<p class=hint>After you register it, the code's card on the dashboard shows a <b>Setup key</b>.</p>
-<a class=btn href="/?step=3">I registered it, next</a>${back(Wizard.NAME)}"""
+<a class=btn href="/?step=3">I registered it</a>"""
             Wizard.KEY -> """
-<p class=lead>On the dashboard, copy the <b>Setup key</b> from the card of the code you registered, and paste it here.</p>
+<p class=hint>After you register the code, its card on the dashboard shows a <b>Setup key</b>. Copy it and paste it here.</p>
 <form method="post" action="/save-key">$token
 <textarea name="setup_key" rows="4" placeholder="hnw1.eyJ1Ijoi…" autocapitalize="off" spellcheck="false" required autofocus></textarea>
-$alert<button class=btn type="submit">Save and continue</button></form>${back(Wizard.REGISTER)}"""
-            Wizard.APPROVE -> """
-<p class=lead>Go back to the dashboard and choose <b>Approve</b> on the card for code <b class=nowrap>$code</b>.</p>
-<p class="wait${if (problem()) " warn" else ""}" id=detail>${escape(approveDetail())}</p>
-<p class=hint>This page updates by itself. Approve becomes available on the dashboard a few seconds after this device checks in.</p>
-${back(Wizard.KEY)}"""
+$alert<button class=btn type="submit">Save setup key</button></form>"""
             else -> """
-<p class=lead>This device is on the dashboard as <b>${escape(store.name.ifEmpty { store.deviceName })}</b>. You can close this page.</p>
-<p class=hint>To set it up again, press the Menu button on the TV remote.</p>"""
+<p class=hint>On the dashboard, choose <b>Approve</b> on the card for code <span class=nowrap>$code</span>. This page updates by itself.</p>
+<p class="wait${if (problem()) " warn" else ""}" id=detail>${escape(approveDetail())}</p>"""
         }
-        val progress = (1..Wizard.COUNT).joinToString("") { "<span class=\"${if (it <= step) "on" else ""}\"></span>" }
-        val counter = if (step == Wizard.DONE) "Setup complete" else "Step $step of ${Wizard.COUNT}"
+        val rows = (1..Wizard.COUNT).joinToString("\n") { item ->
+            when {
+                item == step -> "<div class=\"row open\"><span class=\"dot now\">$item</span><div class=grow><b>${Wizard.title(item)}</b>${open(item)}</div></div>"
+                done(item) -> {
+                    val edit = if (store.enrolled) "" else "<a class=edit href=\"/?step=$item\">Edit</a>"
+                    "<div class=row><span class=\"dot ok\">&#10003;</span><div class=grow><b>${Wizard.title(item)}</b><p class=sum>${summary(item)}</p></div>$edit</div>"
+                }
+                else -> "<div class=\"row later\"><span class=dot>$item</span><div class=grow><b>${Wizard.title(item)}</b></div></div>"
+            }
+        }
+        val next = if (step == Wizard.DONE) "<p class=\"banner ok\">Setup complete. You can close this page. To set it up again, press Menu on the TV remote.</p>"
+        else "<p class=banner>Next: ${Wizard.title(step).replaceFirstChar { it.lowercase() }}</p>"
         return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Set up HomeNetWatch agent</title>
 <style>body{font:16px/1.5 system-ui;margin:0 auto;padding:24px 20px;background:#0f1424;color:#e8ecf8;max-width:520px}
-h1{font-size:22px;margin:4px 0 10px}.top{font-size:14px;color:#9aa6c4;margin:0}
-.bar{display:flex;gap:6px;margin:8px 0 22px}.bar span{flex:1;height:5px;border-radius:3px;background:#2a3556}.bar span.on{background:#4fd1b5}
-.lead{font-size:17px}.hint{color:#9aa6c4;font-size:14px}
+h1{font-size:22px;margin:0 0 12px}.hint{color:#9aa6c4;font-size:14px;margin:6px 0 10px}
+.banner{background:#16304a;color:#9fd0ff;padding:10px 12px;border-radius:10px;margin:0 0 8px}.banner.ok{background:#173a2e;color:#8fe3c6}
+.row{display:flex;gap:12px;align-items:flex-start;padding:14px 0;border-top:1px solid #222c47}.row b{font-weight:700}
+.row.later{color:#5f6a88}.grow{flex:1;min-width:0}.sum{margin:2px 0 0;color:#9aa6c4;font-size:14px}
+.dot{flex:none;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 14px system-ui;background:#1a2138;color:#5f6a88}
+.dot.now{background:#4fd1b5;color:#06201b}.dot.ok{background:#173a2e;color:#4fd1b5}
+.edit{color:#9fd0ff;font-size:14px;text-decoration:none;padding-top:2px}
 input,textarea{width:100%;box-sizing:border-box;font:16px ui-monospace,monospace;padding:12px;border-radius:10px;border:1px solid #2a3556;background:#161d2f;color:#e8ecf8}
-.btn{display:block;box-sizing:border-box;width:100%;text-align:center;text-decoration:none;margin-top:16px;padding:13px 20px;border:0;border-radius:10px;background:#4fd1b5;color:#06201b;font:800 16px system-ui;cursor:pointer}
-.btn.ghost{background:transparent;color:#c3cce6;border:1px solid #2a3556;margin-top:10px}.btn.small{width:auto;display:inline-block;margin:0;padding:8px 14px;font-size:14px}
-.code{display:flex;justify-content:space-between;align-items:center;gap:12px;font:700 24px ui-monospace,monospace;letter-spacing:2px;background:#161d2f;padding:12px 14px;border-radius:10px}
-.error{background:#3a1d24;color:#ffb4b4;padding:10px 12px;border-radius:10px}.wait{background:#1d2a2b;padding:12px;border-radius:10px}.wait.warn{background:#3a2f14;color:#ffd98a}.nowrap{white-space:nowrap}
-.foot{margin-top:32px;color:#6f7a99;font-size:12px}</style></head><body>
-<p class=top>$counter</p><div class=bar>$progress</div>
-<h1>${Wizard.title(step)}</h1>
-$body
+.btn{display:block;box-sizing:border-box;width:100%;text-align:center;text-decoration:none;margin-top:12px;padding:12px 20px;border:0;border-radius:10px;background:#4fd1b5;color:#06201b;font:800 16px system-ui;cursor:pointer}
+.btn.small{width:auto;display:inline-block;margin:0;padding:8px 14px;font-size:14px}
+.code{display:flex;justify-content:space-between;align-items:center;gap:12px;font:700 20px ui-monospace,monospace;letter-spacing:1px;background:#161d2f;padding:10px 12px;border-radius:10px;white-space:nowrap}
+.error{background:#3a1d24;color:#ffb4b4;padding:10px 12px;border-radius:10px}.wait{background:#1d2a2b;padding:12px;border-radius:10px;margin:0}
+.wait.warn{background:#3a2f14;color:#ffd98a}.nowrap{white-space:nowrap;font-family:ui-monospace,monospace}
+.foot{margin-top:28px;color:#6f7a99;font-size:12px}</style></head><body>
+<h1>Set up this device</h1>
+$next
+$rows
 <p class=foot>HomeNetWatch Android agent · ${escape(Enroller.deviceLabel())}</p>
 <script>
 function copyCode(){var t=document.getElementById('code').textContent,b=document.getElementById('copy');

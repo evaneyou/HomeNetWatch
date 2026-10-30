@@ -23,7 +23,7 @@ class MainActivity : Activity() {
     private val refresh = object : Runnable {
         override fun run() {
             draw()
-            handler.postDelayed(this, 2000)
+            handler.postDelayed(this, 1000)
         }
     }
 
@@ -72,17 +72,21 @@ class MainActivity : Activity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    /** Dots that count up once a second while the device waits for the dashboard, so the screen never looks frozen. */
+    private fun waitingDots(step: Int): String =
+        if (step == Wizard.APPROVE) ".".repeat(((System.currentTimeMillis() / 1000) % 4).toInt()).padEnd(3, ' ') else ""
+
     private fun draw() {
         val address = Enroller.localIpv4()
         val step = Wizard.show(store)
         device.text = if (store.deviceName.isEmpty()) "Not named yet" else "Device name: ${store.deviceName}"
         status.text = if (step == Wizard.DONE) "Setup complete: on the dashboard as ${store.name.ifEmpty { store.deviceName }}"
-        else "Step $step of ${Wizard.COUNT}: ${Wizard.title(step)}"
+        else "Step $step of ${Wizard.COUNT}: ${Wizard.title(step)}" + waitingDots(step)
         code.text = if (step == Wizard.DONE) "" else store.ensureInstallerCode()
         where.text = if (step == Wizard.DONE) "" else
             "Follow the steps on your phone or computer: open  http://${address ?: "this device's address"}:${SetupServer.PORT}"
         detail.text = if (step == Wizard.APPROVE) store.lastError.ifEmpty {
-            if (store.checkedIn) "Checked in. Choose Approve on the dashboard." else ""
+            if (store.checkedIn) "Checked in. Choose Approve on the dashboard." else "Contacting the server"
         } else ""
     }
 }

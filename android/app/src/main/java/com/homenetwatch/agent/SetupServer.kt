@@ -91,7 +91,7 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
                 val requested = target.substringAfter("step=", "").take(1).toIntOrNull()
                 respond(out, page(Wizard.show(store, requested), ""))
             } else if (method == "GET" && path == "/status") {
-                val status = JSONObject().put("step", Wizard.show(store, Wizard.APPROVE)).put("detail", approveDetail()).put("problem", problem())
+                val status = JSONObject().put("step", Wizard.show(store, Wizard.APPROVE)).put("detail", approveDetail()).put("problem", problem()).put("since", store.keySavedAt)
                 respond(out, status.toString(), type = "application/json")
             } else {
                 respond(out, "Not found", 404)
@@ -129,6 +129,7 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
         store.state = "waiting_for_approval"
         store.checkedIn = false
         store.lastError = ""
+        store.keySavedAt = System.currentTimeMillis()
     }
 
     /** True when step 4 is stuck on something the owner has to fix, such as a code the server does not know. */
@@ -180,7 +181,8 @@ $alert<button class=btn type="submit">Save name</button></form>"""
 $alert<button class=btn type="submit">Save setup key</button></form>"""
             else -> """
 <p class=hint>On the dashboard, choose <b>Approve</b> on the card for code <span class=nowrap>$code</span>. This page updates by itself.</p>
-<p class="wait${if (problem()) " warn" else ""}" id=detail>${escape(approveDetail())}</p>"""
+<div class="wait${if (problem()) " warn" else ""}" id=wait data-since="${store.keySavedAt}"><span class=pulse><i></i><i></i></span>
+<div><span id=detail>${escape(approveDetail())}</span><small id=clock>Waiting</small></div></div>"""
         }
         val rows = (1..Wizard.COUNT).joinToString("\n") { item ->
             when {
@@ -208,7 +210,12 @@ input,textarea{width:100%;box-sizing:border-box;font:16px ui-monospace,monospace
 .btn{display:block;box-sizing:border-box;width:100%;text-align:center;text-decoration:none;margin-top:12px;padding:12px 20px;border:0;border-radius:10px;background:#4fd1b5;color:#06201b;font:800 16px system-ui;cursor:pointer}
 .btn.small{width:auto;display:inline-block;margin:0;padding:8px 14px;font-size:14px}
 .code{display:flex;justify-content:space-between;align-items:center;gap:12px;font:700 20px ui-monospace,monospace;letter-spacing:1px;background:#161d2f;padding:10px 12px;border-radius:10px;white-space:nowrap}
-.error{background:#3a1d24;color:#ffb4b4;padding:10px 12px;border-radius:10px}.wait{background:#1d2a2b;padding:12px;border-radius:10px;margin:0}
+.error{background:#3a1d24;color:#ffb4b4;padding:10px 12px;border-radius:10px}.wait{display:flex;gap:12px;align-items:center;background:#1d2a2b;padding:12px;border-radius:10px;margin:0}.wait small{display:block;color:#9aa6c4;font-size:13px;margin-top:2px}
+.pulse{position:relative;flex:none;width:20px;height:20px}.pulse i{position:absolute;inset:0;border-radius:50%;background:#4fd1b5;animation:ring 1.8s ease-out infinite}.pulse i+i{animation-delay:.9s}
+.warn .pulse i{background:#ffd98a}@keyframes ring{0%{transform:scale(.35);opacity:.9}100%{transform:scale(1.25);opacity:0}}
+.btn.busy{opacity:.75;cursor:progress}.btn.busy::before{content:"";display:inline-block;width:14px;height:14px;margin-right:8px;vertical-align:-2px;border:2px solid #06201b;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.pulse i,.btn.busy::before{animation:none}}
 .wait.warn{background:#3a2f14;color:#ffd98a}.nowrap{white-space:nowrap;font-family:ui-monospace,monospace}
 .foot{margin-top:28px;color:#6f7a99;font-size:12px}</style></head><body>
 <h1>Set up this device</h1>
@@ -220,9 +227,12 @@ function copyCode(){var t=document.getElementById('code').textContent,b=document
 function done(){b.textContent='Copied';}
 if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t).then(done);return;}
 var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();done();}
-var detail=document.getElementById('detail');
-if(detail)setInterval(function(){fetch('/status').then(function(r){return r.json();}).then(function(s){
-if(s.step!==4){location.href='/';}else{detail.textContent=s.detail;detail.className=s.problem?'wait warn':'wait';}}).catch(function(){});},3000);
+document.querySelectorAll('form').forEach(function(f){f.addEventListener('submit',function(){var b=f.querySelector('button[type=submit]');if(b){b.classList.add('busy');b.textContent='Saving';}});});
+var wait=document.getElementById('wait'),detail=document.getElementById('detail'),clock=document.getElementById('clock'),since=wait?Number(wait.dataset.since):0,checked=Date.now();
+function tick(){if(!clock)return;var s=Math.max(0,Math.floor((Date.now()-(since||checked))/1000)),m=Math.floor(s/60);
+clock.textContent='Waiting '+m+':'+String(s%60).padStart(2,'0')+' · checked '+Math.round((Date.now()-checked)/1000)+'s ago';}
+if(wait){tick();setInterval(tick,1000);setInterval(function(){fetch('/status').then(function(r){return r.json();}).then(function(s){
+checked=Date.now();if(s.step!==4){location.href='/';return;}detail.textContent=s.detail;wait.className=s.problem?'wait warn':'wait';tick();}).catch(function(){});},3000);}
 </script></body></html>"""
     }
 

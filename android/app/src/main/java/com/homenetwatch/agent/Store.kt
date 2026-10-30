@@ -53,6 +53,11 @@ class Store(context: Context) {
         set(value) = prefs.edit().putString("last_error", value).apply()
 
     /** True once the server accepted a check-in with this device's code, so Approve is available on the dashboard. */
+    /** When the setup key was saved, in epoch milliseconds: the wait for approval is counted from here. */
+    var keySavedAt: Long
+        get() = prefs.getLong("key_saved_at", 0L)
+        set(value) = prefs.edit().putLong("key_saved_at", value).apply()
+
     var checkedIn: Boolean
         get() = prefs.getBoolean("checked_in", false)
         set(value) = prefs.edit().putBoolean("checked_in", value).apply()

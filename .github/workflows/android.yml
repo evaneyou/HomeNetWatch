@@ -1,0 +1,52 @@
+name: Android agent
+
+# Builds the Android agent APK, with the traffic sender (rtnp-send) compiled for arm64 (the Shield) and x86
+# (the Android TV emulator). The APK is kept as a run artifact for 30 days; nothing is published.
+on:
+  push:
+    branches: [main]
+    paths: ["android/**", ".github/workflows/android.yml"]
+  pull_request:
+    paths: ["android/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Rust for Android
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-linux-android i686-linux-android
+          cargo install cargo-ndk --locked
+
+      - name: Build the traffic sender
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+          RTNP_SRC: ${{ runner.temp }}/RTN_PackGen
+        run: android/build-sender.sh
+
+      - name: Test and build
+        working-directory: android
+        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: homenetwatch-agent-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30

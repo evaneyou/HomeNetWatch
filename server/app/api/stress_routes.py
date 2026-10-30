@@ -92,8 +92,12 @@ def start(
     db: Annotated[Session, Depends(get_db)],
     admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> dict[str, Any]:
-    if db.get(Monitor, body.monitor_id) is None:
+    monitor = db.get(Monitor, body.monitor_id)
+    if monitor is None:
         raise HTTPException(status_code=404, detail="Remote agent not found")
+    if monitor.platform == "android":
+        # The Android agent runs the voice stream and the Speed Test only; it never picks up a stress job.
+        raise HTTPException(status_code=400, detail="Network Test is not available on an Android agent.")
     try:
         links = normalize_links(body.links)
     except ValueError as exc:

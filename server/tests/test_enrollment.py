@@ -16,7 +16,7 @@ from app.config import get_settings
 from app.auth import hash_password
 from app.enrollment import RATE_LIMIT, nonces
 from app.main import app
-from app.models import AuditEvent, EnrollmentCheckin, InstallerCode, Monitor, Test, User, UserRole
+from app.models import AuditEvent, EnrollmentCheckin, InstallerCode, Monitor, Network, Test, User, UserRole
 from conftest import FakeAgent, login, new_installer_code
 
 WAITING = "Waiting for this code to be registered"
@@ -26,6 +26,7 @@ WAITING = "Waiting for this code to be registered"
 def room(db):
     """A unique device-name prefix. Everything enrolled under it is removed afterwards."""
     prefix = f"T{uuid.uuid4().hex[:6]} "
+    networks_before = set(db.scalars(select(Network.id)).all())
     yield prefix
     db.rollback()
     like = {"p": f"{prefix}%"}
@@ -34,6 +35,11 @@ def room(db):
     db.execute(text(f"DELETE FROM test_results WHERE test_id IN (SELECT id FROM tests WHERE monitor_id IN ({owned}))"), like)
     db.execute(text(f"DELETE FROM tests WHERE monitor_id IN ({owned})"), like)
     db.execute(text("DELETE FROM monitors WHERE name LIKE :p"), like)
+    # An enrolled Pi that reports gets Wired and Wi-Fi networks in the shared home group. Left behind, they give every
+    # later monitor a second "Wi-Fi" cell in /summary, and tests that read the first one passed or failed by chance.
+    for network_id in set(db.scalars(select(Network.id)).all()) - networks_before:
+        if db.scalar(select(func.count(Test.id)).where(Test.network_id == network_id)) == 0:
+            db.execute(text("DELETE FROM networks WHERE id = :id"), {"id": network_id})
     db.execute(text("DELETE FROM installer_codes WHERE device_name LIKE :p"), like)
     db.execute(text("DELETE FROM audit_events WHERE detail LIKE :p"), like)
     db.commit()
@@ -580,6 +586,9 @@ def test_dashboard_is_told_the_device_type(client, room, state_dir):
     listed = next(item for item in client.get("/api/v1/monitors").json() if item["id"] == approved.json()["id"])
     assert listed["platform"] == "android"
     assert client.get(f"/api/v1/monitors/{approved.json()['id']}").json()["platform"] == "android"
+    # The Home page reads the type from the summary, so the card is right from the first paint.
+    summary = client.get("/api/v1/summary").json()
+    assert next(item for item in summary["monitors"] if item["id"] == approved.json()["id"])["platform"] == "android"
 
 
 def test_a_pi_reports_its_type_too(client, room, state_dir):
@@ -587,3 +596,30 @@ def test_a_pi_reports_its_type_too(client, room, state_dir):
     _agent, created = _enroll(client, csrf, f"{room}PiKind")
     assert created["platform"] == "pi"
     assert client.get(f"/api/v1/monitors/{created['id']}").json()["platform"] == "pi"
+
+
+def test_an_android_agent_is_tested_over_wifi_only(client, room, state_dir):
+    csrf = login(client)
+    agent, created = _android_agent(client, csrf, f"{room}WifiOnly")
+    assert agent.poll().status_code == 200
+    assert _health(client, agent.token).status_code == 200
+    monitor_id = created["id"]
+
+    # The server refuses the Wired link for an Android agent, whatever the dashboard shows.
+    wired = client.post("/api/v1/speedtest", json={"monitor_id": monitor_id, "link": "wired"}, headers=csrf)
+    assert wired.status_code == 400
+    assert "Wi-Fi only" in wired.json()["detail"]
+    assert client.post("/api/v1/speedtest", json={"monitor_id": monitor_id, "link": "wireless"}, headers=csrf).status_code == 200
+
+    both = {"monitor_id": monitor_id, "profile_slug": "voip-g711a", "links": ["wired", "wireless"]}
+    assert client.put("/api/v1/synthetic/continuous", json=both, headers=csrf).status_code == 400
+    wifi = {**both, "links": ["wireless"]}
+    assert client.put("/api/v1/synthetic/continuous", json=wifi, headers=csrf).status_code == 200
+
+    stress = client.post(
+        "/api/v1/stress",
+        json={"monitor_id": monitor_id, "links": ["wireless"], "duration_seconds": 30, "sessions": [{"kind": "voice"}]},
+        headers=csrf,
+    )
+    assert stress.status_code == 400
+

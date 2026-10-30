@@ -280,30 +280,45 @@ SRTP_KEY_LEN = 30
 RTNP_UID = 65532
 
 
+SHARED_SRTP = "shared"
+
+
 def ensure_srtp_key(monitor_id: uuid.UUID) -> bytes | None:
-    """Return this monitor's 30-byte SRTP key, creating an encrypted copy if needed.
+    """Return the 30-byte SRTP key for this monitor's flows, creating an encrypted copy if needed.
+
+    The receiver (RTNP 0.2.1) reads exactly one SRTP key and will not start with more, so every
+    agent shares one key, as they already share the control key. A server that used to give each
+    agent its own key keeps the oldest one: it is the one its receiver loaded when it was the only
+    key, so a running receiver and the first agent carry on unchanged and the others switch to it.
 
     The ciphertext lives next to the WireGuard preshared keys. A plaintext file is
     written for the receiver process only. The key is not returned in logs.
     """
+    del monitor_id  # every agent gets the same key; kept so callers stay per-agent
     directory = _state_dir()
     if directory is None:
         return None
     master = _srtp_master(directory)
-    path = directory / "srtp" / f"{monitor_id}.bin"
+    store = directory / "srtp"
+    path = store / f"{SHARED_SRTP}.bin"
     if path.is_file():
-        stored = path.read_bytes()
-        if len(stored) < 13:
-            raise ValueError("Stored SRTP key is unreadable")
-        key = AESGCM(master).decrypt(stored[:12], stored[12:], None)
+        key = _read_srtp(master, path)
     else:
-        key = secrets.token_bytes(SRTP_KEY_LEN)
+        older = sorted(store.glob("*.bin"), key=lambda item: item.stat().st_mtime) if store.is_dir() else []
+        key = _read_srtp(master, older[0]) if older else secrets.token_bytes(SRTP_KEY_LEN)
         nonce = secrets.token_bytes(12)
         _write_bytes(path, nonce + AESGCM(master).encrypt(nonce, key, None))
     if len(key) != SRTP_KEY_LEN:
         raise ValueError("Stored SRTP key is unreadable")
-    _publish_srtp_key(monitor_id, key)
+    _publish_srtp_key(key)
     return key
+
+
+def _read_srtp(master: bytes, path: Path) -> bytes:
+    stored = path.read_bytes()
+    if len(stored) < 13:
+        raise ValueError("Stored SRTP key is unreadable")
+    return AESGCM(master).decrypt(stored[:12], stored[12:], None)
 
 
 def _srtp_master(directory: Path) -> bytes:
@@ -317,16 +332,20 @@ def _srtp_master(directory: Path) -> bytes:
     return master
 
 
-def _publish_srtp_key(monitor_id: uuid.UUID, key: bytes) -> None:
+def _publish_srtp_key(key: bytes) -> None:
+    """Leave exactly one key for the receiver, which refuses to start when it finds more than one."""
     raw = get_settings().rtnp_state_dir.strip()
     if not raw:
         return
     directory = Path(raw) / "keys"
     directory.mkdir(mode=0o750, exist_ok=True)
     _give_to_receiver(directory)
-    path = directory / str(monitor_id)
+    path = directory / SHARED_SRTP
     _write_bytes(path, key)
     _give_to_receiver(path)
+    for other in directory.iterdir():
+        if other != path and other.is_file():
+            other.unlink()
 
 
 def _give_to_receiver(path: Path) -> None:

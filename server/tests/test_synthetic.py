@@ -479,9 +479,9 @@ def test_srtp_key_is_a_file_and_never_an_argument(tmp_path, monkeypatch):
         key = ensure_srtp_key(monitor_id)
         assert key is not None and len(key) == 30
         assert ensure_srtp_key(monitor_id) == key
-        stored = (tmp_path / "wg" / "srtp" / f"{monitor_id}.bin").read_bytes()
+        stored = (tmp_path / "wg" / "srtp" / "shared.bin").read_bytes()
         assert key not in stored
-        published = (tmp_path / "rtnp" / "keys" / str(monitor_id)).read_bytes()
+        published = (tmp_path / "rtnp" / "keys" / "shared").read_bytes()
         assert published == key
         args = send_args(
             "rtnp-send",
@@ -909,3 +909,63 @@ def test_bandwidth_collapse_diagnosed_as_root_cause_on_synthetic_health(client, 
     assert wifi_inet["status"] in ("degraded", "fail") and wifi_inet["cause"] == "bandwidth"
 
 
+def _srtp_dirs(tmp_path, monkeypatch):
+    from app.config import get_settings
+
+    (tmp_path / "wg").mkdir()
+    (tmp_path / "rtnp").mkdir()
+    monkeypatch.setenv("WIREGUARD_STATE_DIR", str(tmp_path / "wg"))
+    monkeypatch.setenv("RTNP_STATE_DIR", str(tmp_path / "rtnp"))
+    get_settings.cache_clear()
+
+
+def test_every_agent_shares_the_one_srtp_key_the_receiver_reads(tmp_path, monkeypatch):
+    from uuid import uuid4
+
+    from app.config import get_settings
+    from app.wireguard_tunnel import ensure_srtp_key
+
+    _srtp_dirs(tmp_path, monkeypatch)
+    try:
+        first = ensure_srtp_key(uuid4())
+        assert ensure_srtp_key(uuid4()) == first
+        # RTNP 0.2.1's receiver will not start with more than one key file.
+        assert [item.name for item in (tmp_path / "rtnp" / "keys").iterdir()] == ["shared"]
+    finally:
+        # Put the environment back before clearing, so later tests do not cache these temporary folders.
+        monkeypatch.undo()
+        get_settings.cache_clear()
+
+
+def test_a_server_with_per_agent_keys_keeps_the_oldest(tmp_path, monkeypatch):
+    import os
+    import secrets
+    from uuid import uuid4
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from app.config import get_settings
+    from app.wireguard_tunnel import _srtp_master, ensure_srtp_key
+
+    _srtp_dirs(tmp_path, monkeypatch)
+    try:
+        master = _srtp_master(tmp_path / "wg")
+        store = tmp_path / "wg" / "srtp"
+        store.mkdir()
+        keys = tmp_path / "rtnp" / "keys"
+        keys.mkdir()
+        oldest, newer = secrets.token_bytes(30), secrets.token_bytes(30)
+        for index, key in enumerate((oldest, newer)):
+            nonce = secrets.token_bytes(12)
+            path = store / f"{uuid4()}.bin"
+            path.write_bytes(nonce + AESGCM(master).encrypt(nonce, key, None))
+            os.utime(path, (1_000_000 + index, 1_000_000 + index))
+            (keys / path.stem).write_bytes(key)
+        # The oldest key is the one a running receiver loaded, so the first agent keeps working unchanged.
+        assert ensure_srtp_key(uuid4()) == oldest
+        assert [item.name for item in keys.iterdir()] == ["shared"]
+        assert (keys / "shared").read_bytes() == oldest
+    finally:
+        # Put the environment back before clearing, so later tests do not cache these temporary folders.
+        monkeypatch.undo()
+        get_settings.cache_clear()

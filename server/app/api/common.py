@@ -137,3 +137,17 @@ def monitor_admin_out(monitor: Monitor) -> MonitorAdminOut:
         applied_config_version=monitor.applied_config_version,
         restart_requested_at=monitor.restart_requested_at,
     )
+
+
+def agent_links(monitor: Monitor) -> tuple[str, ...]:
+    """The links an agent can test. An Android agent (an NVIDIA Shield) is on Wi-Fi only."""
+    return ("wireless",) if monitor.platform == "android" else ("wired", "wireless")
+
+
+def require_agent_links(monitor: Monitor, links: list[str]) -> None:
+    """Refuse a test on a link this agent does not have, whatever the dashboard sent."""
+    if any(link not in agent_links(monitor) for link in links):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{monitor.name} is an Android agent on Wi-Fi only. Choose Wi-Fi.",
+        )

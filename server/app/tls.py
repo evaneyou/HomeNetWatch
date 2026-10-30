@@ -60,6 +60,15 @@ def pins(directory: Path) -> tuple[str, str]:
     return spki_pin(primary.public_key()), spki_pin(backup.public_key())
 
 
+def pin_list(directory: Path) -> list[str]:
+    """The pins as an agent expects them, or nothing when the key files are not there."""
+    try:
+        primary, backup = pins(directory)
+    except (OSError, ValueError):
+        return []
+    return [f"sha256/{primary}", f"sha256/{backup}"]
+
+
 def _load(path: Path) -> ec.EllipticCurvePrivateKey:
     key = serialization.load_pem_private_key(path.read_bytes(), password=None)
     if not isinstance(key, ec.EllipticCurvePrivateKey):

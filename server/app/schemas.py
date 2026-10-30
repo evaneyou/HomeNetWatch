@@ -115,6 +115,8 @@ class RegistrationOut(BaseModel):
     created_at: Optional[datetime] = None
     expires_at: datetime
     conflict: bool
+    # One string to paste into the agent: the server address and the TLS key pins. Not a secret.
+    setup_key: Optional[str] = None
     checkins: list[CheckinOut] = Field(default_factory=list)
 
 

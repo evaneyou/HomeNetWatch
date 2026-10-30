@@ -6,7 +6,11 @@ Admin endpoints need an admin session and a CSRF token, and each one writes an a
 
 from __future__ import annotations
 
+import base64
+import json
+import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
@@ -14,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app import tls
 from app.api.common import _device_name, _home_group, _name_taken, _unique_slug, monitor_admin_out
 from app.auth import get_current_user, require_admin_csrf
 from app.config import get_settings
@@ -277,13 +282,28 @@ def _tunnel_config(monitor: Monitor, now: datetime, link: str = "wired") -> Tunn
     )
 
 
+def setup_key(request: Request) -> str | None:
+    """`hnw1.` and the URL-safe base64 of {"u": server address, "p": [TLS key pins]}.
+
+    The address is the host the dashboard was opened on, so it is the one the agent can reach. Without a key file
+    there is nothing to pin, and the dashboard says so instead of showing a key that would not work.
+    """
+    pins = tls.pin_list(Path(get_settings().tls_dir))
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
+    name = host.rsplit(":", 1)[0] if not host.startswith("[") else ""
+    if not pins or not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", name):
+        return None
+    payload = json.dumps({"u": f"https://{name}", "p": pins}, separators=(",", ":"))
+    return "hnw1." + base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+
 def _clean_chosen_name(raw: str | None) -> str | None:
     """The name an agent asked for. Empty means the dashboard's registration name is used."""
     name = " ".join((raw or "").split())
     return name[:128] or None
 
 
-def _registration_out(code: InstallerCode, now: datetime) -> RegistrationOut:
+def _registration_out(code: InstallerCode, now: datetime, key: str | None = None) -> RegistrationOut:
     fresh = sorted(
         (row for row in code.checkins if row.last_seen_at >= now - CHECKIN_TTL),
         key=lambda row: row.first_seen_at,
@@ -296,6 +316,7 @@ def _registration_out(code: InstallerCode, now: datetime) -> RegistrationOut:
         created_at=code.created_at,
         expires_at=code.expires_at,
         conflict=len(fresh) > 1,
+        setup_key=key,
         checkins=[
             CheckinOut(
                 id=row.id,
@@ -328,6 +349,7 @@ def _audit(db: Session, admin: User, action: str, detail: str, monitor_id: UUID 
 
 @router.get("/enrollment", response_model=list[RegistrationOut])
 def list_registrations(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     _user: Annotated[User, Depends(get_current_user)],
 ) -> list[RegistrationOut]:
@@ -338,12 +360,14 @@ def list_registrations(
         .options(selectinload(InstallerCode.checkins))
         .order_by(InstallerCode.created_at)
     ).all()
-    return [_registration_out(code, now) for code in codes]
+    key = setup_key(request)
+    return [_registration_out(code, now, key) for code in codes]
 
 
 @router.post("/enrollment/codes", response_model=RegistrationOut, status_code=201)
 def register_code(
     body: InstallerCodeIn,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> RegistrationOut:
@@ -373,7 +397,7 @@ def register_code(
     _audit(db, admin, "register_code", device_name)
     db.commit()
     db.expire_all()
-    return _registration_out(_open_code(db, code.id), now)
+    return _registration_out(_open_code(db, code.id), now, setup_key(request))
 
 
 @router.delete("/enrollment/codes/{code_id}", status_code=204)
@@ -391,6 +415,7 @@ def remove_code(
 @router.post("/enrollment/codes/{code_id}/start-over", response_model=RegistrationOut)
 def start_over(
     code_id: UUID,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> RegistrationOut:
@@ -399,7 +424,7 @@ def start_over(
     _audit(db, admin, "start_over", code.device_name)
     db.commit()
     db.expire_all()
-    return _registration_out(_open_code(db, code_id), _now())
+    return _registration_out(_open_code(db, code_id), _now(), setup_key(request))
 
 
 @router.post("/enrollment/codes/{code_id}/approve", response_model=MonitorAdminOut)

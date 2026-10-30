@@ -33,6 +33,7 @@ services:
       WIREGUARD_ENDPOINT: ${WIREGUARD_ENDPOINT:-10.0.0.123:51820}
       WIREGUARD_STATE_DIR: /var/lib/hns-wireguard
       RTNP_STATE_DIR: /var/lib/hns-rtnp
+      TLS_DIR: /var/lib/hns-tls
       RUN_BACKGROUND_TASKS: "1"
       HNS_BACKUP_DIR: /var/lib/hns-backups
     ports:
@@ -40,6 +41,8 @@ services:
     volumes:
       - wgstate:/var/lib/hns-wireguard
       - rtnpstate:/var/lib/hns-rtnp
+      # Read-only: registration shows the agent TLS key pins inside the setup key.
+      - servertls:/var/lib/hns-tls:ro
       - ./geoip:/geoip:ro
       # The host, read-only, so Server Health can see the machine rather than the container.
       - /proc:/host/proc:ro

@@ -332,6 +332,7 @@ export type MonitorAdmin = {
 export type EnrollmentCheckin = {
   id: string;
   hostname: string;
+  device_name?: string | null;
   lan_ip: string;
   observed_ip: string | null;
   first_seen_at: string;
@@ -346,6 +347,7 @@ export type EnrollmentRegistration = {
   created_at: string | null;
   expires_at: string;
   conflict: boolean;
+  setup_key?: string | null;
   checkins: EnrollmentCheckin[];
 };
 

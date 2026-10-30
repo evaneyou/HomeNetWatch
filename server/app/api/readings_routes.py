@@ -549,6 +549,7 @@ def summary(
                 "id": str(s.id),
                 "slug": s.slug,
                 "name": s.name,
+                "platform": s.platform,
                 "status": (
                     "offline"
                     if s.last_seen_at is not None

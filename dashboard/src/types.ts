@@ -43,6 +43,8 @@ export type Summary = {
     id: string;
     slug: string;
     name: string;
+    /** pi | android */
+    platform?: string;
     status: string;
     location_label: string | null;
     region: string | null;

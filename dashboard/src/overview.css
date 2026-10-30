@@ -173,6 +173,25 @@
   line-height: 1.15;
 }
 .probe-text p { margin: 0; font-size: 17px; line-height: 1.4; color: var(--muted); }
+/* What the agent is: a small hardware drawing and its platform, under the name. */
+.device-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 4px 12px 4px 6px;
+  border-radius: 999px;
+  background: rgba(183, 168, 245, 0.12);
+  color: var(--lav-soft);
+  font-size: 14px;
+  font-weight: 600;
+}
+.device-art { width: 26px; height: 26px; flex: none; }
+.device-shield { fill: #1F1D24; stroke: #76B900; stroke-width: 1.3; stroke-linejoin: round; }
+.device-shield-light { fill: none; stroke: #76B900; stroke-width: 1.6; stroke-linecap: round; }
+.device-pi { fill: #2E7D32; }
+.device-pi-chip { fill: #C0DD97; }
+.device-pi-port { fill: #97C459; }
 .probe-text p.probe-id { margin-top: 8px; font-size: 14px; color: var(--lav-soft); opacity: 0.8; }
 
 .orb-wrap {
@@ -280,6 +299,8 @@
   margin: 0; padding: 0; list-style: none;
 }
 .checks > li { display: contents; }
+/* An Android agent has two tiles; stacked full width, its card is as tall as a Pi's 2 x 2. */
+.checks.checks-stacked { grid-template-columns: 1fr; }
 .probe-text h2 a,
 .orb {
   color: inherit;

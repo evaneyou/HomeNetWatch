@@ -580,6 +580,9 @@ def test_dashboard_is_told_the_device_type(client, room, state_dir):
     listed = next(item for item in client.get("/api/v1/monitors").json() if item["id"] == approved.json()["id"])
     assert listed["platform"] == "android"
     assert client.get(f"/api/v1/monitors/{approved.json()['id']}").json()["platform"] == "android"
+    # The Home page reads the type from the summary, so the card is right from the first paint.
+    summary = client.get("/api/v1/summary").json()
+    assert next(item for item in summary["monitors"] if item["id"] == approved.json()["id"])["platform"] == "android"
 
 
 def test_a_pi_reports_its_type_too(client, room, state_dir):

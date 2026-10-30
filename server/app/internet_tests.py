@@ -174,6 +174,9 @@ def select_trace_test(db: Session, monitor_id, slug: str, network_slug: str) -> 
 
 
 def ensure_internet_tests(db: Session, monitor: Monitor) -> None:
+    # An Android device runs only the speed test and synthetic traffic, so it gets none of the Pi's checks.
+    if monitor.platform != "pi":
+        return
     _sync_link_tests(db, monitor, _network(db, monitor, "wan", "Internet", NetworkKind.wired), TUNNEL_SERVER_IP)
     _sync_link_tests(db, monitor, _network(db, monitor, "wired", "Wired", NetworkKind.wired), TUNNEL_SERVER_IP)
     _sync_link_tests(

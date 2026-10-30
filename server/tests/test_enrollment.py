@@ -596,3 +596,30 @@ def test_a_pi_reports_its_type_too(client, room, state_dir):
     _agent, created = _enroll(client, csrf, f"{room}PiKind")
     assert created["platform"] == "pi"
     assert client.get(f"/api/v1/monitors/{created['id']}").json()["platform"] == "pi"
+
+
+def test_an_android_agent_is_tested_over_wifi_only(client, room, state_dir):
+    csrf = login(client)
+    agent, created = _android_agent(client, csrf, f"{room}WifiOnly")
+    assert agent.poll().status_code == 200
+    assert _health(client, agent.token).status_code == 200
+    monitor_id = created["id"]
+
+    # The server refuses the Wired link for an Android agent, whatever the dashboard shows.
+    wired = client.post("/api/v1/speedtest", json={"monitor_id": monitor_id, "link": "wired"}, headers=csrf)
+    assert wired.status_code == 400
+    assert "Wi-Fi only" in wired.json()["detail"]
+    assert client.post("/api/v1/speedtest", json={"monitor_id": monitor_id, "link": "wireless"}, headers=csrf).status_code == 200
+
+    both = {"monitor_id": monitor_id, "profile_slug": "voip-g711a", "links": ["wired", "wireless"]}
+    assert client.put("/api/v1/synthetic/continuous", json=both, headers=csrf).status_code == 400
+    wifi = {**both, "links": ["wireless"]}
+    assert client.put("/api/v1/synthetic/continuous", json=wifi, headers=csrf).status_code == 200
+
+    stress = client.post(
+        "/api/v1/stress",
+        json={"monitor_id": monitor_id, "links": ["wireless"], "duration_seconds": 30, "sessions": [{"kind": "voice"}]},
+        headers=csrf,
+    )
+    assert stress.status_code == 400
+

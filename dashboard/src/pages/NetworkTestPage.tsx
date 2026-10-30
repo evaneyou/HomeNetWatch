@@ -5,6 +5,7 @@ import { api } from "../api";
 import SelectMenu from "../components/SelectMenu";
 import WaitButton from "../components/WaitButton";
 import { useGuestGate } from "../guestGate";
+import { isAndroid } from "../deviceType";
 import type { MonitorAdmin, User } from "../types";
 import "../airwaves.css";
 import "../networktest.css";
@@ -148,7 +149,8 @@ export default function NetworkTestPage() {
   const [stressId, setStressId] = useState<string | null>(null);
   const nextKey = useRef(1);
 
-  const monitors = monitorsQ.data ?? [];
+  // The Android agent runs only the voice stream and the Speed Test, so it cannot take a Network Test.
+  const monitors = (monitorsQ.data ?? []).filter((item) => !isAndroid(item.platform));
   const agent = monitors.find((item) => item.id === agentId) ?? monitors[0];
 
   const activeQ = useQuery({

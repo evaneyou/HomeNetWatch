@@ -362,8 +362,8 @@ export default function MonitorOnboardingPage() {
     <div>
       <h2 className="page-title">Remote Agent Onboarding</h2>
       <p className="page-sub">
-        Register the installer code shown on the Pi, then approve the remote agent after it checks in. The device name
-        is case-sensitive.
+        Register the installer code shown on the Pi or Android device, then approve the remote agent after it checks in.
+        The device name is case-sensitive.
       </p>
 
       <section className="panel">
@@ -371,9 +371,9 @@ export default function MonitorOnboardingPage() {
           Register an installer code
         </h3>
         <ol className="setup-steps">
-          <li>On the Pi, open the LAN setup page and copy the installer code.</li>
+          <li>On the Pi or Android device, open its setup page and copy the installer code.</li>
           <li>Register that code here with the device name and an optional location. The code lasts 24 hours.</li>
-          <li>When the Pi checks in, approve it as a new remote agent, or replace an existing one.</li>
+          <li>When the device checks in, approve it as a new remote agent, or replace an existing one.</li>
         </ol>
         {me.isLoading ? (
           <p className="muted">Loading session…</p>
@@ -493,7 +493,13 @@ export default function MonitorOnboardingPage() {
                     {registration.conflict ? (
                       <p className="error">More than one device used this code. Start over, then have one device check in again.</p>
                     ) : null}
-                    {count === 0 ? <p className="muted">Waiting for the device to check in.</p> : null}
+                    {count === 0 ? (
+                      <p className="muted">
+                        Waiting for the device to check in. Approve becomes available once it does. If this does not
+                        change within a minute, check that the installer code on the device matches the one you
+                        registered.
+                      </p>
+                    ) : null}
                     {count === 0 && registration.setup_key ? <SetupKey value={registration.setup_key} /> : null}
                     {registration.checkins.map((checkin) => (
                       <p key={checkin.id} className="muted">
@@ -520,6 +526,7 @@ export default function MonitorOnboardingPage() {
                           className="btn btn-primary"
                           type="button"
                           disabled={busy || !ready}
+                          title={ready ? undefined : count === 0 ? "No device has checked in with this code yet" : "Start over first"}
                           onClick={() =>
                             run(() => {
                               setError(null);
@@ -734,6 +741,11 @@ export default function MonitorOnboardingPage() {
   );
 }
 
+/** The name the server gives the new sensor: the one chosen on the device, if it sent one. */
+function approvedName(registration: EnrollmentRegistration): string {
+  return registration.checkins[0]?.device_name || registration.device_name;
+}
+
 function confirmText(
   pending: Pending | null,
   selected: MonitorAdmin | null,
@@ -751,14 +763,14 @@ function confirmText(
     return {
       title: "Approve remote agent",
       confirmLabel: "Approve",
-      body: `Add “${pending.registration.device_name}” as a new remote agent?`,
+      body: `Add “${approvedName(pending.registration)}” as a new remote agent?`,
     };
   }
   if (pending.kind === "replace") {
     return {
       title: "Replace remote agent",
       confirmLabel: "Replace",
-      body: `Replace “${pending.monitor.name}” with “${pending.registration.device_name}”? The tunnel address stays. The previous device key stops working.`,
+      body: `Replace “${pending.monitor.name}” with “${approvedName(pending.registration)}”? The tunnel address stays. The previous device key stops working.`,
     };
   }
   if (pending.kind === "start-over") {

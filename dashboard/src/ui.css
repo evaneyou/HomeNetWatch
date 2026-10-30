@@ -605,3 +605,8 @@
   flex: none;
   color: var(--accent);
 }
+
+/* A greyed-out onboarding action is unavailable, not loading: the progress cursor read as "still working". */
+.app-shell.ui-compact .main .monitor-card .btn:disabled {
+  cursor: not-allowed;
+}

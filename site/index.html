@@ -8,7 +8,7 @@
       name="description"
       content="Evan You leads organizations through AI-augmented delivery. HomeNetWatch, a production system built in nine days under enterprise-style controls, is the working proof."
     />
-    <meta name="theme-color" content="#0b0f1a" />
+    <meta name="theme-color" content="#080b11" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="HomeNetWatch" />
     <meta property="og:title" content="Evan You: leading organizations through AI-augmented delivery" />
@@ -22,532 +22,368 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Nunito:wght@500;600;700;800;900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap"
     />
     <link rel="stylesheet" href="site.css" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
 
-    <header class="nav">
+    <header class="nav" id="top">
       <div class="wrap nav-row">
-        <a class="brand" href="#top" aria-label="Top of page">
-          <img src="homenetwatch.png" alt="HomeNetWatch" width="152" height="35" />
-        </a>
-        <nav aria-label="Sections">
-          <a href="#model">Operating model</a>
-          <a href="#decisions">Decisions</a>
-          <a href="#pilot">The project</a>
-          <a href="#enterprise">Enterprise</a>
-          <a href="#transform">Transformation</a>
-          <a href="#about">About</a>
-        </nav>
-        <a class="btn btn-primary" href="https://live.homenetwatch.com/" data-demo aria-label="Open the Live system"><span class="long" aria-hidden="true">Open the Live system</span><span class="short" aria-hidden="true">Live system</span></a>
+        <div class="brand-cluster">
+          <a class="brand" href="#top" aria-label="HomeNetWatch home">
+            <img src="homenetwatch.png" alt="HomeNetWatch" width="136" height="31" />
+          </a>
+          <span class="status-pill"><i class="dot" aria-hidden="true"></i> v0.5 in production</span>
+        </div>
+        <div class="nav-cta">
+          <span class="demo-status" data-demo-status role="status" aria-live="polite"></span>
+          <a class="btn-live" href="https://live.homenetwatch.com/" data-demo>
+            <span class="long">Open live dashboard &rarr;</span>
+            <span class="short">Live system &rarr;</span>
+          </a>
+        </div>
       </div>
     </header>
 
-    <!-- Narrow screens: the section links move out of the sticky header into this strip, which scrolls away. -->
-    <nav class="strip wrap" aria-label="Sections">
-      <a href="#model">Operating model</a>
-      <a href="#decisions">Decisions</a>
-      <a href="#pilot">The project</a>
-      <a href="#enterprise">Enterprise</a>
-      <a href="#transform">Transformation</a>
-      <a href="#about">About</a>
-    </nav>
+    <main id="main" class="wrap main-stage">
+      <div class="intro">
+        <p class="eyebrow">Evan You &middot; 30 Years in Infrastructure, Cloud &amp; Security</p>
+        <h1>A production network monitor built in nine days with AI. Click any layer to inspect how.</h1>
+        <p class="lead">
+          No slideware. Click through the live system topology below to see the architectural choices, AI guardrails,
+          and verifiable Git record behind the build.
+        </p>
+      </div>
 
-    <main id="main">
-      <!-- Hero -->
-      <section class="hero" id="top">
-        <div class="wrap hero-grid">
-          <div>
-            <p class="eyebrow">Evan You &middot; Technology leadership</p>
-            <h1>I lead organizations through AI-augmented delivery. HomeNetWatch is the working proof.</h1>
-            <p class="lead">
-              Thirty years across IT, infrastructure, cloud, networking, and cybersecurity, applied to changing how teams
-              build and deliver. I proved the operating model on a real system: a production network monitor, built in
-              nine days with AI as a teammate and the controls an enterprise would require.
-            </p>
-            <div class="cta">
-              <a class="btn btn-primary" href="#pilot">See the proof</a>
-            </div>
-          </div>
+      <section class="topology-shell" aria-label="Interactive System Architecture">
+        <div class="diagram-pane">
+          <div class="diagram-hint">SELECT A SYSTEM LAYER TO INSPECT</div>
+          <div class="nodes-track" role="tablist" aria-label="System layers">
+            <button
+              type="button"
+              class="node-btn active"
+              role="tab"
+              id="tab-edge"
+              aria-selected="true"
+              aria-controls="panel-edge"
+              data-node="edge"
+            >
+              <span class="node-idx">01</span>
+              <span class="node-title">
+                <b>Raspberry Pi Sensor (Home Edge)</b>
+                <span>Dual-NIC Wired + Wi-Fi probes, Kismet WIDS, Rust UDP generator</span>
+              </span>
+              <span class="node-tag">Hardware</span>
+            </button>
 
-          <div class="pipe" aria-label="The operating model">
-            <div class="pipe-node">
-              <span class="pipe-tag">1 &middot; Direction</span>
-              <b>Strategy and rules</b>
-              <small>A written spec, a defined scope, and rules the AI works under</small>
-            </div>
-            <div class="pipe-link"><i></i><em>within limits</em></div>
-            <div class="pipe-node">
-              <span class="pipe-tag">2 &middot; Control</span>
-              <b>Guardrails</b>
-              <small>Review, automated tests, backups, security, cost limits</small>
-            </div>
-            <div class="pipe-link"><i></i><em>under review</em></div>
-            <div class="pipe-node">
-              <span class="pipe-tag">3 &middot; Delivery</span>
-              <b>AI builds, people decide</b>
-              <small>Speed from AI, accountability from the team</small>
-            </div>
-            <div class="pipe-link"><i></i><em>on the record</em></div>
-            <div class="pipe-node">
-              <span class="pipe-tag">4 &middot; Evidence</span>
-              <b>Measurement</b>
-              <small>Releases, history and results that can be audited</small>
-            </div>
+            <button
+              type="button"
+              class="node-btn"
+              role="tab"
+              id="tab-tunnel"
+              aria-selected="false"
+              aria-controls="panel-tunnel"
+              data-node="tunnel"
+            >
+              <span class="node-idx">02</span>
+              <span class="node-title">
+                <b>Dual WireGuard + Access Plane Split</b>
+                <span>Ed25519 enrollment, pinned TLS, self-healing wg0/wg1 tunnels</span>
+              </span>
+              <span class="node-tag">Security</span>
+            </button>
+
+            <button
+              type="button"
+              class="node-btn"
+              role="tab"
+              id="tab-core"
+              aria-selected="false"
+              aria-controls="panel-core"
+              data-node="core"
+            >
+              <span class="node-idx">03</span>
+              <span class="node-title">
+                <b>FastAPI + PostgreSQL + Correlation Engine</b>
+                <span>Separates ISP drops, tunnel staleness, and bandwidth collapse</span>
+              </span>
+              <span class="node-tag">Backend</span>
+            </button>
+
+            <button
+              type="button"
+              class="node-btn"
+              role="tab"
+              id="tab-ai"
+              aria-selected="false"
+              aria-controls="panel-ai"
+              data-node="ai"
+            >
+              <span class="node-idx">04</span>
+              <span class="node-title">
+                <b>Multi-Agent AI Delivery &amp; Guardrails</b>
+                <span>150+ reviewed PRs, 205+ tests, SPEC.md rules, bounded Gemini RCA</span>
+              </span>
+              <span class="node-tag">Governance</span>
+            </button>
+
+            <button
+              type="button"
+              class="node-btn"
+              role="tab"
+              id="tab-author"
+              aria-selected="false"
+              aria-controls="panel-author"
+              data-node="author"
+            >
+              <span class="node-idx">05</span>
+              <span class="node-title">
+                <b>Evan You &middot; Builder &amp; Leader</b>
+                <span>Why 30 years of operational judgment makes AI speed safe</span>
+              </span>
+              <span class="node-tag">About</span>
+            </button>
           </div>
         </div>
-      </section>
 
-      <!-- Experience -->
-      <section class="exp-section" aria-label="Experience">
-        <div class="wrap">
-          <div class="experience">
-            <div class="exp-num" aria-hidden="true">30<small>years</small></div>
+        <div class="inspector-pane" aria-live="polite">
+          <!-- Panel 01: Edge -->
+          <article
+            class="inspector-card"
+            id="panel-edge"
+            role="tabpanel"
+            aria-labelledby="tab-edge"
+            data-panel="edge"
+          >
             <div>
-              <h3>What 30 years adds</h3>
+              <div class="inspector-tag">01 / Edge Hardware</div>
+              <h2>Raspberry Pi Sensor on a Real Home Network</h2>
               <p>
-                AI accelerates the mechanics of generation. Experience decides what is worth building and how: the
-                architectural guardrails, security reviews, and operational sanity checks that make speed trustworthy.
+                A single Raspberry Pi measures both Wired Ethernet and Wi-Fi simultaneously. It runs active HTTP and
+                ICMP path checks, LibreSpeed throughput tests, Kismet wireless intrusion detection, on-demand LAN scans,
+                and a custom Rust real-time UDP stream generator (Voice G.711 &amp; Video) without choking household
+                traffic.
               </p>
-              <p>
-                That is what this project shows. In nine days it became a secured, monitored, documented system running
-                in production, directed with the kind of leadership that aligns teams and turns emerging capabilities
-                into disciplined, production-grade delivery.
-              </p>
+              <div class="tradeoff-box">
+                <strong>Architectural Trade-off</strong>
+                <span>
+                  Spaced heavy tests in a serialized queue rather than firing parallel streams that would peg the Pi's
+                  CPU, saturate residential uplink, and create the very lag we measure.
+                </span>
+              </div>
             </div>
-          </div>
-        </div>
-      </section>
+            <div class="proof-links">
+              <a class="proof-link primary" href="https://live.homenetwatch.com/" data-demo>Inspect live sensor &rarr;</a>
+              <a
+                class="proof-link"
+                href="https://github.com/evaneyou/homenetwatch/blob/main/monitor/README.md"
+                target="_blank"
+                rel="noopener"
+              >Agent README &nearr;</a>
+              <a
+                class="proof-link"
+                href="https://github.com/evaneyou/RTN_PackGen"
+                target="_blank"
+                rel="noopener"
+              >Rust RTNP repo &nearr;</a>
+            </div>
+          </article>
 
-      <!-- Operating model: guardrails mapped to executive concerns -->
-      <section id="model" class="block">
-        <div class="wrap">
-          <p class="eyebrow">Operating model</p>
-          <h2>Speed an executive can trust</h2>
-          <p class="sub">AI accelerates delivery. These controls keep it safe, reviewable and affordable. Each one answers a concern a leadership team will raise.</p>
-          <div class="cards model">
-            <article class="card">
-              <span class="concern">Governance</span>
-              <h3>Written spec and AI house rules</h3>
-              <p>One document owns the architecture, scope and phases. Written rules in the repository set what the AI may and may not do.</p>
-            </article>
-            <article class="card">
-              <span class="concern">Quality and auditability</span>
-              <h3>Every change reviewed</h3>
-              <p>A branch and a pull request for each change, with automated tests, a build and a config check before anything merges.</p>
-            </article>
-            <article class="card">
-              <span class="concern">Operational risk</span>
-              <h3>Safe to change</h3>
-              <p>Backups before risky changes, changes that are easy to undo, and notice of what will restart before it does.</p>
-            </article>
-            <article class="card">
-              <span class="concern">Security</span>
-              <h3>Secure by design</h3>
-              <p>Signed device enrollment, per-device encrypted tunnels, roles enforced on the server, HSTS and an enforced content security policy.</p>
-            </article>
-            <article class="card">
-              <span class="concern">Cost</span>
-              <h3>Spend is a design input</h3>
-              <p>Free-tier cloud, a small footprint, work spread across several AI agents, and a public demo that cannot trigger expensive work.</p>
-            </article>
-            <article class="card">
-              <span class="concern">Measurement</span>
-              <h3>Evidence on the record</h3>
-              <p>Commit history, tagged releases and a changelog show what changed, when and why, for anyone who needs to audit it.</p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <!-- Decisions and trade-offs -->
-      <section id="decisions" class="block alt">
-        <div class="wrap">
-          <p class="eyebrow">Judgment</p>
-          <h2>Decisions and trade-offs</h2>
-          <p class="sub">What I chose, why, and what I gave up. Real systems run on architectural discipline, not unchecked complexity.</p>
-          <div class="decisions">
-            <article class="decision">
-              <h3>Emulated an engineering squad across multiple AI tools, coordinated via Git</h3>
-              <dl>
-                <div><dt>Why</dt><dd>In the real world, I would lead a team of specialized engineers. Replicating that solo with AI meant being smart about cost and context: leaning on a single model for an entire build burns through expensive tokens and quickly turns code into spaghetti. Instead, I assigned specific features to different AI coding tools on isolated Git branches, using pull requests and strict review rules to keep the work modular and disciplined.</dd></div>
-                <div><dt>Gave up</dt><dd>The quick convenience of single-prompt "vibe coding." Managing multiple tools through Git takes real operational overhead, but it is the only way to build software that lasts.</dd></div>
-              </dl>
-            </article>
-            <article class="decision">
-              <h3>Chose portable architecture over familiar cloud ecosystems</h3>
-              <dl>
-                <div><dt>Why</dt><dd>It is easy to create accidental vendor lock-in when you build in the clouds you know best. Deploying a clean Docker Compose, Caddy, and PostgreSQL stack on Oracle Cloud forced the architecture to stay strictly portable, proving the entire system can migrate back to AWS, GCP, or bare metal without rewriting code.</dd></div>
-                <div><dt>Gave up</dt><dd>The muscle memory and familiarity of AWS and GCP, trading the platforms I know inside out to prove true cloud portability.</dd></div>
-              </dl>
-            </article>
-            <article class="decision">
-              <h3>Designed around edge hardware and residential bandwidth limits</h3>
-              <dl>
-                <div><dt>Why</dt><dd>A Raspberry Pi is not an enterprise appliance, and a home broadband connection is not a dedicated corporate circuit. If you fire off parallel bandwidth tests, you will peg the Pi's CPU, choke the uplink, and create the very lag you are trying to measure. Spacing tests out and serializing heavy traces keeps the monitor completely non-intrusive to normal household traffic.</dd></div>
-                <div><dt>Gave up</dt><dd>Instant, all-at-once telemetry. Heavy tests run in a staggered queue rather than all in parallel.</dd></div>
-              </dl>
-            </article>
-            <article class="decision">
-              <h3>Simulated the fleet in software instead of building a physical home lab</h3>
-              <dl>
-                <div><dt>Why</dt><dd>In an enterprise, a dedicated hardware lab with proper test gear is a must. In a house, turning your living room into a staging rack makes zero sense. Running containerized virtual agents on the server let me stress-test fleet check-ins, network drops, and dashboard load without cabling up a pile of hardware.</dd></div>
-                <div><dt>Gave up</dt><dd>Real-world RF testing across multiple rooms. Software simulation validates the platform logic, but Wi-Fi attenuation, wall interference, and antenna quirks can only be verified on physical hardware.</dd></div>
-              </dl>
-            </article>
-            <article class="decision decision-roadmap">
-              <span class="tag-roadmap">Roadmap</span>
-              <h3>Held back autonomous AI operations to avoid runaway inference costs (Phase 2.0)</h3>
-              <dl>
-                <div><dt>The plan</dt><dd>Autonomous agents that continuously monitor logs, diagnose dropouts, restart interfaces, and open ISP escalation tickets.</dd></div>
-                <div><dt>Why not yet</dt><dd>Anyone who has actually built autonomous agents knows they burn through money fast. Having an LLM continuously parse high-volume streaming logs and chain reasoning loops causes massive budget shock in an enterprise, and at home it is financially reckless. Until the telemetry is tightly pre-filtered into lean, deterministic triggers that keep token consumption bounded, 24/7 agentic operations stay on the drawing board.</dd></div>
-              </dl>
-            </article>
-          </div>
-
-        </div>
-      </section>
-
-      <!-- The pilot: evidence and a way to verify -->
-      <section id="pilot" class="block">
-        <div class="wrap">
-          <p class="eyebrow">The project</p>
-          <h2>HomeNetWatch, in production</h2>
-          <p class="sub">
-            A Raspberry Pi measures a home network, a cloud server stores the results, and a live dashboard shows where a
-            connection degrades, how hard the server is working, and what the airwaves look like—including a Security tab
-            for wireless alerts and on-demand LAN scans. One person directing AI shipped the first working system in nine
-            days; it is now at v0.5 under the controls above. Each claim links to its record.
-          </p>
-          <ul class="proof">
-            <li>
-              <b>Runs in production</b>
-              <span>The live app reads measurements from a Raspberry Pi on my home network: path and app health, Airwaves, Server Health, speed and stress tests, and guest demo access.</span>
-              <a href="https://live.homenetwatch.com/" data-demo>Open the live system &rarr;</a>
-            </li>
-            <li>
-              <b>Built in nine days</b>
-              <span>First commit on October 6, original alpha release v0.2 on October 14; v0.5 released October 28.</span>
-              <a href="https://github.com/evaneyou/homenetwatch/commits/main" target="_blank" rel="noopener">Commit history &rarr;</a>
-            </li>
-            <li>
-              <b>Reviewed and tested</b>
-              <span>125 merged pull requests and 205 automated tests, with CI running the server suite, the dashboard build and a config check.</span>
-              <a href="https://github.com/evaneyou/homenetwatch/pulls?q=is%3Apr+is%3Amerged" target="_blank" rel="noopener">Merged pull requests &rarr;</a>
-            </li>
-            <li>
-              <b>Versioned releases</b>
-              <span>Releases v0.2, v0.4 and v0.5 are published on GitHub, and the changelog records v0.1 through v0.5 for whoever upgrades.</span>
-              <a href="https://github.com/evaneyou/homenetwatch/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog &rarr;</a>
-            </li>
-            <li>
-              <b>Specified and documented</b>
-              <span>A written spec, a deployment guide that starts from a blank server, and a README for the Pi agent.</span>
-              <a href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md" target="_blank" rel="noopener">The spec &rarr;</a>
-            </li>
-            <li>
-              <b>Secured</b>
-              <span>Signed device enrollment, per-device WireGuard tunnels, roles enforced on the server, HSTS and an enforced CSP.</span>
-              <a href="https://github.com/evaneyou/homenetwatch/blob/main/docs/deploy.md#security-headers" target="_blank" rel="noopener">Security headers &rarr;</a>
-            </li>
-          </ul>
-
-          <div class="demo-card verify">
+          <!-- Panel 02: Tunnel & Security -->
+          <article
+            class="inspector-card"
+            id="panel-tunnel"
+            role="tabpanel"
+            aria-labelledby="tab-tunnel"
+            data-panel="tunnel"
+            hidden
+          >
             <div>
-              <h3>Verify it yourself</h3>
+              <div class="inspector-tag">02 / Security &amp; Networking</div>
+              <h2>Access Plane vs. Measurement Tunnel Split</h2>
               <p>
-                The demo is the production app with read-only guest access, showing real-time measurements from my
-                Raspberry Pi. Private details such as IP addresses are hidden, and anything that starts tests or changes
-                settings is switched off to protect a small server.
+                Devices enroll with Ed25519 signatures and pin the server's TLS certificate. Wired (<code>wg0</code>)
+                and Wi-Fi (<code>wg1</code>) each maintain an isolated WireGuard tunnel. When an ISP blip leaves a stale
+                route pin, the agent detects that public web works while the tunnel peer is unreachable and self-heals
+                within 60 seconds.
               </p>
+              <div class="tradeoff-box">
+                <strong>Why It Matters</strong>
+                <span>
+                  Separating public web checks from WireGuard tunnel checks prevents false "Wi-Fi Down" alarms when only
+                  a measurement tunnel dropped—and HSTS, strict CSP, and server-side RBAC protect the public guest demo.
+                </span>
+              </div>
             </div>
-            <div class="demo-act">
-              <a class="btn btn-primary" href="https://live.homenetwatch.com/" data-demo>Open the live system</a>
-              <span class="fine" data-demo-status role="status"></span>
+            <div class="proof-links">
+              <a
+                class="proof-link"
+                href="https://github.com/evaneyou/homenetwatch/blob/main/SECURITY.md"
+                target="_blank"
+                rel="noopener"
+              >Security policy &nearr;</a>
+              <a
+                class="proof-link"
+                href="https://github.com/evaneyou/homenetwatch/blob/main/docs/deploy.md#security-headers"
+                target="_blank"
+                rel="noopener"
+              >Security headers &amp; deploy &nearr;</a>
+              <a class="proof-link" href="https://live.homenetwatch.com/" data-demo>Open live dashboard &rarr;</a>
             </div>
-          </div>
-        </div>
-      </section>
+          </article>
 
-      <!-- What this project means for an enterprise -->
-      <section id="enterprise" class="block alt">
-        <div class="wrap">
-          <p class="eyebrow">What this means for an enterprise</p>
-          <h2>What I would measure in a company</h2>
-          <p class="sub">
-            This is a hobby project on my home network. It is not an enterprise rollout, and I have not proven any savings.
-            If a company used the same approach, these are the things I would measure.
-          </p>
-          <ul class="ticks outcomes-list">
-            <li>How quickly new infrastructure and internal tools get delivered</li>
-            <li>Whether every change can be traced and reviewed</li>
-            <li>What it costs to run, and how many problems reach production</li>
-            <li>Whether building costs less than buying software with features you never use</li>
-          </ul>
-          <p class="note">
-            What this project produced, as of October 28, 2026: original alpha (v0.2) built in nine days, now at version v0.5 with 125 merged pull requests, 205 automated
-            tests, and 30 of those 125 pull requests were fixes. One person, one project.
-            <a href="https://github.com/evaneyou/homenetwatch/pulls?q=is%3Apr+is%3Amerged" target="_blank" rel="noopener">See the history &rarr;</a>
-            A company would also have to count support, patching and compliance.
-          </p>
-        </div>
-      </section>
-
-      <!-- Transformation, in business terms -->
-      <section id="transform" class="block">
-        <div class="wrap">
-          <p class="eyebrow">Transformation</p>
-          <h2>How I take this to an organization</h2>
-          <p class="sub">I work with leaders and engineering teams to change how an organization designs, secures and delivers IT services.</p>
-          <div class="playbook">
-            <article>
-              <span class="num">01</span>
-              <h3>Assess</h3>
-              <p>Map how work flows today: where time and risk sit, and how ready teams and platforms are.</p>
-            </article>
-            <article>
-              <span class="num">02</span>
-              <h3>Prove</h3>
-              <p>Choose one contained, real system with an executive sponsor, so the evidence is a product, not a slide.</p>
-            </article>
-            <article>
-              <span class="num">03</span>
-              <h3>Govern</h3>
-              <p>Set the rules, review gates, security controls and cost limits that let speed scale without added risk.</p>
-            </article>
-            <article>
-              <span class="num">04</span>
-              <h3>Enable</h3>
-              <p>Upskill managers and engineers by role, and change the engineering culture until the practice is theirs.</p>
-            </article>
-            <article>
-              <span class="num">05</span>
-              <h3>Measure</h3>
-              <p>Track cycle time, change failure rate, cost per change and security findings, and report them upward.</p>
-            </article>
-          </div>
-          <p class="note">HomeNetWatch is steps two and three in public: a real system in production, and the governance that made it repeatable.</p>
-        </div>
-      </section>
-
-      <!-- Appendix: builder detail -->
-      <section id="appendix" class="block alt">
-        <div class="wrap">
-          <p class="eyebrow">Appendix</p>
-          <h2>The build record</h2>
-          <p class="sub">Technical detail for anyone who wants to look under the hood.</p>
-
-          <details class="fold">
-            <summary>From first commit to v0.5</summary>
-          <ol class="timeline">
-            <li>
-              <time datetime="2026-10-06">Oct 6</time>
-              <div>
-                <h3>The plan, the server and the dashboard</h3>
-                <p>A written spec and the Docker layout, then the server and the first dashboard.</p>
-              </div>
-            </li>
-            <li>
-              <time datetime="2026-10-09">Oct 9</time>
-              <div>
-                <h3>The hardware joins in</h3>
-                <p>The Pi agent, the WireGuard hub, Wi-Fi scans, path traces and a second radio for the airwaves.</p>
-              </div>
-            </li>
-            <li>
-              <time datetime="2026-10-11">Oct 11</time>
-              <div>
-                <h3>Trust, and a clearer picture</h3>
-                <p>Secure agent sign-up, traceroutes with the networks they cross, and a tighter layout.</p>
-              </div>
-            </li>
-            <li>
-              <time datetime="2026-10-13">Oct 13</time>
-              <div>
-                <h3>Release v0.1: the first working system</h3>
-                <p>A small device at home measures the connection, and a live dashboard shows whether the network is healthy and where a problem starts.</p>
-              </div>
-            </li>
-            <li>
-              <time datetime="2026-10-14">Oct 14</time>
-              <div>
-                <h3>Release v0.2: see the path a connection takes</h3>
-                <p>The route from home to any website, drawn step by step, and it works on a phone. Anyone can be given view-only access.</p>
-              </div>
-            </li>
-            <li>
-              <time datetime="2026-10-18">Oct 18</time>
-              <div>
-                <h3>Release v0.3: measure, stress, and get told</h3>
-                <p>A one-page report of how the network has performed, a 30-second speed test you can watch run, a way to load the connection and see it cope, and alerts that arrive on your phone.</p>
-              </div>
-            </li>
-            <li>
-              <time datetime="2026-10-20">Oct 20</time>
-              <div>
-                <h3>Release v0.4: the system watches itself</h3>
-                <p>One page shows how hard the server is working, how full its disk is, when it would run out of space, and whether its software has known security flaws.</p>
-              </div>
-            </li>
-            <li>
-              <time datetime="2026-10-28">Oct 28</time>
-              <div>
-                <h3>Release v0.5: Airwaves Security and how much data you use</h3>
-                <p>A Security tab for Kismet WIDS alerts, trust attention and on-demand LAN scans, plus a Server Health table of bytes received and sent over common periods.</p>
-              </div>
-            </li>
-            <li>
-              <time>Live</time>
-              <div>
-                <h3>A packet generator built in Rust</h3>
-                <p>
-                  Built from scratch as its own project,
-                  <a href="https://github.com/evaneyou/RTN_PackGen" target="_blank" rel="noopener">RTN_PackGen on GitHub</a>.
-                  Deployed on the live stack: the receiver runs next to the WireGuard hub, and the Pi sends through it for application checks such as Voice G.711.
-                </p>
-              </div>
-            </li>
-            <li class="roadmap-label">
-              <span></span>
-              <div>On the roadmap: planned or in development, not shipped yet</div>
-            </li>
-            <li class="next">
-              <time>Roadmap</time>
-              <div>
-                <h3>AI Decision Engine</h3>
-                <p>In development: it will read through logs and errors quickly, work out what matters, and summarize the alerts in plain language.</p>
-              </div>
-            </li>
-          </ol>
-          </details>
-
-          <details class="fold">
-            <summary>Under the hood: the Network Path Diagram</summary>
-          <figure class="figure">
-            <a href="path-diagram.png" aria-label="Open the Network Path Diagram at full size">
-              <img
-                src="path-diagram.png"
-                width="1387"
-                height="639"
-                loading="lazy"
-                alt="The Network Path Diagram from the live app. Inside the home, the Raspberry Pi's wired and Wi-Fi interfaces reach the home router. Past the ISP, signalling travels through two WireGuard tunnels to the server, while measurement traffic goes direct to the measurement service."
-              />
-            </a>
-            <figcaption>
-              <b>The app's own Network Path Diagram, live.</b> Hardware, networking, security and internet routing data,
-              all in one picture. I hid the ISP address.
-            </figcaption>
-          </figure>
-          </details>
-
-          <details class="fold">
-            <summary>Primary sources and technology</summary>
-          <div class="docs">
-            <a class="doc" href="https://github.com/evaneyou/homenetwatch/pulls?q=is%3Apr+is%3Amerged">
-              <b>Pull request history</b>
-              <span>The work as it happened.</span>
-            </a>
-            <a class="doc" href="https://github.com/evaneyou/homenetwatch/blob/main/CHANGELOG.md">
-              <b>Changelog</b>
-              <span>Every release.</span>
-            </a>
-            <a class="doc" href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md">
-              <b>Architecture and spec</b>
-              <span>Topology, data model, API, phases.</span>
-            </a>
-            <a class="doc" href="https://github.com/evaneyou/homenetwatch/blob/main/docs/deploy.md">
-              <b>Deployment guide</b>
-              <span>Blank server to HTTPS.</span>
-            </a>
-            <a class="doc" href="https://github.com/evaneyou/homenetwatch#readme">
-              <b>README</b>
-              <span>Features and a quick start.</span>
-            </a>
-            <a class="doc" href="https://github.com/evaneyou/homenetwatch/blob/main/monitor/README.md">
-              <b>Raspberry Pi agent</b>
-              <span>Setup, enrollment, checks.</span>
-            </a>
-            <a class="doc" href="https://github.com/evaneyou/homenetwatch/blob/main/SECURITY.md">
-              <b>Security policy</b>
-              <span>How to report a vulnerability.</span>
-            </a>
-            <a class="doc" href="https://github.com/evaneyou/homenetwatch/blob/main/CLAUDE.md">
-              <b>The AI's house rules</b>
-              <span>What the AI works under.</span>
-            </a>
-          </div>
-          <div class="stack" aria-label="Technology">
-            <span>Python</span><span>FastAPI</span><span>PostgreSQL</span><span>React 19</span><span>TypeScript</span>
-            <span>React Flow</span><span>Recharts</span><span>Rust</span><span>C</span><span>WireGuard</span><span>Docker Compose</span>
-            <span>Caddy</span><span>GitHub Actions</span><span>Raspberry Pi</span><span>Kismet</span><span>Nmap</span><span>Scapy</span>
-          </div>
-          </details>
-        </div>
-      </section>
-
-      <!-- About -->
-      <section id="about" class="block">
-        <div class="wrap about">
-          <div>
-            <p class="eyebrow">About the author</p>
-            <h2>Evan You</h2>
-            <div class="about-text">
-              <p class="lead small">
-                My foundation began with an IT degree from RIT, grounding me in system architecture, UI/UX, and coding
-                principles that remain vital today. With 30 years across infrastructure, cloud, networking,
-                cybersecurity, and enterprise systems, my perspective covers the entire lifecycle. While I wrote code
-                myself earlier in my career, modern engineering has evolved: AI now handles the typing, while my
-                background provides the architectural steering, security validation, and operational judgment required
-                to make speed trustworthy.
+          <!-- Panel 03: Core Backend -->
+          <article
+            class="inspector-card"
+            id="panel-core"
+            role="tabpanel"
+            aria-labelledby="tab-core"
+            data-panel="core"
+            hidden
+          >
+            <div>
+              <div class="inspector-tag">03 / Portable Cloud Stack</div>
+              <h2>FastAPI, PostgreSQL &amp; Hierarchical Correlation</h2>
+              <p>
+                Deployed via clean Docker Compose and Caddy on Oracle Cloud with zero proprietary lock-in. The alert
+                engine evaluates a strict hierarchy—Pi offline &rarr; shared WAN outage &rarr; upstream bandwidth
+                collapse &rarr; single link &rarr; tunnel—suppressing downstream alert noise automatically, while Server
+                Health monitors disk forecasts, encrypted off-host backups, and weekly CVEs.
               </p>
-              <p class="lead small">
-                What energizes me most is teaching and leadership. I work directly with engineering teams to adopt these
-                AI-augmented workflows, upskill technical culture, and fundamentally elevate how organizations design,
-                secure, and deliver resilient IT services.
-              </p>
-              <p class="lead small">
-                At heart, I am a technologist, a problem solver, and a builder. I love figuring out how complex systems
-                tick, building new tools, and helping people&mdash;and organizations&mdash;do the same.
-              </p>
-              <p class="lead small">
-                Away from the keyboard, I play golf. I've been part of a golf league, the Golf Mission Association, for
-                the past five years. This year I started analyzing our weekly golf data and built an app that creates
-                our weekly podcast automatically. It pulls the match data from Golf Genius, the online golf app, and
-                turns it into a deep analysis of the matches, made to be entertaining but also accurate. It grows and
-                changes a little every week. This year was a trial, and next calendar year it goes into full
-                production.
-              </p>
+              <div class="tradeoff-box">
+                <strong>Architectural Trade-off</strong>
+                <span>
+                  Gave up familiar AWS and GCP managed services to prove the entire stack can migrate to any Linux host
+                  or bare metal without rewriting code.
+                </span>
+              </div>
             </div>
-            <div class="cta">
-              <a class="btn btn-primary" href="https://live.homenetwatch.com/" data-demo>Open the live system</a>
-              <a class="btn btn-ghost" href="https://www.linkedin.com/in/evan-you-9509603" target="_blank" rel="noopener">My LinkedIn</a>
-              <a class="btn btn-ghost" href="https://github.com/evaneyou">My GitHub</a>
-              <a class="btn btn-ghost" href="https://open.spotify.com/show/0AJatn9IzYBylJqaAYOXNC" target="_blank" rel="noopener">Listen to the podcast</a>
+            <div class="proof-links">
+              <a
+                class="proof-link"
+                href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md"
+                target="_blank"
+                rel="noopener"
+              >Read SPEC.md &nearr;</a>
+              <a
+                class="proof-link"
+                href="https://github.com/evaneyou/homenetwatch/blob/main/CHANGELOG.md"
+                target="_blank"
+                rel="noopener"
+              >Changelog (v0.1–v0.5) &nearr;</a>
+              <a
+                class="proof-link"
+                href="https://github.com/evaneyou/homenetwatch/commits/main"
+                target="_blank"
+                rel="noopener"
+              >Commit history &nearr;</a>
             </div>
-          </div>
+          </article>
+
+          <!-- Panel 04: AI Governance -->
+          <article
+            class="inspector-card"
+            id="panel-ai"
+            role="tabpanel"
+            aria-labelledby="tab-ai"
+            data-panel="ai"
+            hidden
+          >
+            <div>
+              <div class="inspector-tag">04 / AI Engineering Governance</div>
+              <h2>AI Builds at Speed. Humans &amp; Rules Decide.</h2>
+              <p>
+                Instead of single-prompt "vibe coding," multiple AI coding tools worked as a coordinated squad on
+                isolated Git branches under written house rules (<code>CLAUDE.md</code> &amp; <code>SPEC.md</code>).
+                Every change went through pull request review, 205+ automated server tests in throwaway containers, and
+                TypeScript build gates. On-demand Gemini powers KPI root-cause analysis and Fault Simulation.
+              </p>
+              <div class="tradeoff-box">
+                <strong>Cost &amp; Risk Control</strong>
+                <span>
+                  Held back continuous 24/7 autonomous LLM log polling to prevent runaway token burn; deterministic
+                  correlation triggers run first, and guests receive a realistic read-only walkthrough.
+                </span>
+              </div>
+            </div>
+            <div class="proof-links">
+              <a
+                class="proof-link"
+                href="https://github.com/evaneyou/homenetwatch/pulls?q=is%3Apr+is%3Amerged"
+                target="_blank"
+                rel="noopener"
+              >150+ Merged PRs &nearr;</a>
+              <a
+                class="proof-link"
+                href="https://github.com/evaneyou/homenetwatch/blob/main/CLAUDE.md"
+                target="_blank"
+                rel="noopener"
+              >AI House Rules (CLAUDE.md) &nearr;</a>
+              <a class="proof-link primary" href="https://live.homenetwatch.com/" data-demo>Try guest demo &rarr;</a>
+            </div>
+          </article>
+
+          <!-- Panel 05: Author -->
+          <article
+            class="inspector-card"
+            id="panel-author"
+            role="tabpanel"
+            aria-labelledby="tab-author"
+            data-panel="author"
+            hidden
+          >
+            <div>
+              <div class="inspector-tag">05 / About the Builder</div>
+              <h2>Evan You &mdash; 30 Years of Systems Judgment</h2>
+              <p>
+                Grounded by an IT degree from RIT and three decades across infrastructure, cloud, networking, and
+                cybersecurity. AI now handles the typing; experience provides the architectural steering, security
+                validation, and operational judgment that make speed trustworthy. I work with leaders and engineering
+                teams to adopt AI-augmented delivery—assessing workflows, proving on real systems, governing risk, and
+                enabling culture.
+              </p>
+              <div class="tradeoff-box">
+                <strong>Away from the Keyboard</strong>
+                <span>
+                  Five-year member of the Golf Mission Association. Built an automated weekly podcast that pulls match
+                  data from Golf Genius and turns it into deep, accurate, entertaining match analysis.
+                </span>
+              </div>
+            </div>
+            <div class="proof-links">
+              <a
+                class="proof-link"
+                href="https://www.linkedin.com/in/evan-you-9509603"
+                target="_blank"
+                rel="noopener"
+              >LinkedIn Profile &nearr;</a>
+              <a class="proof-link" href="https://github.com/evaneyou" target="_blank" rel="noopener">GitHub (@evaneyou) &nearr;</a>
+              <a
+                class="proof-link"
+                href="https://open.spotify.com/show/0AJatn9IzYBylJqaAYOXNC"
+                target="_blank"
+                rel="noopener"
+              >Listen to the Golf Podcast &nearr;</a>
+            </div>
+          </article>
         </div>
       </section>
-
     </main>
 
-    <footer class="foot">
-      <div class="wrap foot-row">
-        <span>HomeNetWatch by Evan You</span>
+    <footer class="foot wrap">
+      <div class="foot-flex">
         <span>
-          <a href="https://www.linkedin.com/in/evan-you-9509603" target="_blank" rel="noopener">LinkedIn</a>
-          <a href="https://github.com/evaneyou/homenetwatch">Source</a>
-          <a href="https://live.homenetwatch.com/">Live system</a>
-        </span>
-      </div>
-      <div class="wrap foot-legal">
-        <p class="copyright">Copyright &copy; 2026 Evan You. All rights reserved.</p>
-        <p>
-          The text, design and images on this site are the property of Evan You. The HomeNetWatch source code is released under the
+          Copyright &copy; 2026 Evan You. All rights reserved. Source under
           <a href="https://github.com/evaneyou/homenetwatch/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>.
-        </p>
+        </span>
+        <div class="foot-links">
+          <a href="https://github.com/evaneyou/homenetwatch" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md" target="_blank" rel="noopener">SPEC.md</a>
+          <a href="https://www.linkedin.com/in/evan-you-9509603" target="_blank" rel="noopener">LinkedIn</a>
+          <a href="https://open.spotify.com/show/0AJatn9IzYBylJqaAYOXNC" target="_blank" rel="noopener">Golf Podcast</a>
+        </div>
       </div>
     </footer>
 

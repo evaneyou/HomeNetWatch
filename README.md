@@ -115,9 +115,9 @@ Test, not the Pi's HTTP, ping or Wi-Fi scans.
 
 1. Download the APK from the latest **Android agent** run on GitHub Actions (artifact
    `homenetwatch-agent-apk`) and sideload it with `adb install -r app-debug.apk`.
-2. Open HomeNetWatch on the TV and scan its QR code with a phone on the same Wi-Fi. The onboarding page
-   opens with the installer code filled in: name it, **Register**, **Send setup key to this device**,
-   **Approve**. Without a phone, open the setup address the TV shows from a laptop instead.
+2. Open HomeNetWatch on the TV and scan its QR code with a phone. The onboarding page opens with the
+   installer code filled in: name it and tap **Register**. The TV collects its setup key by itself; tap
+   **Approve** when it checks in. Without a phone, open the setup address the TV shows from a laptop instead.
 3. Choose **OK** on the TV's VPN prompt, then turn on the Wi-Fi checks for it in **Settings →
    Real-Time Application Health**.
 

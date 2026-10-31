@@ -54,6 +54,14 @@ class AgentService : Service() {
             val enroller = Enroller(store)
             loop("agent-loop") {
                 if (!store.enrolled) {
+                    if (store.serverUrl.isEmpty()) {
+                        // Not set up yet: ask the server whether the owner has registered this device from its QR code.
+                        try {
+                            Pairing.claim(store, BuildConfig.DASHBOARD_URL)
+                        } catch (_: Exception) {
+                        }
+                        if (store.serverUrl.isEmpty()) return@loop 5_000L
+                    }
                     enroller.step()
                     return@loop 10_000L
                 }

@@ -7,6 +7,7 @@ Admin endpoints need an admin session and a CSRF token, and each one writes an a
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -50,6 +51,8 @@ from app.schemas import (
     MonitorAdminOut,
     NonceIn,
     NonceOut,
+    PairingIn,
+    PairingOut,
     PollIn,
     PollOut,
     RegistrationOut,
@@ -297,6 +300,32 @@ def setup_key(request: Request) -> str | None:
     return "hnw1." + base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
 
 
+def _pairing_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("ascii")).hexdigest()
+
+
+@router.post("/agents/pairing", response_model=PairingOut)
+def agent_pairing(body: PairingIn, request: Request, db: Annotated[Session, Depends(get_db)]) -> PairingOut:
+    """An Android device asks, with the pairing token from its QR code, whether an admin has registered it.
+
+    The device calls this on the public site, trusting its ordinary certificate, because it does not know the
+    enrollment port's TLS pins yet: that is what the setup key gives it. The answer only goes to the holder of the
+    token, which only the device's own screen showed. The token is long and random, so it is not rate limited.
+    """
+    now = _now()
+    code = db.scalar(
+        select(InstallerCode).where(
+            InstallerCode.pairing_hash == _pairing_hash(body.token),
+            InstallerCode.monitor_id.is_(None),
+            InstallerCode.expires_at > now,
+        )
+    )
+    key = setup_key(request) if code is not None else None
+    if code is None or key is None:
+        return PairingOut(state="waiting")
+    return PairingOut(state="registered", setup_key=key, name=code.device_name)
+
+
 def _clean_chosen_name(raw: str | None) -> str | None:
     """The name an agent asked for. Empty means the dashboard's registration name is used."""
     name = " ".join((raw or "").split())
@@ -395,6 +424,7 @@ def register_code(
     code.registered_by = admin.username
     code.created_at = now
     code.expires_at = now + CODE_TTL
+    code.pairing_hash = _pairing_hash(body.pairing_token) if body.pairing_token else None
     _audit(db, admin, "register_code", device_name)
     db.commit()
     db.expire_all()

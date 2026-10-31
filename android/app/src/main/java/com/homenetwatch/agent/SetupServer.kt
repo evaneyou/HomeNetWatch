@@ -90,8 +90,6 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
             } else if (method == "GET" && path == "/") {
                 val requested = target.substringAfter("step=", "").take(1).toIntOrNull()
                 respond(out, page(Wizard.show(store, requested), ""))
-            } else if (method == "GET" && path == "/receive") {
-                receive(out, Pairing.query(target))
             } else if (method == "GET" && path == "/status") {
                 val status = JSONObject().put("step", Wizard.show(store, Wizard.APPROVE)).put("detail", approveDetail()).put("problem", problem()).put("since", store.keySavedAt)
                 respond(out, status.toString(), type = "application/json")
@@ -100,37 +98,6 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
             }
         }
     }
-
-    /**
-     * The end of the one-scan setup: the dashboard sends the phone here with the setup key and the name it was
-     * registered under, then the phone goes back to the dashboard to approve. The pairing token from the TV's QR
-     * code must match, and the key must be for the dashboard this app belongs to.
-     */
-    private fun receive(out: java.io.OutputStream, query: Map<String, String>) {
-        val failure = when {
-            query["t"] != store.pairingToken() -> "This link is not from this device's QR code. Scan the code on the TV again."
-            store.enrolled -> "This device is already approved. To set it up again, press Menu on the TV remote."
-            else -> try {
-                val key = Wire.parseSetupKey(query["key"].orEmpty())
-                require(sameHost(key.serverUrl, BuildConfig.DASHBOARD_URL)) { "That setup key is for another server." }
-                query["name"]?.takeIf { it.isNotBlank() }?.let { saveName(it) }
-                saveKey(query["key"].orEmpty())
-                null
-            } catch (problem: IllegalArgumentException) {
-                problem.message ?: "That setup key did not work."
-            }
-        }
-        val back = Pairing.safeReturn(query["back"], BuildConfig.DASHBOARD_URL)
-        if (failure == null && back != null) redirect(out, back)
-        else respond(out, page(if (failure == null) Wizard.APPROVE else Wizard.KEY, failure.orEmpty()))
-    }
-
-    private fun sameHost(a: String, b: String): Boolean =
-        try {
-            java.net.URI(a).host.equals(java.net.URI(b).host, ignoreCase = true)
-        } catch (_: Exception) {
-            false
-        }
 
     /** Saves one form. Returns null when it was saved, or the reason it was not. */
     private fun save(path: String, body: String): String? {
@@ -141,28 +108,11 @@ class SetupServer(private val store: Store, private val port: Int = PORT) {
         if (form["t"] != formToken) return "This page was out of date, so nothing was saved. Try again."
         if (store.enrolled) return "This device is already approved. To set it up again, press Menu on the TV remote."
         return try {
-            if (path == "/save-name") saveName(form["device_name"].orEmpty()) else saveKey(form["setup_key"].orEmpty())
+            if (path == "/save-name") Setup.name(store, form["device_name"].orEmpty()) else Setup.key(store, form["setup_key"].orEmpty())
             null
         } catch (failure: IllegalArgumentException) {
             failure.message ?: "Check what you entered and try again."
         }
-    }
-
-    private fun saveName(raw: String) {
-        val name = raw.trim().replace(Regex("\\s+"), " ")
-        require(name.isNotEmpty()) { "Give this device a name, for example Living Room Shield." }
-        require(name.length <= 128) { "The name can be up to 128 characters." }
-        store.deviceName = name
-    }
-
-    private fun saveKey(raw: String) {
-        val key = Wire.parseSetupKey(raw)
-        store.serverUrl = key.serverUrl
-        store.pins = key.pins.joinToString(" ")
-        store.state = "waiting_for_approval"
-        store.checkedIn = false
-        store.lastError = ""
-        store.keySavedAt = System.currentTimeMillis()
     }
 
     /** True when step 4 is stuck on something the owner has to fix, such as a code the server does not know. */

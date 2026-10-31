@@ -623,3 +623,29 @@ def test_an_android_agent_is_tested_over_wifi_only(client, room, state_dir):
     )
     assert stress.status_code == 400
 
+
+def test_an_android_device_collects_its_setup_key_with_its_pairing_token(client, room, state_dir, tmp_path, monkeypatch):
+    tls_dir = tmp_path / "tls"
+    tls.ensure(tls_dir)
+    monkeypatch.setattr(get_settings(), "tls_dir", str(tls_dir))
+    token = "pair_" + uuid.uuid4().hex
+    # Before anyone registers it, the device keeps waiting. Nothing says whether the token is known.
+    assert client.post("/api/v1/agents/pairing", json={"token": token}).json() == {
+        "state": "waiting",
+        "setup_key": None,
+        "name": None,
+    }
+    csrf = login(client)
+    body = {"installer_code": new_installer_code(), "device_name": f"{room}Den", "pairing_token": token}
+    registered = client.post("/api/v1/enrollment/codes", json=body, headers=csrf)
+    assert registered.status_code == 201, registered.text
+    # No session is needed: the token is the proof, and it was only ever on the device's screen.
+    client.cookies.clear()
+    answer = client.post("/api/v1/agents/pairing", json={"token": token}).json()
+    assert answer["state"] == "registered"
+    assert answer["name"] == f"{room}Den"
+    assert _decode_setup_key(answer["setup_key"]) == {"u": "https://testserver", "p": tls.pin_list(tls_dir)}
+    # Another token learns nothing, and a malformed one is refused.
+    assert client.post("/api/v1/agents/pairing", json={"token": "pair_" + uuid.uuid4().hex}).json()["state"] == "waiting"
+    assert client.post("/api/v1/agents/pairing", json={"token": "x"}).status_code == 422
+

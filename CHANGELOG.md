@@ -12,6 +12,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Added
 
+- **Android onboarding without the phone reaching the TV:** registering from the TV's QR link now stores its pairing token (hashed, migration `0052_installer_pairing`), and the TV collects its setup key and name itself from `POST /api/v1/agents/pairing` on the public site. The **Send setup key to this device** step is gone, so onboarding works from any browser and any network (Chrome on Android refused to open the TV's home-network page). Android agent 0.4.0.
+
 - **One-scan Android onboarding:** the Android agent's TV screen shows a QR code. Scanning it opens Remote Agent Onboarding with the installer code filled in; after Register, the waiting card has **Send setup key to this device**, which hands the key and name to the device over the home network (only to a private-network setup page from the QR link) and brings the phone back to approve. Nothing is typed or copied on the TV.
 - **KPI report for an Android agent:** with an Android agent selected, the report keeps to what it measures: Voice, Video and Packet drop (Wi-Fi only, no Wired split) plus the voice, video and packet-drop charts. The Internet, Web, Time offline, Reporting gaps, Latency and Speed cards, and the internet, offline, latency, speed, Wired vs Wi-Fi and outage panels are hidden, since the Android agent runs none of those checks. Its daily health score is worked out from the voice stream and packet drop instead of being left blank. "All sensors" is unchanged.
 

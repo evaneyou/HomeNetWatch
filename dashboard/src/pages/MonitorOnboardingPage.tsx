@@ -86,37 +86,22 @@ function SetupKey({ value }: { value: string }) {
   );
 }
 
-/** A phone that scanned an Android device's QR code: its installer code, its setup page and its pairing token. */
-type Pairing = { code: string; device: string; token: string };
-
-// Only a setup page on the home network: http://<private IPv4>:<port>. The link comes from the device's QR code,
-// so the setup key is never sent anywhere else.
-const LAN_DEVICE = /^http:\/\/(10(\.\d{1,3}){3}|192\.168(\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}):\d{2,5}$/;
+/**
+ * A phone that scanned an Android device's QR code: the device's installer code and its pairing token. Registering
+ * with the token lets the device collect its setup key from the server by itself, so the phone never has to reach it.
+ */
+type Pairing = { code: string; token: string };
 
 function pairingFrom(params: URLSearchParams): Pairing | null {
   const code = params.get("code")?.trim() ?? "";
-  const device = params.get("device") ?? "";
   const token = params.get("t") ?? "";
-  if (params.get("pair") !== "android" || !code || !token || !LAN_DEVICE.test(device)) return null;
-  return { code, device, token };
-}
-
-/** The device's /receive address: it takes the key and name, then sends the phone back here to approve. */
-function sendKeyUrl(pairing: Pairing, registration: EnrollmentRegistration): string {
-  const back = `${window.location.origin}/settings/onboarding?sent=${encodeURIComponent(registration.id)}`;
-  const query = new URLSearchParams({
-    t: pairing.token,
-    key: registration.setup_key ?? "",
-    name: registration.device_name,
-    back,
-  });
-  return `${pairing.device}/receive?${query.toString()}`;
+  if (params.get("pair") !== "android" || !code || !/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
+  return { code, token };
 }
 
 export default function MonitorOnboardingPage() {
   const [params] = useSearchParams();
   const pairing = pairingFrom(params);
-  const sentId = params.get("sent");
   const qc = useQueryClient();
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.me() as Promise<User> });
   const operate = canOperate(me.data?.role);
@@ -185,6 +170,8 @@ export default function MonitorOnboardingPage() {
           installer_code: body.installer_code,
           device_name: body.device_name,
           location: body.location.trim() || null,
+          // Only for the code the QR link carried; a code typed in by hand is a Pi's or a manual setup.
+          pairing_token: pairing && body.installer_code === pairing.code ? pairing.token : undefined,
         },
         csrf,
       );
@@ -412,18 +399,10 @@ export default function MonitorOnboardingPage() {
           </h3>
           <ol className="setup-steps">
             <li>Its installer code is filled in below. Give it a name and tap <strong>Register</strong>.</li>
-            <li>On its card under Waiting for approval, tap <strong>Send setup key to this device</strong>.</li>
-            <li>You come back here. Tap <strong>Approve</strong> when it appears, a few seconds later.</li>
+            <li>The device collects its setup key from the server by itself and checks in, a few seconds later.</li>
+            <li>Tap <strong>Approve</strong> on its card when it appears.</li>
           </ol>
           {operate ? null : <p className="muted">Sign in as an admin to register it.</p>}
-        </section>
-      ) : null}
-      {sentId && !pairing ? (
-        <section className="panel pair-panel">
-          <p style={{ margin: 0 }}>
-            <strong>Setup key sent.</strong> The device checks in within a few seconds; then tap <strong>Approve</strong> on
-            its card below.
-          </p>
         </section>
       ) : null}
 
@@ -567,11 +546,6 @@ export default function MonitorOnboardingPage() {
                         <span className="device-type">{deviceTypeLabel(registration.checkins[0].platform)}</span>{" "}
                         detected. The device reported its type when it checked in. Ready to approve.
                       </p>
-                    ) : null}
-                    {count === 0 && registration.setup_key && pairing && operate ? (
-                      <a className="btn btn-primary pair-send" href={sendKeyUrl(pairing, registration)}>
-                        Send setup key to this device
-                      </a>
                     ) : null}
                     {count === 0 && registration.setup_key && !pairing ? <SetupKey value={registration.setup_key} /> : null}
                     {registration.checkins.map((checkin) => (

@@ -689,9 +689,3 @@
 .pair-panel {
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
 }
-
-.app-shell.ui-compact .main .btn.pair-send {
-  display: inline-flex;
-  margin: 8px 0;
-  text-decoration: none;
-}

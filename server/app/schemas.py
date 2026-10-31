@@ -91,6 +91,18 @@ class InstallerCodeIn(BaseModel):
     installer_code: str = Field(min_length=1, max_length=32)
     device_name: str = Field(min_length=1, max_length=128)
     location: Optional[str] = Field(default=None, max_length=128)
+    # From an Android device's QR code: lets that device collect its setup key from the server.
+    pairing_token: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")
+
+
+class PairingIn(BaseModel):
+    token: str = Field(pattern=r"^[A-Za-z0-9_-]{16,64}$")
+
+
+class PairingOut(BaseModel):
+    state: str  # waiting | registered
+    setup_key: Optional[str] = None
+    name: Optional[str] = None
 
 
 class ApproveIn(BaseModel):

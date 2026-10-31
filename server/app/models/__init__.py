@@ -433,6 +433,9 @@ class InstallerCode(Base):
     registered_by: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # SHA-256 of the pairing token in an Android device's QR code, when it was registered from that code.
+    # The device collects its setup key with the token, so the phone never has to reach it.
+    pairing_hash: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     # Set on approval. Deleting the monitor releases the code.
     monitor_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("monitors.id", ondelete="CASCADE"))
 

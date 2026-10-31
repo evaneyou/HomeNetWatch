@@ -77,7 +77,7 @@ export const api = {
   monitors: () => request("/api/v1/monitors"),
   enrollments: () => request<EnrollmentRegistration[]>("/api/v1/enrollment"),
   registerEnrollment: (
-    body: { installer_code: string; device_name: string; location?: string | null },
+    body: { installer_code: string; device_name: string; location?: string | null; pairing_token?: string },
     csrf: string,
   ) =>
     request<EnrollmentRegistration>("/api/v1/enrollment/codes", {

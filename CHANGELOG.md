@@ -12,6 +12,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Added
 
+- **KPI report for an Android agent:** with an Android agent selected, the report keeps to what it measures: Voice, Video and Packet drop (Wi-Fi only, no Wired split) plus the voice, video and packet-drop charts. The Internet, Web, Time offline, Reporting gaps, Latency and Speed cards, and the internet, offline, latency, speed, Wired vs Wi-Fi and outage panels are hidden, since the Android agent runs none of those checks. Its daily health score is worked out from the voice stream and packet drop instead of being left blank. "All sensors" is unchanged.
+
 - **Device type on the Home page:** each remote agent card shows a small hardware drawing and its platform under the name (Raspberry Pi · Linux, or NVIDIA Shield · Android). An Android agent's card shows only Wi-Fi and Apps instead of untested Wired and Web tiles, and its Wi-Fi tile follows its voice stream over Wi-Fi. `/api/v1/summary` monitors now include `platform`.
 
 - **Setup key on registration:** registering an installer code now also shows a Setup key (the server address and the TLS key pins in one string, with a Copy button). A device with a setup page, such as the Android agent, takes that one string instead of a server command's output. The dashboard API container now mounts the TLS key volume read-only to build it. The Pi's two-field setup page is unchanged.

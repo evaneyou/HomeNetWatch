@@ -10,6 +10,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Fixed
+
+- The stress test now names the A-law codec **Voice G.711 A-law**, matching the voice profile list.
+
 ## [0.6] - 2026-10-30
 
 ### Added

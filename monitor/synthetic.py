@@ -132,6 +132,12 @@ def send_args(
     ]
     if options.get("wire") == "rtp":
         args.extend(["--wire", "rtp", "--srtp-key-file", srtp_key_file])
+    else:
+        # Without RTP there is no RTCP round trip, and the sender's default one-way delay compares this
+        # device's clock with the server's. Ask the receiver to reflect packets (same size, so no
+        # amplification; UDP 8998 only accepts the WireGuard peers' addresses) and time a real round trip
+        # on the agent's own clock, so every agent's figure means the same thing.
+        args.extend(["--meter", "rtt"])
     if options.get("rtp"):
         args.extend(["--rtp", str(options["rtp"])])
     if options.get("ptime_ms"):

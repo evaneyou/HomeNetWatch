@@ -26,6 +26,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **Remote desktop and other non-RTP flows report a real round trip (agent 0.8.7, Android agent):** without RTP there is no RTCP round trip, so the dashboard showed the receiver's one-way delay, which compares the agent's clock with the server's. On the Pi that was about half the real figure; on the Shield, whose clock ran 2 s behind, it read about 2,000 ms. Agents now pass `--meter rtt`: the receiver reflects each packet (same size, and UDP 8998 only accepts the WireGuard peers' addresses) and the agent times the round trip on its own clock. Remote desktop on the Pi moves from about 49 ms to about 95 ms, well inside its 300 ms limit. A profile still cannot set the meter itself.
+
+- **Pi tunnel self-heal never ran (agent 0.8.7):** `tunnel_watch` checked for `/etc/wireguard/wgN.conf`, which the `monitor` user cannot read (the directory is root-only), so every 30-second check stopped with `Permission denied` and a dead Wi-Fi or wired tunnel was never restored. It now asks systemd whether the `wg-quick@wgN` unit is enabled instead.
+
 - **Android agents are tested over Wi-Fi only:** Speed Test and Real-Time Application Health no longer offer Wired (or Both) for an Android agent, and Network Test leaves it out, since the Android agent does not run stress tests. The server refuses those requests too: a Wired speed test or synthetic run for an Android agent gets 400, and so does any Network Test.
 
 - **One SRTP key for every remote agent:** the voice receiver (RTNP 0.2.1) reads exactly one SRTP key and refuses to start with more, but the server gave each agent its own, so a second agent (the first Android agent) lost every voice packet and the next receiver restart would have stopped the voice and video checks for all agents. Every agent now shares one key, as they already share the control key. A server with per-agent keys keeps the oldest, which is the one its running receiver loaded, so the first agent and the receiver carry on unchanged; only that key is left in the receiver's key folder.

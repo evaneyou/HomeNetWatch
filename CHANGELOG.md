@@ -10,6 +10,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+## [0.6] - 2026-10-30
+
 ### Added
 
 - **Voice G.711 µ-law profile:** a two-way G.711 µ-law (payload type 0) voice check next to the existing A-law one, which is now named **Voice G.711 A-law** (same slug, so running checks and history are unchanged). The Pi agent (0.8.8), the Android agent (0.4.1) and the server accept the `voip-g711` preset, one-way and two-way. Voice profiles are ordered A-law, µ-law, G.729, G.723.1.
@@ -47,7 +49,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
-- Landing page (www): project proof copy and figures brought in line with v0.5 (capabilities, 125 PRs, 205 tests).
+- Home page: Android agent cards keep the same two-column check button width as Raspberry Pi cards.
+- Landing page (www): interactive 5-layer system topology, updated for v0.6 (Android TV agent, 160+ PRs, 250+ tests).
 - Landing page timeline: the Rust packet generator (RTN_PackGen) is listed as Live, not roadmap; it already runs on the production stack for Voice G.711 and other application checks.
 
 ## [0.5] - 2026-10-28
@@ -191,6 +194,7 @@ First release.
 
 - iperf3 bandwidth checks. Bandwidth Test is the throughput check.
 
+[0.6]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.6
 [0.5]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.5
 [0.4]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.4
 [0.3]: https://github.com/evaneyou/homenetwatch/releases/tag/v0.3

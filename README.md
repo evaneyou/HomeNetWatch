@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/evaneyou/homenetwatch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/evaneyou/homenetwatch/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-0.5-informational" />
+  <img alt="Version" src="https://img.shields.io/badge/version-0.6-informational" />
   <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-orange" />
 </p>
 

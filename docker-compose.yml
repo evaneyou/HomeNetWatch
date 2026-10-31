@@ -30,7 +30,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hns}:${POSTGRES_PASSWORD:-hns-dev-password}@db:5432/${POSTGRES_DB:-hns}
-      WIREGUARD_ENDPOINT: ${WIREGUARD_ENDPOINT:-10.0.0.123:51820}
+      WIREGUARD_ENDPOINT: ${WIREGUARD_ENDPOINT:-192.0.2.10:51820}
       WIREGUARD_STATE_DIR: /var/lib/hns-wireguard
       RTNP_STATE_DIR: /var/lib/hns-rtnp
       TLS_DIR: /var/lib/hns-tls
@@ -65,7 +65,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hns}:${POSTGRES_PASSWORD:-hns-dev-password}@db:5432/${POSTGRES_DB:-hns}
-      WIREGUARD_ENDPOINT: ${WIREGUARD_ENDPOINT:-10.0.0.123:51820}
+      WIREGUARD_ENDPOINT: ${WIREGUARD_ENDPOINT:-192.0.2.10:51820}
       WIREGUARD_STATE_DIR: /var/lib/hns-wireguard
       TLS_DIR: /var/lib/hns-tls
       RUN_BACKGROUND_TASKS: "0"

@@ -244,7 +244,7 @@ def test_poll_serves_the_preshared_key_until_a_handshake_and_rotates_tokens(clie
     assert wireless["allowed_ips"] == "10.7.1.1/32"
     assert wireless["preshared_key"]
     assert tunnel["persistent_keepalive"] == 25
-    assert tunnel["endpoint"] == "10.0.0.123:51820"
+    assert tunnel["endpoint"] == "192.0.2.10:51820"
     assert tunnel["preshared_key"]
     peers = (state_dir / "peers.conf").read_text()
     assert f"PresharedKey = {tunnel['preshared_key']}" in peers

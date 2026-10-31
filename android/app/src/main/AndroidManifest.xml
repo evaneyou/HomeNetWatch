@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Installs its own updates, after the owner confirms each one on the TV. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Runs on an Android TV box such as the Shield, and on a phone for testing. -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -51,5 +53,10 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- Android's answer to an update install: its confirmation screen, or why it failed. -->
+        <receiver
+            android:name=".UpdateReceiver"
+            android:exported="false" />
     </application>
 </manifest>

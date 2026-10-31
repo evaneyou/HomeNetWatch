@@ -1,16 +1,22 @@
 package com.homenetwatch.agent
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.VpnService
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.View
+import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -34,6 +40,8 @@ class MainActivity : Activity() {
     private lateinit var where: TextView
     private lateinit var detail: TextView
     private lateinit var qr: ImageView
+    private lateinit var controls: LinearLayout
+    private lateinit var pauseButton: Button
     private var qrFor = ""
     private val refresh = object : Runnable {
         override fun run() {
@@ -57,13 +65,51 @@ class MainActivity : Activity() {
             if (bold) typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 10, 0, 10)
         }
-        column.addView(text(34f, "#E8ECF8", true).apply { this.text = "HomeNetWatch agent" })
+        column.addView(text(34f, "#E8ECF8", true).apply { this.text = "Android agent" })
         device = text(20f, "#C3CCE6").also { column.addView(it) }
         status = text(24f, "#4FD1B5", true).also { column.addView(it) }
         code = text(44f, "#E8ECF8", true).apply { typeface = Typeface.MONOSPACE }.also { column.addView(it) }
         where = text(22f, "#C3CCE6").also { column.addView(it) }
         detail = text(18f, "#9AA6C4").also { column.addView(it) }
-        column.addView(text(16f, "#9AA6C4").apply { this.text = "Press the Menu button to start over with a new installer code." })
+        // Buttons for the remote: shown once the device is approved.
+        fun button(label: String, onClick: () -> Unit) = Button(this).apply {
+            text = label
+            isAllCaps = false
+            textSize = 18f
+            setPadding(36, 18, 36, 18)
+            // The focused button must be obvious from the sofa: mint with dark text, the rest dark with light text.
+            fun shape(color: String) = GradientDrawable().apply {
+                cornerRadius = 18f
+                setColor(Color.parseColor(color))
+            }
+            background = StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), shape("#4FD1B5"))
+                addState(intArrayOf(android.R.attr.state_pressed), shape("#4FD1B5"))
+                addState(intArrayOf(), shape("#2A3556"))
+            }
+            setTextColor(
+                ColorStateList(
+                    arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()),
+                    intArrayOf(Color.parseColor("#06201B"), Color.parseColor("#E8ECF8")),
+                ),
+            )
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { marginEnd = 20 }
+            setOnClickListener { onClick() }
+        }
+        pauseButton = button("Pause agent") {
+            AgentService.start(this, if (store.paused) AgentService.ACTION_RESUME else AgentService.ACTION_PAUSE)
+        }
+        controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 24, 0, 8)
+            addView(pauseButton)
+            addView(button("Reset tunnel") { AgentService.start(this@MainActivity, AgentService.ACTION_RESET_TUNNEL) })
+            addView(button("Restart agent") { restartAgent() })
+            addView(button("Start over") { confirmStartOver() })
+        }
+        column.addView(controls)
+        column.addView(text(16f, "#9AA6C4").apply { this.text = "Use the remote to choose a button. Start over removes this device's setup and shows a new QR code." })
         // The QR code sits beside the text: scanning it with a phone is the whole setup.
         qr = ImageView(this).apply { setPadding(24, 24, 24, 24); setBackgroundColor(Color.WHITE) }
         val row = LinearLayout(this).apply {
@@ -74,7 +120,21 @@ class MainActivity : Activity() {
             addView(column, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
             addView(qr, LinearLayout.LayoutParams(QR_SIZE, QR_SIZE))
         }
-        setContentView(row)
+        // The HomeNetWatch logo in the top-left corner, as on the dashboard, in place of the system title bar.
+        actionBar?.hide()
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.logo)
+            adjustViewBounds = true
+            contentDescription = "HomeNetWatch"
+        }
+        val screen = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#0F1424"))
+            setPadding(0, 48, 0, 0)
+            addView(logo, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 110).apply { marginStart = 96 })
+            addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        }
+        setContentView(screen)
         AgentService.start(this)
     }
 
@@ -108,11 +168,35 @@ class MainActivity : Activity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_MENU) {
-            store.reset()
-            draw()
+            confirmStartOver()
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    /** Starting over wipes the enrollment, so it asks first: a stray press on the remote must not do it. */
+    private fun confirmStartOver() {
+        AlertDialog.Builder(this)
+            .setTitle("Start over?")
+            .setMessage(
+                "This device stops reporting and forgets its setup. To use it again, delete it on the dashboard " +
+                    "and set it up with the new QR code.",
+            )
+            .setPositiveButton("Start over") { _, _ ->
+                stopService(Intent(this, AgentService::class.java))
+                store.reset()
+                AgentService.start(this)
+                draw()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Stops the background agent (its tests and the tunnel) and starts it again a moment later. */
+    private fun restartAgent() {
+        stopService(Intent(this, AgentService::class.java))
+        AgentService.Status.tunnel = "Restarting the agent"
+        handler.postDelayed({ AgentService.start(this) }, 1_500)
     }
 
     /** Draws the QR code for this link, once per link. Dark modules on white, so any phone camera reads it. */
@@ -126,15 +210,37 @@ class MainActivity : Activity() {
         qrFor = link
     }
 
-    /** The agent's state once it is approved: tunnel, health report, voice stream and the last speed test. */
+    /** The agent's state once it is approved: how long it has run and been connected, its tests and speed test. */
     private fun running(): String {
         val status = AgentService.Status
+        val now = System.currentTimeMillis()
+        if (store.paused) return "Paused. No tests or reports until you choose Resume agent."
+        val clock = java.time.format.DateTimeFormatter.ofPattern("h:mm a")
+        fun at(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).format(clock)
         return listOfNotNull(
-            status.tunnel.ifEmpty { "Starting the tunnel" },
-            status.health.takeIf { it.isNotEmpty() },
+            if (status.startedAt > 0) "Agent running for ${since(status.startedAt, now)} (since ${at(status.startedAt)})" else "Agent starting",
+            if (status.tunnelUpSince > 0) "Tunnel up for ${since(status.tunnelUpSince, now)}" else status.tunnel.ifEmpty { "Starting the tunnel" },
+            if (status.connectedSince > 0) {
+                "Connected to the server for ${since(status.connectedSince, now)} · last report ${since(status.lastReportAt, now)} ago"
+            } else {
+                status.health.ifEmpty { "Not connected to the server yet" }
+            },
             status.voice?.summary(),
             status.speed?.lastResult?.takeIf { it.isNotEmpty() },
         ).joinToString("\n")
+    }
+
+    /** "3 h 12 m", "4 m 05 s", "1 d 2 h": short enough to read across a room. */
+    private fun since(then: Long, now: Long): String {
+        val seconds = maxOf(0L, (now - then) / 1000)
+        val hours = seconds / 3600
+        val minutes = (seconds % 3600) / 60
+        return when {
+            hours >= 24 -> "${hours / 24} d ${hours % 24} h"
+            hours > 0 -> "$hours h $minutes m"
+            minutes > 0 -> "$minutes m ${"%02d".format(seconds % 60)} s"
+            else -> "$seconds s"
+        }
     }
 
     /** Dots that count up once a second while the device waits for the dashboard, so the screen never looks frozen. */
@@ -151,7 +257,11 @@ class MainActivity : Activity() {
         val scanning = step < Wizard.APPROVE && address != null
         if (scanning) status.text = "Scan the QR code with your phone to set up this device"
         if (scanning) showQr(Pairing.url(BuildConfig.DASHBOARD_URL, store.ensureInstallerCode(), store.pairingToken()))
-        qr.visibility = if (scanning) android.view.View.VISIBLE else android.view.View.GONE
+        qr.visibility = if (scanning) View.VISIBLE else View.GONE
+        controls.visibility = if (step == Wizard.DONE) View.VISIBLE else View.GONE
+        // Lines with nothing to say take no room, so the buttons and the hint fit on the screen.
+        code.visibility = if (code.text.isNullOrEmpty()) View.GONE else View.VISIBLE
+        pauseButton.text = if (store.paused) "Resume agent" else "Pause agent"
         where.text = when {
             step == Wizard.DONE -> running()
             scanning -> "Scan the code with your phone. It opens your dashboard with this device filled in: " +
@@ -161,5 +271,6 @@ class MainActivity : Activity() {
         detail.text = if (step == Wizard.APPROVE) store.lastError.ifEmpty {
             if (store.checkedIn) "Checked in. Choose Approve on the dashboard." else "Contacting the server"
         } else ""
+        detail.visibility = if (detail.text.isNullOrEmpty()) View.GONE else View.VISIBLE
     }
 }

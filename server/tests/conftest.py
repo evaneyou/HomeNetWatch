@@ -132,7 +132,7 @@ def state_dir(tmp_path, monkeypatch):
     """A WireGuard state directory with a hub public key, as the hub container leaves it."""
     (tmp_path / "server.pub").write_text(_b64(X25519PrivateKey.generate().public_key().public_bytes_raw()) + "\n")
     monkeypatch.setattr(get_settings(), "wireguard_state_dir", str(tmp_path))
-    monkeypatch.setattr(get_settings(), "wireguard_endpoint", "10.0.0.123:51820")
+    monkeypatch.setattr(get_settings(), "wireguard_endpoint", "192.0.2.10:51820")
     return tmp_path
 
 

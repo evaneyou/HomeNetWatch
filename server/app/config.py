@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     bootstrap_viewer_password: str = "viewer-change-me"
     bootstrap_guest_username: str = "guest"
     bootstrap_guest_password: str = "guest"
-    wireguard_endpoint: str = "10.0.0.123:51820"
+    wireguard_endpoint: str = "192.0.2.10:51820"
     wireguard_state_dir: str = ""
     # Remote agents pin this key, so check-in and poll only answer over HTTPS.
     agent_require_https: bool = True

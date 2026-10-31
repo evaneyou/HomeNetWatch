@@ -417,7 +417,7 @@ export default function OverviewPage() {
                 {location.place ? <p className="probe-id">{location.place}</p> : null}
               </div>
             </div>
-            <ul className={`checks${location.android ? " checks-stacked" : ""}`}>
+            <ul className="checks">
               {location.checks.map((check) => (
                 <li key={check.key}>
                   <Link className={`chip ${check.state}`} to={check.href}>

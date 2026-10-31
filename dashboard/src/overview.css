@@ -294,13 +294,14 @@
 
 .checks {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin: 0; padding: 0; list-style: none;
 }
 .checks > li { display: contents; }
-/* An Android agent has two tiles; stacked full width, its card is as tall as a Pi's 2 x 2. */
-.checks.checks-stacked { grid-template-columns: 1fr; }
+@media (max-width: 480px) {
+  .checks { grid-template-columns: 1fr; }
+}
 .probe-text h2 a,
 .orb {
   color: inherit;

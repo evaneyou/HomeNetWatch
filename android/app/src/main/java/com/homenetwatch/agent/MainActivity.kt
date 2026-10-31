@@ -65,7 +65,7 @@ class MainActivity : Activity() {
             if (bold) typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 10, 0, 10)
         }
-        column.addView(text(34f, "#E8ECF8", true).apply { this.text = "HomeNetWatch agent" })
+        column.addView(text(34f, "#E8ECF8", true).apply { this.text = "Android agent" })
         device = text(20f, "#C3CCE6").also { column.addView(it) }
         status = text(24f, "#4FD1B5", true).also { column.addView(it) }
         code = text(44f, "#E8ECF8", true).apply { typeface = Typeface.MONOSPACE }.also { column.addView(it) }
@@ -120,7 +120,21 @@ class MainActivity : Activity() {
             addView(column, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
             addView(qr, LinearLayout.LayoutParams(QR_SIZE, QR_SIZE))
         }
-        setContentView(row)
+        // The HomeNetWatch logo in the top-left corner, as on the dashboard, in place of the system title bar.
+        actionBar?.hide()
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.logo)
+            adjustViewBounds = true
+            contentDescription = "HomeNetWatch"
+        }
+        val screen = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#0F1424"))
+            setPadding(0, 48, 0, 0)
+            addView(logo, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 110).apply { marginStart = 96 })
+            addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        }
+        setContentView(screen)
         AgentService.start(this)
     }
 

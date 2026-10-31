@@ -37,9 +37,12 @@ jobs:
 
       - name: Build the traffic sender
         env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
           RTNP_SRC: ${{ runner.temp }}/RTN_PackGen
-        run: android/build-sender.sh
+        # The runner's NDK location is a machine variable, which the env context does not see.
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          test -d "$ANDROID_NDK_HOME"
+          android/build-sender.sh
 
       - name: Test and build
         working-directory: android

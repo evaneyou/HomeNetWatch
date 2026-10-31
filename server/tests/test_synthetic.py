@@ -427,7 +427,7 @@ def test_presets_group_by_category_and_skip_empty_or_unknown():
 
     groups = group_profiles(PROFILES)
     assert [group["category"] for group in groups] == ["voice", "video", "enterprise", "games"]
-    assert [item["slug"] for item in groups[0]["profiles"]] == ["voip-g711a", "voip-g729", "voip-g723"]
+    assert [item["slug"] for item in groups[0]["profiles"]] == ["voip-g711a", "voip-g711", "voip-g729", "voip-g723"]
     assert [item["slug"] for item in groups[2]["profiles"]] == ["remote-desktop", "market-data"]
     assert [item["slug"] for item in groups[3]["profiles"]] == ["fortnite", "call-of-duty"]
     without_video = [item for item in PROFILES if item.get("category") != "video"]

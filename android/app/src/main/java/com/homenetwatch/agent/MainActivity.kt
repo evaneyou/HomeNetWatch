@@ -150,12 +150,12 @@ class MainActivity : Activity() {
         code.text = if (step == Wizard.DONE) "" else store.ensureInstallerCode()
         val scanning = step < Wizard.APPROVE && address != null
         if (scanning) status.text = "Scan the QR code with your phone to set up this device"
-        if (scanning) showQr(Pairing.url(BuildConfig.DASHBOARD_URL, store.ensureInstallerCode(), Pairing.deviceBase(address!!, SetupServer.PORT), store.pairingToken()))
+        if (scanning) showQr(Pairing.url(BuildConfig.DASHBOARD_URL, store.ensureInstallerCode(), store.pairingToken()))
         qr.visibility = if (scanning) android.view.View.VISIBLE else android.view.View.GONE
         where.text = when {
             step == Wizard.DONE -> running()
             scanning -> "Scan the code with your phone. It opens your dashboard with this device filled in: " +
-                "register it, tap Send setup key, then Approve.\nNo phone camera? Open  http://$address:${SetupServer.PORT}"
+                "name it, tap Register, then Approve. This TV picks up the rest by itself.\nNo phone camera? Open  http://$address:${SetupServer.PORT}"
             else -> "Finish on your phone or open  http://${address ?: "this device's address"}:${SetupServer.PORT}"
         }
         detail.text = if (step == Wizard.APPROVE) store.lastError.ifEmpty {

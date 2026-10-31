@@ -464,6 +464,20 @@ code {
   .topology-shell {
     grid-template-columns: 1fr;
   }
+
+  .nodes-track > .node-btn.active {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .nodes-track > .inspector-pane {
+    margin-top: -10px;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-color: var(--mint);
+    box-shadow: 0 0 0 1px var(--mint);
+    border-top: 1px solid rgba(79, 209, 181, 0.25);
+  }
 }
 
 @media (max-width: 600px) {

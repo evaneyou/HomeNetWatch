@@ -4,15 +4,15 @@ export default function AboutPage() {
   return (
     <div>
       <h1 className="page-title">About</h1>
-      <p className="page-sub">HomeNetWatch v0.4</p>
+      <p className="page-sub">HomeNetWatch v0.6</p>
 
       <section className="panel">
         <h2>Overview</h2>
         <p>
-          HomeNetWatch monitors the wired and wireless performance of a home network. A remote
-          agent on a Raspberry Pi runs connectivity tests from inside the home and sends the
-          results to a central server. This dashboard reads those results: what is healthy, what
-          is degraded, and where along the path a problem starts.
+          HomeNetWatch monitors the wired and wireless performance of a home network. Remote
+          agents on a Raspberry Pi or an Android TV box run connectivity tests from inside the
+          home and send the results to a central server. This dashboard reads those results: what
+          is healthy, what is degraded, and where along the path a problem starts.
         </p>
         <p>
           The agent only makes outbound connections. The dashboard talks to the server and never
@@ -25,7 +25,7 @@ export default function AboutPage() {
       <section className="panel">
         <h2>Version history</h2>
         <p>
-          The current release is <span className="mono">v0.4</span>, dated 20 October 2026. The
+          The current release is <span className="mono">v0.6</span>, dated 30 October 2026. The
           initial nine-day alpha build concluded with release <span className="mono">v0.2</span> on
           14 October 2026, following the first release, <span className="mono">v0.1</span>, the day
           before. HomeNetWatch follows semantic versioning and is still pre-1.0.
@@ -54,8 +54,31 @@ export function VersionHistoryPage() {
     <div>
       <h1 className="page-title">Version history</h1>
       <p className="page-sub">
-        Notable changes to HomeNetWatch. The current version is <span className="mono">v0.4</span>.
+        Notable changes to HomeNetWatch. The current version is <span className="mono">v0.6</span>.
       </p>
+
+      <section className="panel">
+        <h2>
+          v0.6 <span className="muted">30 October 2026</span>
+        </h2>
+
+        <ul className="about-list">
+          <li>An Android TV box (such as an NVIDIA Shield) can now join as a Wi-Fi sensor alongside a Raspberry Pi: scan the QR code on the TV screen from a phone to name and approve it without typing a key on the remote.</li>
+          <li>The Home page shows what kind of device each sensor is, and the KPI report can be filtered to an Android sensor or use AI to explain what caused a slowdown.</li>
+          <li>Added two-way G.711 µ-law voice calls alongside A-law, automatic WireGuard tunnel recovery, and smarter alerts that group related failures into a single notification.</li>
+        </ul>
+      </section>
+
+      <section className="panel">
+        <h2>
+          v0.5 <span className="muted">28 October 2026</span>
+        </h2>
+
+        <ul className="about-list">
+          <li>A new Airwaves Security tab lists wireless security alerts, flags unfamiliar access points using your network name, and scans the wired home network to identify connected devices and their makers.</li>
+          <li>Server Health now shows how much data the server has sent and received over the past hour, day, and week, and encrypts daily backups so only the owner's key can open them.</li>
+        </ul>
+      </section>
 
       <section className="panel">
         <h2>

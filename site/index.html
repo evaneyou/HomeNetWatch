@@ -35,7 +35,7 @@
           <a class="brand" href="#top" aria-label="HomeNetWatch home">
             <img src="homenetwatch.png" alt="HomeNetWatch" width="136" height="31" />
           </a>
-          <span class="status-pill"><i class="dot" aria-hidden="true"></i> v0.5 in production</span>
+          <span class="status-pill"><i class="dot" aria-hidden="true"></i> v0.6 in production</span>
         </div>
         <div class="nav-cta">
           <span class="demo-status" data-demo-status role="status" aria-live="polite"></span>
@@ -72,8 +72,8 @@
             >
               <span class="node-idx">01</span>
               <span class="node-title">
-                <b>Raspberry Pi Sensor (Home Edge)</b>
-                <span>Dual-NIC Wired + Wi-Fi probes, Kismet WIDS, Rust UDP generator</span>
+                <b>Raspberry Pi &amp; Android TV Sensors (Home Edge)</b>
+                <span>Dual-NIC Pi + Shield Wi-Fi agents, Kismet WIDS, Rust UDP generator</span>
               </span>
               <span class="node-tag">Hardware</span>
             </button>
@@ -124,7 +124,7 @@
               <span class="node-idx">04</span>
               <span class="node-title">
                 <b>Multi-Agent AI Delivery &amp; Guardrails</b>
-                <span>150+ reviewed PRs, 205+ tests, SPEC.md rules, bounded Gemini RCA</span>
+                <span>160+ reviewed PRs, 250+ tests, SPEC.md rules, bounded Gemini RCA</span>
               </span>
               <span class="node-tag">Governance</span>
             </button>
@@ -159,12 +159,12 @@
           >
             <div>
               <div class="inspector-tag">01 / Edge Hardware</div>
-              <h2>Raspberry Pi Sensor on a Real Home Network</h2>
+              <h2>Raspberry Pi &amp; Android TV Sensors on a Real Home Network</h2>
               <p>
-                A single Raspberry Pi measures both Wired Ethernet and Wi-Fi simultaneously. It runs active HTTP and
-                ICMP path checks, LibreSpeed throughput tests, Kismet wireless intrusion detection, on-demand LAN scans,
-                and a custom Rust real-time UDP stream generator (Voice G.711 &amp; Video) without choking household
-                traffic.
+                A Raspberry Pi measures both Wired Ethernet and Wi-Fi simultaneously—running HTTP and ICMP path checks,
+                LibreSpeed throughput tests, Kismet wireless intrusion detection, on-demand LAN scans, and a custom Rust
+                real-time UDP stream generator (Voice G.711 A-law/µ-law &amp; Video)—while an NVIDIA Shield Android TV
+                agent adds QR-onboarded Wi-Fi voice and throughput telemetry from the living room.
               </p>
               <div class="tradeoff-box">
                 <strong>Architectural Trade-off</strong>
@@ -272,7 +272,7 @@
                 href="https://github.com/evaneyou/homenetwatch/blob/main/CHANGELOG.md"
                 target="_blank"
                 rel="noopener"
-              >Changelog (v0.1–v0.5) &nearr;</a>
+              >Changelog (v0.1–v0.6) &nearr;</a>
               <a
                 class="proof-link"
                 href="https://github.com/evaneyou/homenetwatch/commits/main"
@@ -297,7 +297,7 @@
               <p>
                 Instead of single-prompt "vibe coding," multiple AI coding tools worked as a coordinated squad on
                 isolated Git branches under written house rules (<code>CLAUDE.md</code> &amp; <code>SPEC.md</code>).
-                Every change went through pull request review, 205+ automated server tests in throwaway containers, and
+                Every change went through pull request review, 250+ automated server tests in throwaway containers, and
                 TypeScript build gates. On-demand Gemini powers KPI root-cause analysis and Fault Simulation.
               </p>
               <div class="tradeoff-box">
@@ -314,7 +314,7 @@
                 href="https://github.com/evaneyou/homenetwatch/pulls?q=is%3Apr+is%3Amerged"
                 target="_blank"
                 rel="noopener"
-              >150+ Merged PRs &nearr;</a>
+              >160+ Merged PRs &nearr;</a>
               <a
                 class="proof-link"
                 href="https://github.com/evaneyou/homenetwatch/blob/main/CLAUDE.md"

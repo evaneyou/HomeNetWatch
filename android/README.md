@@ -33,13 +33,19 @@ uninstall first and set the device up again (press Menu on the TV to start over)
 
 ## Setup
 
-The TV shows an installer code and a setup address, for example `http://192.168.1.50:8080`. Open that address on a
-phone or computer on the same network. The page is a checklist:
+Nothing is typed on the TV. With a phone on the same Wi-Fi:
 
-1. **Name this device**, for example "Living Room Shield". This becomes the sensor's name on the dashboard.
-2. **Register the code** on the dashboard's Remote Agent Onboarding page (Copy button on the page).
-3. **Paste the setup key** shown on the code's card on the dashboard.
-4. **Approve** it on the dashboard. The page updates by itself and shows Setup complete.
+1. **Scan the QR code** on the TV. It opens the dashboard's Remote Agent Onboarding page (sign in as an admin) with
+   the installer code filled in.
+2. Give the device a name, for example "Living Room Shield", and tap **Register**.
+3. On its card, tap **Send setup key to this device**. The phone hands the key and the name to the device over the
+   home network and comes straight back to the dashboard.
+4. Tap **Approve** when it appears, a few seconds later.
+
+The QR code holds the dashboard address built into the app (`-PhnwDashboard=...` at build time; it defaults to
+`https://live.homenetwatch.com`), the installer code, the device's setup address and a pairing token. The device only
+takes a setup key that comes back with that token and is for that dashboard. Without a phone camera, open the setup
+address the TV shows (for example `http://192.168.1.50:8080`) and follow the checklist there, pasting the setup key.
 
 Then allow the VPN connection on the TV, and turn on **Voice G.711** for the device (path **Wi-Fi**) in the
 dashboard's Real-Time Application Health settings.

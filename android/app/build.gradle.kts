@@ -11,8 +11,16 @@ android {
         applicationId = "com.homenetwatch.agent"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
+        // The dashboard the TV's QR code opens. It is public (the landing page links to it); build with
+        // -PhnwDashboard=https://your.dashboard to point the app at another server.
+        val dashboard = (project.findProperty("hnwDashboard") as String?) ?: "https://live.homenetwatch.com"
+        buildConfigField("String", "DASHBOARD_URL", "\"$dashboard\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {
@@ -43,6 +51,7 @@ android {
 dependencies {
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     implementation("com.wireguard.android:tunnel:1.0.20230706")
+    implementation("com.google.zxing:core:3.5.3")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

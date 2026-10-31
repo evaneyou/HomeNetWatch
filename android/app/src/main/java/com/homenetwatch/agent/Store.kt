@@ -82,6 +82,17 @@ class Store(context: Context) {
         return seed
     }
 
+    /**
+     * A random token in the TV's QR code. The dashboard hands it back with the setup key, so the setup page only
+     * takes a key from a link that started at this device's own screen. A reset makes a new one.
+     */
+    fun pairingToken(): String {
+        prefs.getString("pairing_token", null)?.let { return it }
+        val token = Wire.b64(Wire.newSeed()).replace("+", "-").replace("/", "_").trimEnd('=').take(32)
+        prefs.edit().putString("pairing_token", token).apply()
+        return token
+    }
+
     fun ensureInstallerCode(): String {
         if (installerCode.isEmpty()) installerCode = Wire.newInstallerCode()
         return installerCode

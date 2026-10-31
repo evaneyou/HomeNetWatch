@@ -44,9 +44,31 @@ jobs:
           test -d "$ANDROID_NDK_HOME"
           android/build-sender.sh
 
+      # One signing key for every build, so a new APK installs over the one already on the TV. Without the
+      # secret (forks, or before it is set) the runner's own debug key is used and an update may need a reinstall.
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_SIGNING_KEYSTORE }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/hnw.keystore"
+            echo "HNW_KEYSTORE=$RUNNER_TEMP/hnw.keystore" >> "$GITHUB_ENV"
+          else
+            echo "::warning::ANDROID_SIGNING_KEYSTORE is not set; this APK is signed with the runner's debug key."
+          fi
+
       - name: Test and build
         working-directory: android
+        env:
+          HNW_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
+          HNW_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_ALIAS }}
+          HNW_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
         run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
+
+      - name: Show the signing certificate
+        run: |
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
+          "$apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | grep -i "SHA-256"
 
       - uses: actions/upload-artifact@v4
         with:

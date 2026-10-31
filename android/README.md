@@ -32,8 +32,11 @@ on the Android TV emulator. It has not run on a real Shield yet.
    - **Downloader app:** put the APK somewhere the Shield can reach and open it with the Downloader app.
 3. Open HomeNetWatch from the Shield's apps and follow the setup below.
 
-Each CI build is signed with that run's debug key, so a newer build may refuse to install over an older one. Then
-uninstall first and set the device up again (press Menu on the TV to start over).
+CI signs every APK with one key from the repository secrets `ANDROID_SIGNING_KEYSTORE` (the keystore, base64),
+`ANDROID_SIGNING_ALIAS` and `ANDROID_SIGNING_PASSWORD`, so a newer build installs over the app already on the TV and
+keeps its setup. Builds made on a PC use that PC's debug key unless `HNW_KEYSTORE`, `HNW_KEYSTORE_PASSWORD`,
+`HNW_KEY_ALIAS` and `HNW_KEY_PASSWORD` point at the same key. If the secrets are missing, the run warns and signs
+with its own throwaway key; such an APK only installs after uninstalling the app (and setting the device up again).
 
 ## Setup
 

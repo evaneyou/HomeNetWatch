@@ -23,7 +23,25 @@ android {
         buildConfig = true
     }
 
+    // Every build must be signed with the same key, or Android refuses to install it over the app already on the
+    // TV. CI passes the key in HNW_KEYSTORE (from repository secrets); without it, the machine's own debug key is
+    // used as before. The key file itself is never in the repository.
+    val keystore = System.getenv("HNW_KEYSTORE")?.takeIf { it.isNotBlank() && file(it).isFile }
+    signingConfigs {
+        if (keystore != null) {
+            create("shared") {
+                storeFile = file(keystore)
+                storePassword = System.getenv("HNW_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("HNW_KEY_ALIAS")
+                keyPassword = System.getenv("HNW_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (keystore != null) signingConfig = signingConfigs.getByName("shared")
+        }
         release {
             isMinifyEnabled = false
         }

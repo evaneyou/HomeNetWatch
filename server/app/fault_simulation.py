@@ -72,7 +72,7 @@ server_conditions → app_conditions.
   succeeds (tunnel death ≠ home internet down).
 - Software synthetic blackouts (no packets while path/web still OK) are Issues, left out of KPI.
 
-## Agent self-heal (tunnel_watch, agent 0.8.6+)
+## Agent self-heal (tunnel_watch, agent 0.8.7+; 0.8.6 could not read its tunnel config)
 - Every ~30s ping tunnel peers 10.7.0.1 / 10.7.1.1.
 - After 2 consecutive fails, run restore_tunnel.sh (full wg-quick stop/delete/start) for wg0/wg1.
 - Cooldown while access plane also down: 15 minutes (avoid thrashing against empty gateway).

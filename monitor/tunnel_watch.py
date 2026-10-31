@@ -36,7 +36,27 @@ _last_restore_at: dict[str, float | None] = {"wg0": None, "wg1": None}
 
 
 def _configured(iface: str) -> bool:
-    return Path(f"/etc/wireguard/{iface}.conf").is_file()
+    """True when this tunnel is set up on the Pi.
+
+    The agent runs as the monitor user, which cannot read /etc/wireguard (root only, mode 700), so asking whether
+    the .conf file exists raises PermissionError and the whole check stopped every 30 seconds. Whether the
+    wg-quick unit is enabled says the same thing, and any user may ask systemd.
+    """
+    try:
+        if Path(f"/etc/wireguard/{iface}.conf").is_file():
+            return True
+    except OSError:
+        pass
+    try:
+        completed = subprocess.run(
+            ["systemctl", "is-enabled", "--quiet", f"wg-quick@{iface}"],
+            check=False,
+            capture_output=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return _iface_up(iface)
+    return completed.returncode == 0
 
 
 def _iface_up(iface: str) -> bool:

@@ -81,3 +81,25 @@ def test_outage_keeps_long_cooldown_when_access_is_down(monkeypatch):
     tw.check_once(now=100.0 + tw.COOLDOWN_OUTAGE_S + 2)
     tw.check_once(now=100.0 + tw.COOLDOWN_OUTAGE_S + 3)
     assert restores == ["wg1"]
+
+
+def test_configured_works_without_read_access_to_etc_wireguard(monkeypatch):
+    """The agent runs as the monitor user; /etc/wireguard is root-only, so the file check raises."""
+    tw = _load()
+    import subprocess
+
+    def unreadable(self):
+        raise PermissionError(13, "Permission denied", str(self))
+
+    monkeypatch.setattr(tw.Path, "is_file", unreadable)
+    calls: list[list[str]] = []
+
+    def systemctl(args, **_kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0 if args[-1] == "wg-quick@wg0" else 1)
+
+    monkeypatch.setattr(tw.subprocess, "run", systemctl)
+    assert tw._configured("wg0") is True
+    assert tw._configured("wg1") is False
+    assert calls[0][:3] == ["systemctl", "is-enabled", "--quiet"]
+

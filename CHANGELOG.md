@@ -12,6 +12,9 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Added
 
+- **One-scan Android onboarding:** the Android agent's TV screen shows a QR code. Scanning it opens Remote Agent Onboarding with the installer code filled in; after Register, the waiting card has **Send setup key to this device**, which hands the key and name to the device over the home network (only to a private-network setup page from the QR link) and brings the phone back to approve. Nothing is typed or copied on the TV.
+- **KPI report for an Android agent:** with an Android agent selected, the report keeps to what it measures: Voice, Video and Packet drop (Wi-Fi only, no Wired split) plus the voice, video and packet-drop charts. The Internet, Web, Time offline, Reporting gaps, Latency and Speed cards, and the internet, offline, latency, speed, Wired vs Wi-Fi and outage panels are hidden, since the Android agent runs none of those checks. Its daily health score is worked out from the voice stream and packet drop instead of being left blank. "All sensors" is unchanged.
+
 - **Device type on the Home page:** each remote agent card shows a small hardware drawing and its platform under the name (Raspberry Pi · Linux, or NVIDIA Shield · Android). An Android agent's card shows only Wi-Fi and Apps instead of untested Wired and Web tiles, and its Wi-Fi tile follows its voice stream over Wi-Fi. `/api/v1/summary` monitors now include `platform`.
 
 - **Setup key on registration:** registering an installer code now also shows a Setup key (the server address and the TLS key pins in one string, with a Copy button). A device with a setup page, such as the Android agent, takes that one string instead of a server command's output. The dashboard API container now mounts the TLS key volume read-only to build it. The Pi's two-field setup page is unchanged.
@@ -23,6 +26,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 - **Tunnel-down alerts and auto-restore:** when a WireGuard handshake goes stale on an online Pi, a `pi` alert names the Wired or Wi-Fi **tunnel** (not an internet outage). Enable Telegram and Notify Pi in Settings to receive it. Agent **0.8.4** watches `10.7.0.1` / `10.7.1.1` and restarts `wg-quick@wg0` / `wg1` through `/opt/monitor/restore_tunnel.sh` (sudoers drop-in).
 
 ### Fixed
+
+- **Remote desktop and other non-RTP flows report a real round trip (agent 0.8.7, Android agent):** without RTP there is no RTCP round trip, so the dashboard showed the receiver's one-way delay, which compares the agent's clock with the server's. On the Pi that was about half the real figure; on the Shield, whose clock ran 2 s behind, it read about 2,000 ms. Agents now pass `--meter rtt`: the receiver reflects each packet (same size, and UDP 8998 only accepts the WireGuard peers' addresses) and the agent times the round trip on its own clock. Remote desktop on the Pi moves from about 49 ms to about 95 ms, well inside its 300 ms limit. A profile still cannot set the meter itself.
+
+- **Pi tunnel self-heal never ran (agent 0.8.7):** `tunnel_watch` checked for `/etc/wireguard/wgN.conf`, which the `monitor` user cannot read (the directory is root-only), so every 30-second check stopped with `Permission denied` and a dead Wi-Fi or wired tunnel was never restored. It now asks systemd whether the `wg-quick@wgN` unit is enabled instead.
 
 - **Android agents are tested over Wi-Fi only:** Speed Test and Real-Time Application Health no longer offer Wired (or Both) for an Android agent, and Network Test leaves it out, since the Android agent does not run stress tests. The server refuses those requests too: a Wired speed test or synthetic run for an Android agent gets 400, and so does any Network Test.
 

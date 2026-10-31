@@ -57,6 +57,11 @@ class Store(context: Context) {
         get() = prefs.getLong("key_saved_at", 0L)
         set(value) = prefs.edit().putLong("key_saved_at", value).apply()
 
+    /** Paused from the TV: no tunnel, tests or reports until resumed. Survives a reboot. */
+    var paused: Boolean
+        get() = prefs.getBoolean("paused", false)
+        set(value) = prefs.edit().putBoolean("paused", value).apply()
+
     /** Seconds between health reports, as the dashboard set it. */
     var healthInterval: Int
         get() = prefs.getInt("health_interval", 60)

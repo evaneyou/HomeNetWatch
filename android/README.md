@@ -17,6 +17,10 @@ on the Android TV emulator. It has not run on a real Shield yet.
   tunnel, as on the Pi. A flow that reports nothing for 3 intervals, or loses every packet for 6, is restarted.
 - **Speed Test:** started from the dashboard's Speed Test page; LibreSpeed over the tunnel.
 - **Starts by itself** after a reboot, a power cut or an app update.
+- **TV screen:** once approved it shows how long the agent has run, how long the tunnel has been up, and how long it
+  has been connected to the server (with the time since the last report), plus the running flows. Buttons for the
+  remote: **Pause agent / Resume agent** (no tunnel, tests or reports; survives a reboot), **Reset tunnel** (down and
+  straight back up), **Restart agent**, and **Start over**, which asks first and wipes the setup for a new QR code.
 
 ## Install on the Shield
 

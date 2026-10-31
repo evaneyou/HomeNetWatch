@@ -3,9 +3,12 @@ package com.homenetwatch.agent
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.VpnService
 import android.os.Bundle
 import android.os.Handler
@@ -73,6 +76,25 @@ class MainActivity : Activity() {
             text = label
             isAllCaps = false
             textSize = 18f
+            setPadding(36, 18, 36, 18)
+            // The focused button must be obvious from the sofa: mint with dark text, the rest dark with light text.
+            fun shape(color: String) = GradientDrawable().apply {
+                cornerRadius = 18f
+                setColor(Color.parseColor(color))
+            }
+            background = StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), shape("#4FD1B5"))
+                addState(intArrayOf(android.R.attr.state_pressed), shape("#4FD1B5"))
+                addState(intArrayOf(), shape("#2A3556"))
+            }
+            setTextColor(
+                ColorStateList(
+                    arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()),
+                    intArrayOf(Color.parseColor("#06201B"), Color.parseColor("#E8ECF8")),
+                ),
+            )
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { marginEnd = 20 }
             setOnClickListener { onClick() }
         }
         pauseButton = button("Pause agent") {
@@ -223,6 +245,8 @@ class MainActivity : Activity() {
         if (scanning) showQr(Pairing.url(BuildConfig.DASHBOARD_URL, store.ensureInstallerCode(), store.pairingToken()))
         qr.visibility = if (scanning) View.VISIBLE else View.GONE
         controls.visibility = if (step == Wizard.DONE) View.VISIBLE else View.GONE
+        // Lines with nothing to say take no room, so the buttons and the hint fit on the screen.
+        code.visibility = if (code.text.isNullOrEmpty()) View.GONE else View.VISIBLE
         pauseButton.text = if (store.paused) "Resume agent" else "Pause agent"
         where.text = when {
             step == Wizard.DONE -> running()
@@ -233,5 +257,6 @@ class MainActivity : Activity() {
         detail.text = if (step == Wizard.APPROVE) store.lastError.ifEmpty {
             if (store.checkedIn) "Checked in. Choose Approve on the dashboard." else "Contacting the server"
         } else ""
+        detail.visibility = if (detail.text.isNullOrEmpty()) View.GONE else View.VISIBLE
     }
 }

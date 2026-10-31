@@ -12,6 +12,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Added
 
+- **One-scan Android onboarding:** the Android agent's TV screen shows a QR code. Scanning it opens Remote Agent Onboarding with the installer code filled in; after Register, the waiting card has **Send setup key to this device**, which hands the key and name to the device over the home network (only to a private-network setup page from the QR link) and brings the phone back to approve. Nothing is typed or copied on the TV.
+
 - **Device type on the Home page:** each remote agent card shows a small hardware drawing and its platform under the name (Raspberry Pi · Linux, or NVIDIA Shield · Android). An Android agent's card shows only Wi-Fi and Apps instead of untested Wired and Web tiles, and its Wi-Fi tile follows its voice stream over Wi-Fi. `/api/v1/summary` monitors now include `platform`.
 
 - **Setup key on registration:** registering an installer code now also shows a Setup key (the server address and the TLS key pins in one string, with a Copy button). A device with a setup page, such as the Android agent, takes that one string instead of a server command's output. The dashboard API container now mounts the TLS key volume read-only to build it. The Pi's two-field setup page is unchanged.

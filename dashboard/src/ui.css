@@ -684,3 +684,14 @@
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--ink);
 }
+
+/* Onboarding opened from an Android device's QR code. */
+.pair-panel {
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.app-shell.ui-compact .main .btn.pair-send {
+  display: inline-flex;
+  margin: 8px 0;
+  text-decoration: none;
+}

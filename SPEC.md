@@ -7,6 +7,7 @@ Ops-style monitoring for a home LAN: Raspberry Pi (or Linux PC) remote agents ru
 | Piece | Where | Role |
 |---|---|---|
 | **Remote agent** | Home Pi / Linux PC | Runs tests, pulls config, pushes ingest (Bearer). Offline SQLite spool. |
+| **Android agent** | Android TV (NVIDIA Shield) | Wi-Fi only: voice/video streams and the Speed Test. Same signed enrollment (`platform: android`), one tunnel; the server refuses Wired and Network Test for it. |
 | **Central server** | PC now → cloud later | Enrollment, config, ingest, issues, read APIs. FastAPI + Postgres. |
 | **Dashboard** | Served with server | React UI; cookie auth; reads APIs only. |
 

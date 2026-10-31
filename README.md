@@ -52,6 +52,7 @@ and never to the Pi. See [`SPEC.md`](./SPEC.md) for the data model, API surface 
 | Server | [`server/`](./server) | FastAPI, SQLAlchemy, Alembic, Postgres 16 |
 | Dashboard | [`dashboard/`](./dashboard) | React 19, Vite, TypeScript, TanStack Query, Recharts, Leaflet |
 | Remote agent | [`monitor/`](./monitor) | Python 3 standard library, systemd |
+| Android agent | [`android/`](./android) | Kotlin, WireGuard (wireguard-android), bundled `rtnp-send` |
 | Tunnel hub | [`wireguard/`](./wireguard) | WireGuard container that the agents connect to |
 
 ## Quick start
@@ -107,6 +108,21 @@ A production overlay adds automatic HTTPS and closes internal ports. The step-by
 3. Open the agent's setup page from a PC on the same LAN and enter the server address, device
    name and key.
 
+## Add an Android TV (NVIDIA Shield)
+
+An Android TV box can be a Wi-Fi-only remote agent: it runs the voice and video streams and the Speed
+Test, not the Pi's HTTP, ping or Wi-Fi scans.
+
+1. Download the APK from the latest **Android agent** run on GitHub Actions (artifact
+   `homenetwatch-agent-apk`) and sideload it with `adb install -r app-debug.apk`.
+2. Open HomeNetWatch on the TV and scan its QR code with a phone on the same Wi-Fi. The onboarding page
+   opens with the installer code filled in: name it, **Register**, **Send setup key to this device**,
+   **Approve**. Without a phone, open the setup address the TV shows from a laptop instead.
+3. Choose **OK** on the TV's VPN prompt, then turn on the Wi-Fi checks for it in **Settings →
+   Real-Time Application Health**.
+
+Full steps are in [`android/README.md`](./android/README.md).
+
 ## Configuration
 
 Settings are read from `.env`. Copy [`.env.example`](./.env.example) and edit it.
@@ -155,6 +171,7 @@ CI runs the same checks on every push and pull request. See [CONTRIBUTING.md](./
 server/        FastAPI app, Alembic migrations, seed data, tests
 dashboard/     React + Vite + TypeScript UI
 monitor/       Raspberry Pi agent package (setup page, health, checks, installer)
+android/       Android TV agent (Kotlin app, QR onboarding, tunnel, voice stream, Speed Test)
 wireguard/     WireGuard hub container
 deploy/        Caddy config for the production overlay (docker-compose.prod.yml)
 docs/          Deployment guide

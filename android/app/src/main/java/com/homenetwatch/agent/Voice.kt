@@ -237,7 +237,14 @@ class Voice(private val context: Context, private val store: Store) {
                 "--max-jitter", options.getInt("max_jitter_ms").toString(),
                 "--max-loss", number(options.get("max_loss_pct")),
             )
-            if (options.optString("wire") == "rtp") args += listOf("--wire", "rtp", "--srtp-key-file", srtpKeyFile)
+            if (options.optString("wire") == "rtp") {
+                args += listOf("--wire", "rtp", "--srtp-key-file", srtpKeyFile)
+            } else {
+                // Without RTP there is no RTCP round trip, and the sender's default one-way delay compares this
+                // device's clock with the server's. An Android TV's clock can be seconds off (a Shield read 2 s),
+                // so ask the receiver to reflect packets and time the real round trip on this device's clock.
+                args += listOf("--meter", "rtt")
+            }
             options.optString("rtp").takeIf { it.isNotEmpty() }?.let { args += listOf("--rtp", it) }
             if (options.optInt("ptime_ms", 0) > 0) args += listOf("--ptime", options.getInt("ptime_ms").toString())
             if (options.optBoolean("video")) args += "--video"

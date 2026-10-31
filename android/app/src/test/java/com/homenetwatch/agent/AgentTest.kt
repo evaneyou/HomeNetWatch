@@ -30,6 +30,16 @@ class AgentTest {
     }
 
     @Test
+    fun flowsWithoutRtpMeasureARealRoundTrip() {
+        // remote-desktop is plain UDP: one-way delay would compare the TV's clock with the server's.
+        val rdp = JSONObject("""{"preset":"remote-desktop","report_interval_s":10,"max_rtt_ms":150,"max_jitter_ms":30,"max_loss_pct":1}""")
+        val args = Voice.sendArgs("/b", rdp, "203.0.113.7", "/k", "/s", forever = true)
+        assertEquals(listOf("--meter", "rtt"), args.subList(args.indexOf("--meter"), args.indexOf("--meter") + 2))
+        // RTP flows already get a round trip from RTCP and keep their arguments.
+        assertTrue("--meter" !in Voice.sendArgs("/b", g711, "203.0.113.7", "/k", "/s", forever = true))
+    }
+
+    @Test
     fun voiceTrafficNeverGoesToTheTunnelOrAFile() {
         for ((host, options) in listOf(
             "10.7.0.1" to g711,

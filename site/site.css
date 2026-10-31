@@ -79,7 +79,7 @@ button:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 0;
+  padding: 12px 0;
 }
 
 .brand-cluster {
@@ -183,13 +183,13 @@ button:focus-visible {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 40px 0 44px;
+  justify-content: flex-start;
+  padding: 20px 0 28px;
 }
 
 .intro {
-  max-width: 760px;
-  margin-bottom: 32px;
+  max-width: 860px;
+  margin-bottom: 18px;
 }
 
 .eyebrow {
@@ -198,19 +198,19 @@ button:focus-visible {
   color: var(--mint);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin: 0 0 10px;
+  margin: 0 0 6px;
 }
 
 h1 {
-  font-size: clamp(28px, 4vw, 42px);
+  font-size: clamp(24px, 3vw, 34px);
   font-weight: 800;
   letter-spacing: -0.03em;
-  line-height: 1.12;
-  margin: 0 0 14px;
+  line-height: 1.14;
+  margin: 0 0 8px;
 }
 
 .lead {
-  font-size: 17px;
+  font-size: 15.5px;
   color: var(--muted);
   margin: 0;
 }
@@ -218,22 +218,22 @@ h1 {
 /* Interactive Topology Canvas */
 .topology-shell {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 24px;
+  grid-template-columns: 0.95fr 1.05fr;
+  gap: 20px;
   background:
     radial-gradient(600px circle at 25% 50%, rgba(79, 209, 181, 0.06), transparent 70%),
     var(--surface);
   border: 1px solid var(--line);
   border-radius: 20px;
-  padding: 28px;
+  padding: 20px;
   align-items: stretch;
 }
 
 .diagram-pane {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 16px;
+  justify-content: flex-start;
+  gap: 10px;
 }
 
 .diagram-hint {
@@ -246,7 +246,8 @@ h1 {
 .nodes-track {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  flex: 1;
 }
 
 .node-btn {
@@ -256,7 +257,7 @@ h1 {
   gap: 14px;
   width: 100%;
   text-align: left;
-  padding: 14px 18px;
+  padding: 11px 16px;
   background: rgba(8, 11, 17, 0.65);
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -326,7 +327,7 @@ h1 {
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 16px;
-  padding: 26px;
+  padding: 22px;
   display: flex;
   flex-direction: column;
 }
@@ -336,7 +337,7 @@ h1 {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
 }
 
 .inspector-card[hidden] {
@@ -349,21 +350,21 @@ h1 {
   color: var(--mint);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .inspector-card h2 {
-  margin: 0 0 12px;
-  font-size: 22px;
+  margin: 0 0 10px;
+  font-size: 20px;
   letter-spacing: -0.02em;
   line-height: 1.2;
 }
 
 .inspector-card p {
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   color: var(--soft);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 14.5px;
+  line-height: 1.55;
 }
 
 code {
@@ -375,7 +376,7 @@ code {
 }
 
 .tradeoff-box {
-  padding: 14px 16px;
+  padding: 12px 15px;
   background: rgba(255, 194, 77, 0.06);
   border-left: 3px solid var(--amber);
   border-radius: 8px;
@@ -471,7 +472,7 @@ code {
   }
 
   .nodes-track > .inspector-pane {
-    margin-top: -10px;
+    margin-top: -8px;
     border-top-left-radius: 0;
     border-top-right-radius: 0;
     border-color: var(--mint);

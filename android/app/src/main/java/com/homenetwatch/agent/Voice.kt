@@ -188,9 +188,9 @@ class Voice(private val context: Context, private val store: Store) {
         const val MISSING_INTERVALS = 3
         const val SILENT_INTERVALS = 6
         val PRESETS = setOf(
-            "voip-g711a", "voip-g729", "voip-g723", "video-conference", "fortnite", "call-of-duty", "remote-desktop", "market-data",
+            "voip-g711", "voip-g711a", "voip-g729", "voip-g723", "video-conference", "fortnite", "call-of-duty", "remote-desktop", "market-data",
         )
-        val VOICE_PRESETS = setOf("voip-g711a", "voip-g729", "voip-g723")
+        val VOICE_PRESETS = setOf("voip-g711", "voip-g711a", "voip-g729", "voip-g723")
 
         /** One flow per run and link. Stress tests need the Pi's wider limits and are not run here. */
         fun wantedJobs(jobs: JSONArray): Map<Pair<String, String>, JSONObject> {

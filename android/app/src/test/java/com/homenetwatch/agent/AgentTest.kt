@@ -30,6 +30,15 @@ class AgentTest {
     }
 
     @Test
+    fun ulawVoiceRunsBothWays() {
+        // The server's voip-g711 profile: G.711 u-law, payload type 0, two-way like A-law.
+        val ulaw = JSONObject(g711.toString()).put("preset", "voip-g711").put("rtp", "g711")
+        val args = Voice.sendArgs("/b", ulaw, "203.0.113.7", "/k", "/s", forever = true)
+        assertEquals("voip-g711", args[args.indexOf("--preset") + 1])
+        assertTrue("--bidir" in args)
+    }
+
+    @Test
     fun flowsWithoutRtpMeasureARealRoundTrip() {
         // remote-desktop is plain UDP: one-way delay would compare the TV's clock with the server's.
         val rdp = JSONObject("""{"preset":"remote-desktop","report_interval_s":10,"max_rtt_ms":150,"max_jitter_ms":30,"max_loss_pct":1}""")

@@ -11,8 +11,8 @@ android {
         applicationId = "com.homenetwatch.agent"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.4.1"
         // The dashboard the TV's QR code opens. It is public (the landing page links to it); build with
         // -PhnwDashboard=https://your.dashboard to point the app at another server.
         val dashboard = (project.findProperty("hnwDashboard") as String?) ?: "https://live.homenetwatch.com"

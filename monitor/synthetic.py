@@ -24,6 +24,7 @@ BUDGET_PATH = Path(os.environ.get("MONITOR_RTNP_BUDGET", "/etc/monitor/rtnp-budg
 BINARY = os.environ.get("MONITOR_RTNP_BIN", "/opt/monitor/rtnp-send")
 BIND_LIB = Path(os.environ.get("MONITOR_RTNP_BIND", "/opt/monitor/rtnp-bind.so"))
 PRESETS = {
+    "voip-g711",
     "voip-g711a",
     "voip-g729",
     "voip-g723",
@@ -33,7 +34,7 @@ PRESETS = {
     "remote-desktop",
     "market-data",
 }
-VOICE_PRESETS = {"voip-g711a", "voip-g729", "voip-g723"}
+VOICE_PRESETS = {"voip-g711", "voip-g711a", "voip-g729", "voip-g723"}
 CONTROL_HOST = {"wired": "10.7.0.1", "wireless": "10.7.1.1"}
 MAX_PPS = 200
 MAX_DURATION = 3600

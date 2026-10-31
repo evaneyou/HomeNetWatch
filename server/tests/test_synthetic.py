@@ -370,7 +370,7 @@ def test_recommended_profiles_and_comparison_report(client, db, monitor_token):
     assert voice_again.json()["total"] == 3
     by_network = {item["network_slug"]: item for item in voice_log.json()["items"]}
     assert set(by_network) == {"wired", "wifi"}
-    assert by_network["wifi"]["test_name"] == "Voice G.711"
+    assert by_network["wifi"]["test_name"] == "Voice G.711 A-law"
     assert by_network["wifi"]["status"] == "fail"
     assert by_network["wifi"]["metrics"]["rtt_ms"] == 400
     assert by_network["wired"]["status"] == "ok"
@@ -978,3 +978,40 @@ def test_a_server_with_per_agent_keys_keeps_the_oldest(tmp_path, monkeypatch):
         # Put the environment back before clearing, so later tests do not cache these temporary folders.
         monkeypatch.undo()
         get_settings.cache_clear()
+
+
+def test_ulaw_voice_runs_both_ways_on_every_agent():
+    """G.711 u-law sits next to A-law: the server, the Pi agent and its two-way voice rule all accept it."""
+    from app.synthetic import PROFILES, VOICE_PRESETS
+
+    ulaw = next(item for item in PROFILES if item["slug"] == "voip-g711")
+    assert ulaw["options"]["rtp"] == "g711" and ulaw["options"]["bidir"] is True
+    assert "voip-g711" in VOICE_PRESETS
+    voice = sorted((item["position"], item["slug"]) for item in PROFILES if item["category"] == "voice")
+    assert [slug for _position, slug in voice] == ["voip-g711a", "voip-g711", "voip-g729", "voip-g723"]
+    args = send_args(
+        "rtnp-send",
+        ulaw["options"],
+        "203.0.113.10",
+        control_host="10.7.0.1",
+        key_file="/tmp/rtnp.key",
+        srtp_key_file="/tmp/rtnp-srtp.key",
+        forever=True,
+    )
+    assert args[args.index("--preset") + 1] == "voip-g711"
+    assert "--bidir" in args
+
+    path = Path(__file__).resolve().parents[2] / "monitor" / "synthetic.py"
+    spec = importlib.util.spec_from_file_location("monitor_synthetic_ulaw", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(path.parent))
+    pi = module.send_args(
+        "rtnp-send", ulaw["options"], "203.0.113.10", control_host="10.7.0.1", key_file="/k", srtp_key_file="/s", forever=True
+    )
+    assert "--bidir" in pi and pi[pi.index("--rtp") + 1] == "g711"
+

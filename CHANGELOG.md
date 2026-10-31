@@ -12,6 +12,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Added
 
+- **Voice G.711 µ-law profile:** a two-way G.711 µ-law (payload type 0) voice check next to the existing A-law one, which is now named **Voice G.711 A-law** (same slug, so running checks and history are unchanged). The Pi agent (0.8.8), the Android agent (0.4.1) and the server accept the `voip-g711` preset, one-way and two-way. Voice profiles are ordered A-law, µ-law, G.729, G.723.1.
+
 - **Android onboarding without the phone reaching the TV:** registering from the TV's QR link now stores its pairing token (hashed, migration `0052_installer_pairing`), and the TV collects its setup key and name itself from `POST /api/v1/agents/pairing` on the public site. The **Send setup key to this device** step is gone, so onboarding works from any browser and any network (Chrome on Android refused to open the TV's home-network page). Android agent 0.4.0.
 
 - **One-scan Android onboarding:** the Android agent's TV screen shows a QR code. Scanning it opens Remote Agent Onboarding with the installer code filled in; after Register, the waiting card has **Send setup key to this device**, which hands the key and name to the device over the home network (only to a private-network setup page from the QR link) and brings the phone back to approve. Nothing is typed or copied on the TV.

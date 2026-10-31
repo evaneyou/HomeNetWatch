@@ -46,8 +46,26 @@ _EDITABLE = ("report_interval_s", "max_rtt_ms", "max_jitter_ms", "max_loss_pct",
 
 PROFILES: list[dict[str, Any]] = [
     {
+        "slug": "voip-g711",
+        "name": "Voice G.711 µ-law",
+        "category": "voice",
+        "position": 2,
+        "options": {
+            "preset": "voip-g711",
+            "wire": "rtp",
+            "rtp": "g711",
+            "ptime_ms": 20,
+            "bidir": True,
+            "rtcp_interval_s": 5,
+            "report_interval_s": 10,
+            "max_rtt_ms": 300,
+            "max_jitter_ms": 30,
+            "max_loss_pct": 1,
+        },
+    },
+    {
         "slug": "voip-g711a",
-        "name": "Voice G.711",
+        "name": "Voice G.711 A-law",
         "category": "voice",
         "position": 1,
         "options": {
@@ -67,7 +85,7 @@ PROFILES: list[dict[str, Any]] = [
         "slug": "voip-g729",
         "name": "Voice G.729",
         "category": "voice",
-        "position": 2,
+        "position": 3,
         "options": {
             "preset": "voip-g729",
             "wire": "rtp",
@@ -85,7 +103,7 @@ PROFILES: list[dict[str, Any]] = [
         "slug": "voip-g723",
         "name": "Voice G.723.1",
         "category": "voice",
-        "position": 3,
+        "position": 4,
         "options": {
             "preset": "voip-g723",
             "wire": "rtp",
@@ -229,7 +247,7 @@ def route_is_physical(route_text: str, interface: str) -> bool:
     return device == interface
 
 
-VOICE_PRESETS = {"voip-g711a", "voip-g729", "voip-g723"}
+VOICE_PRESETS = {"voip-g711", "voip-g711a", "voip-g729", "voip-g723"}
 PRESETS = {item["slug"] for item in PROFILES}
 MAX_RATE_PPS = 200
 MAX_DURATION_SECONDS = 3600

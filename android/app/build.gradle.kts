@@ -11,12 +11,16 @@ android {
         applicationId = "com.homenetwatch.agent"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.4.1"
+        versionCode = 6
+        versionName = "0.5.0"
         // The dashboard the TV's QR code opens. It is public (the landing page links to it); build with
         // -PhnwDashboard=https://your.dashboard to point the app at another server.
         val dashboard = (project.findProperty("hnwDashboard") as String?) ?: "https://live.homenetwatch.com"
         buildConfigField("String", "DASHBOARD_URL", "\"$dashboard\"")
+        // Where the app looks for a newer version each time it starts (CI publishes it; see android/README.md).
+        val updates = (project.findProperty("hnwUpdates") as String?)
+            ?: "https://github.com/evaneyou/HomeNetWatch/releases/download/android-latest/latest.json"
+        buildConfigField("String", "UPDATE_URL", "\"$updates\"")
     }
 
     buildFeatures {

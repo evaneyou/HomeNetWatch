@@ -10,6 +10,14 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Added
+
+- **Android agent updates itself, with the owner's OK:** each time the app starts (or **Restart agent** is chosen) it
+  checks for a newer version, asks on the TV, downloads it, checks its SHA-256, package and version, and hands it to
+  Android's installer, which asks once more. CI releases each higher `versionCode` built on `main` as `android-v<version>`
+  and points `latest.json` on the `android-latest` release at it. The TV screen shows the app version. Android agent
+  0.5.0 (includes the µ-law profile from 0.4.1).
+
 ### Fixed
 
 - The stress test now names the A-law codec **Voice G.711 A-law**, matching the voice profile list.

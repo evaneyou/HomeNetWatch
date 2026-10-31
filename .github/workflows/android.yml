@@ -1,7 +1,8 @@
 name: Android agent
 
 # Builds the Android agent APK, with the traffic sender (rtnp-send) compiled for arm64 (the Shield) and x86
-# (the Android TV emulator). The APK is kept as a run artifact for 30 days; nothing is published.
+# (the Android TV emulator). The APK is kept as a run artifact for 30 days. On main, a build with a higher version
+# code than the published one is released, and the app on the TV offers it when it starts (android/README.md).
 on:
   push:
     branches: [main]
@@ -21,6 +22,8 @@ jobs:
   apk:
     name: Build APK
     runs-on: ubuntu-latest
+    outputs:
+      signed: ${{ steps.signing.outputs.signed }}
     steps:
       - uses: actions/checkout@v7
 
@@ -47,12 +50,14 @@ jobs:
       # One signing key for every build, so a new APK installs over the one already on the TV. Without the
       # secret (forks, or before it is set) the runner's own debug key is used and an update may need a reinstall.
       - name: Signing key
+        id: signing
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_SIGNING_KEYSTORE }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
             printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/hnw.keystore"
             echo "HNW_KEYSTORE=$RUNNER_TEMP/hnw.keystore" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::ANDROID_SIGNING_KEYSTORE is not set; this APK is signed with the runner's debug key."
           fi
@@ -75,3 +80,22 @@ jobs:
           name: homenetwatch-agent-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+  # Only main, and only an APK signed with the shared key: the TV refuses an update signed with any other.
+  publish:
+    name: Publish update
+    needs: apk
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.apk.outputs.signed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          name: homenetwatch-agent-apk
+          path: ${{ runner.temp }}/apk
+      - name: Release it if it is newer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: android/publish-update.sh "$RUNNER_TEMP/apk/app-debug.apk"

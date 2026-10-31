@@ -17,6 +17,8 @@ on the Android TV emulator. It has not run on a real Shield yet.
   tunnel, as on the Pi. A flow that reports nothing for 3 intervals, or loses every packet for 6, is restarted.
 - **Speed Test:** started from the dashboard's Speed Test page; LibreSpeed over the tunnel.
 - **Starts by itself** after a reboot, a power cut or an app update.
+- **Updates itself when you agree:** each time the app starts (or you choose Restart agent) it looks for a newer
+  version and asks on the TV. See [Updates](#updates).
 - **TV screen:** once approved it shows how long the agent has run, how long the tunnel has been up, and how long it
   has been connected to the server (with the time since the last report), plus the running flows. Buttons for the
   remote: **Pause agent / Resume agent** (no tunnel, tests or reports; survives a reboot), **Reset tunnel** (down and
@@ -24,8 +26,8 @@ on the Android TV emulator. It has not run on a real Shield yet.
 
 ## Install on the Shield
 
-1. Download the APK: on GitHub, open **Actions → Android agent**, pick the latest green run and download the
-   `homenetwatch-agent-apk` artifact (a zip holding `app-debug.apk`).
+1. Download the APK: from the newest **Android agent** release on GitHub's Releases page (`android-v…`), or from
+   **Actions → Android agent**, the `homenetwatch-agent-apk` artifact of a green run (a zip holding `app-debug.apk`).
 2. Sideload it, either:
    - **adb:** turn on Developer options and Network debugging on the Shield, then
      `adb connect <shield-address>` and `adb install -r app-debug.apk`; or
@@ -37,6 +39,26 @@ CI signs every APK with one key from the repository secrets `ANDROID_SIGNING_KEY
 keeps its setup. Builds made on a PC use that PC's debug key unless `HNW_KEYSTORE`, `HNW_KEYSTORE_PASSWORD`,
 `HNW_KEY_ALIAS` and `HNW_KEY_PASSWORD` point at the same key. If the secrets are missing, the run warns and signs
 with its own throwaway key; such an APK only installs after uninstalling the app (and setting the device up again).
+
+## Updates
+
+After the first install, new versions come to the TV by themselves, with your OK:
+
+1. Open HomeNetWatch on the Shield (or choose **Restart agent**). If a newer version is out, the TV shows
+   **Update available** with both version numbers. Choose **Update**, or **Later** to be asked at the next start.
+2. The first time only, Android asks you to allow HomeNetWatch to install apps: choose **Open settings**, turn
+   HomeNetWatch on and press Back. (Or: Settings > Device Preferences > Security & restrictions > Unknown sources.)
+3. The app downloads the new version and Android shows its own install screen; choose **Update**. The agent keeps its
+   setup and starts again by itself. The version is shown at the top of the screen (`app 0.5.0`).
+
+Android 11, which the Shield runs, does not let an app update itself without that press on the remote.
+
+How it is published: when a change to `android/` reaches `main` with a higher `versionCode` in
+`app/build.gradle.kts`, the **Android agent** workflow releases the signed APK as `android-v<version>` and updates
+`latest.json` on the `android-latest` release (`android/publish-update.sh`). The app reads that file
+(`-PhnwUpdates=...` at build time points it elsewhere), and before installing checks the APK's SHA-256, package name
+and version; Android also refuses an APK not signed with the same key as the installed app. Builds without the
+signing secrets are never published. To ship an update, raise `versionCode` and `versionName`.
 
 ## Setup
 

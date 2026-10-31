@@ -9,10 +9,12 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
+import android.net.Uri
 import android.net.VpnService
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -43,6 +45,9 @@ class MainActivity : Activity() {
     private lateinit var controls: LinearLayout
     private lateinit var pauseButton: Button
     private var qrFor = ""
+    private var offering = false
+    /** An update the owner agreed to while Android still had to allow the app to install it. */
+    private var pendingUpdate: Updater.Release? = null
     private val refresh = object : Runnable {
         override fun run() {
             draw()
@@ -136,12 +141,77 @@ class MainActivity : Activity() {
         }
         setContentView(screen)
         AgentService.start(this)
+        checkForUpdate()
     }
 
     override fun onResume() {
         super.onResume()
         handler.post(refresh)
         askForVpn()
+        // Back from Android's "install unknown apps" screen: carry on with the update if it is now allowed.
+        pendingUpdate?.let { release ->
+            pendingUpdate = null
+            if (packageManager.canRequestPackageInstalls()) startUpdate(release)
+            else Updater.status = "Update skipped: HomeNetWatch is not allowed to install apps. Choose Restart agent to try again."
+        }
+    }
+
+    /** Each start of the app (and Restart agent) looks for a newer version; the owner decides whether to install it. */
+    private fun checkForUpdate() {
+        if (offering) return
+        offering = true
+        Thread {
+            val release = Updater.check()
+            handler.post {
+                if (release != null && !isFinishing) offerUpdate(release) else offering = false
+            }
+        }.start()
+    }
+
+    private fun offerUpdate(release: Updater.Release) {
+        AlertDialog.Builder(this)
+            .setTitle("Update available")
+            .setMessage(
+                "Version ${release.versionName} of the HomeNetWatch agent is available. This TV has " +
+                    "${BuildConfig.VERSION_NAME}.\n\nThe agent keeps its setup and starts again by itself after the update.",
+            )
+            .setPositiveButton("Update") { _, _ -> startUpdate(release) }
+            .setNegativeButton("Later", null)
+            .setOnDismissListener { offering = false }
+            .show()
+    }
+
+    /** Android must allow the app to install apps once; then the download is checked and handed to Android. */
+    private fun startUpdate(release: Updater.Release) {
+        if (!packageManager.canRequestPackageInstalls()) {
+            AlertDialog.Builder(this)
+                .setTitle("Allow updates")
+                .setMessage("Android needs your OK once before HomeNetWatch can install its updates. On the next screen, turn on HomeNetWatch, then press Back.")
+                .setPositiveButton("Open settings") { _, _ ->
+                    pendingUpdate = release
+                    try {
+                        startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                    } catch (_: Exception) {
+                        pendingUpdate = null
+                        Updater.status = "Open Settings > Device Preferences > Security & restrictions > Unknown sources, " +
+                            "turn on HomeNetWatch, then choose Restart agent."
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+        Updater.status = "Downloading version ${release.versionName}"
+        val context = applicationContext
+        Thread {
+            try {
+                val apk = Updater.download(context, release)
+                Updater.status = "Installing version ${release.versionName}"
+                Updater.install(context, apk)
+            } catch (e: Exception) {
+                Updater.status = "Update failed: ${e.message ?: e.javaClass.simpleName}"
+            }
+        }.start()
     }
 
     /**
@@ -197,6 +267,7 @@ class MainActivity : Activity() {
         stopService(Intent(this, AgentService::class.java))
         AgentService.Status.tunnel = "Restarting the agent"
         handler.postDelayed({ AgentService.start(this) }, 1_500)
+        checkForUpdate()
     }
 
     /** Draws the QR code for this link, once per link. Dark modules on white, so any phone camera reads it. */
@@ -250,7 +321,8 @@ class MainActivity : Activity() {
     private fun draw() {
         val address = Enroller.localIpv4()
         val step = Wizard.show(store)
-        device.text = if (store.deviceName.isEmpty()) "Not named yet" else "Device name: ${store.deviceName}"
+        device.text = (if (store.deviceName.isEmpty()) "Not named yet" else "Device name: ${store.deviceName}") +
+            " · app ${BuildConfig.VERSION_NAME}"
         status.text = if (step == Wizard.DONE) "Setup complete: on the dashboard as ${store.name.ifEmpty { store.deviceName }}"
         else "Step $step of ${Wizard.COUNT}: ${Wizard.title(step)}" + waitingDots(step)
         code.text = if (step == Wizard.DONE) "" else store.ensureInstallerCode()
@@ -270,7 +342,7 @@ class MainActivity : Activity() {
         }
         detail.text = if (step == Wizard.APPROVE) store.lastError.ifEmpty {
             if (store.checkedIn) "Checked in. Choose Approve on the dashboard." else "Contacting the server"
-        } else ""
+        } else Updater.status
         detail.visibility = if (detail.text.isNullOrEmpty()) View.GONE else View.VISIBLE
     }
 }

@@ -12,7 +12,7 @@ import org.json.JSONObject
  * does not show them for an Android agent. A report is what marks the agent online.
  */
 object Health {
-    const val AGENT_VERSION = "android-0.2.0"
+    const val AGENT_VERSION = "android-${BuildConfig.VERSION_NAME}"
 
     fun payload(context: Context, store: Store, lastError: String): JSONObject {
         val memory = ActivityManager.MemoryInfo()

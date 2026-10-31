@@ -63,15 +63,16 @@ class AgentService : Service() {
                     "The tunnel did not start: ${failure.message ?: failure.javaClass.simpleName}"
                 }
                 Status.tunnel = problem ?: "Tunnel up"
-                if (problem == null) {
-                    try {
-                        Health.report(this, store, voice.lastFailure)
-                        Status.health = "Reported at ${java.time.LocalTime.now().withNano(0)}"
-                    } catch (failure: Exception) {
-                        Status.health = "Report failed: ${failure.message ?: failure.javaClass.simpleName}"
-                    }
+                if (problem != null) return@loop RETRY_MS
+                try {
+                    Health.report(this, store, voice.lastFailure)
+                    Status.health = "Reported at ${java.time.LocalTime.now().withNano(0)}"
+                    maxOf(store.healthInterval, 15) * 1000L
+                } catch (failure: Exception) {
+                    // Often the first report races the tunnel coming up; try again soon rather than in a minute.
+                    Status.health = "Report failed: ${failure.message ?: failure.javaClass.simpleName}"
+                    RETRY_MS
                 }
-                maxOf(store.healthInterval, 15) * 1000L
             }
             loop("voice-loop") {
                 if (store.enrolled && tunnel.isUp()) voice.sync() else voice.stopAll()
@@ -122,6 +123,7 @@ class AgentService : Service() {
 
     companion object {
         private const val CHANNEL = "agent"
+        private const val RETRY_MS = 15_000L
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, AgentService::class.java))

@@ -19,6 +19,7 @@ import {
 } from "recharts";
 import { api } from "../api";
 import SelectMenu from "../components/SelectMenu";
+import { isAndroid } from "../deviceType";
 import type { MonitorAdmin, User } from "../types";
 import "../kpi.css";
 
@@ -680,6 +681,12 @@ export default function KpiPage() {
   const webWifi = report.links.web?.wireless;
   const appLossPeak = Math.max(voice.loss_max ?? 0, video.loss_max ?? 0);
   const speed = summary.speed;
+  // A single Android agent runs only the voice stream (and manual speed tests) over Wi-Fi: no internet or web
+  // checks and no Wired link, so the report keeps to what it measures. "All sensors" keeps everything.
+  const android = monitorId !== "" && isAndroid(monitors.find((item) => item.id === monitorId)?.platform);
+  const pi = !android;
+  const linkSplit = (wiredValue: number | null | undefined, wifiValue: number | null | undefined) =>
+    android ? `Wi-Fi ${pct(wifiValue)}` : `Wired ${pct(wiredValue)} · Wi-Fi ${pct(wifiValue)}`;
 
   const checks: { name: string; tone: Tone }[] = [
     { name: "Internet availability", tone: availabilityTone(internet.availability, targets.internet) },
@@ -924,6 +931,7 @@ export default function KpiPage() {
       </section>
 
       <section className="kpi-cards" aria-label="Key indicators">
+        {pi ? (
         <Card
           label="Internet"
           value={pct(internet.availability)}
@@ -935,6 +943,7 @@ export default function KpiPage() {
             Wired {pct(wired?.availability)} · Wi-Fi {pct(wifi?.availability)}
           </span>
         </Card>
+        ) : null}
         <Card
           label="Voice"
           value={pct(voice.availability)}
@@ -944,7 +953,7 @@ export default function KpiPage() {
           <Delta now={voice.availability} before={previous.voice.availability} better="up" />
           <span className="kpi-split">
             {voiceWired || voiceWifi
-              ? `Wired ${pct(voiceWired?.availability)} · Wi-Fi ${pct(voiceWifi?.availability)}`
+              ? linkSplit(voiceWired?.availability, voiceWifi?.availability)
               : `${voice.samples.toLocaleString()} quality checks`}
           </span>
         </Card>
@@ -957,10 +966,11 @@ export default function KpiPage() {
           <Delta now={video.availability} before={previous.video.availability} better="up" />
           <span className="kpi-split">
             {videoWired || videoWifi
-              ? `Wired ${pct(videoWired?.availability)} · Wi-Fi ${pct(videoWifi?.availability)}`
+              ? linkSplit(videoWired?.availability, videoWifi?.availability)
               : `${video.samples.toLocaleString()} quality checks`}
           </span>
         </Card>
+        {pi ? (
         <Card
           label="Web"
           value={pct(web?.availability)}
@@ -974,6 +984,7 @@ export default function KpiPage() {
               : `${(web?.samples ?? 0).toLocaleString()} web checks`}
           </span>
         </Card>
+        ) : null}
         <Card
           label="Packet drop"
           value={pct(report.app_loss_avg)}
@@ -985,6 +996,7 @@ export default function KpiPage() {
           </span>
           <span className="kpi-split">Worst interval {appLossPeak ? pct(appLossPeak, 1) : "—"}</span>
         </Card>
+        {pi ? (
         <Card label="Time offline" value={internet.samples ? minutes(internet.outage_minutes) : "—"} tone={internet.samples === 0 ? "none" : internet.incidents === 0 ? "good" : "warn"}>
           <span className="kpi-split">
             {internet.samples ? `${internet.incidents} outage${internet.incidents === 1 ? "" : "s"}` : "No data yet"}
@@ -992,22 +1004,30 @@ export default function KpiPage() {
           </span>
           <span className="kpi-split">Counted from failed internet checks</span>
         </Card>
+        ) : null}
+        {pi ? (
         <Card label="Reporting gaps" value={internet.samples ? (internet.gap_minutes > 0 ? minutes(internet.gap_minutes) : "None") : "—"} tone={internet.samples === 0 ? "none" : internet.gaps === 0 ? "good" : "warn"}>
           <span className="kpi-split">
             {internet.samples ? (internet.gaps === 0 ? "Monitoring ran without a break" : `${internet.gaps} stretch${internet.gaps === 1 ? "" : "es"} with no data`) : "No data yet"}
           </span>
           <span className="kpi-split">The Pi or the server was down. Not counted as internet downtime.</span>
         </Card>
+        ) : null}
+        {pi ? (
         <Card label="Latency" value={internet.rtt_ms == null ? "—" : `${num(internet.rtt_ms)} ms`} tone="none">
           <span className="kpi-split">To the server</span>
           <span className="kpi-split">Jitter {internet.jitter_ms == null ? "—" : `${num(internet.jitter_ms)} ms`}</span>
         </Card>
+        ) : null}
+        {pi ? (
         <Card label="Speed" value={speed.down_mbps == null && speed.up_mbps == null ? "—" : `${speed.down_mbps == null ? "—" : num(speed.down_mbps, 0)} / ${speed.up_mbps == null ? "—" : num(speed.up_mbps, 0)}`} tone="none">
           <span className="kpi-split">Download / upload, Mbit/s</span>
         </Card>
+        ) : null}
       </section>
 
       <div className="kpi-grid">
+        {pi ? (
         <Panel title="Internet availability" note={`Dashed line is the ${targets.internet}% target${internetClipped ? `. Anything under ${AXIS_MIN}% sits on the bottom edge.` : ""}`}>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
@@ -1022,6 +1042,7 @@ export default function KpiPage() {
             </LineChart>
           </ResponsiveContainer>
         </Panel>
+        ) : null}
 
         <Panel title="Voice, video and web availability" note={`Dashed line is the ${targets.voice}% target${appClipped ? `. Anything under ${AXIS_MIN}% sits on the bottom edge.` : ""}`}>
           <ResponsiveContainer width="100%" height={240}>
@@ -1055,6 +1076,7 @@ export default function KpiPage() {
           </ResponsiveContainer>
         </Panel>
 
+        {pi ? (
         <Panel title="Time offline" note="Minutes without internet">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
@@ -1066,7 +1088,9 @@ export default function KpiPage() {
             </BarChart>
           </ResponsiveContainer>
         </Panel>
+        ) : null}
 
+        {pi ? (
         <Panel title="Latency and jitter" note="Round trip to the server, in milliseconds">
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
@@ -1081,7 +1105,9 @@ export default function KpiPage() {
             </ComposedChart>
           </ResponsiveContainer>
         </Panel>
+        ) : null}
 
+        {pi ? (
         <Panel title="Internet speed" note="Average from the bandwidth test, Mbit/s">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
@@ -1095,9 +1121,11 @@ export default function KpiPage() {
             </BarChart>
           </ResponsiveContainer>
         </Panel>
+        ) : null}
       </div>
 
       <div className="kpi-lower">
+        {pi ? (
         <Panel title="Wired and Wi-Fi compared">
           <div className="kpi-table-wrap">
             <table className="kpi-table">
@@ -1128,7 +1156,9 @@ export default function KpiPage() {
             </table>
           </div>
         </Panel>
+        ) : null}
 
+        {pi ? (
         <Panel title="Outages and gaps" note={report.period === "year" ? "Most recent, from detailed records" : "Most recent first"}>
           <h4 className="kpi-subhead">Internet outages</h4>
           {report.incidents.length === 0 ? (
@@ -1166,6 +1196,7 @@ export default function KpiPage() {
             </ul>
           )}
         </Panel>
+        ) : null}
       </div>
 
       <DailyHistory

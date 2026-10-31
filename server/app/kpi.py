@@ -25,7 +25,7 @@ from sqlalchemy import Date, DateTime, case, cast, delete, func, literal, select
 from sqlalchemy.orm import Session, aliased
 
 from app.internet_tests import WEB_SERVICES
-from app.models import KpiDaily, KpiHourly, Network, NetworkKind, ResultStatus, SyntheticRun, SyntheticSample, Test, TestKind, TestResult
+from app.models import KpiDaily, KpiHourly, Monitor, Network, NetworkKind, ResultStatus, SyntheticRun, SyntheticSample, Test, TestKind, TestResult
 from app.synthetic import SOFTWARE, is_blackout
 
 log = logging.getLogger(__name__)
@@ -64,11 +64,13 @@ def health_score(
     loss: Optional[float],
     targets: Optional[dict[str, float]] = None,
     web: Optional[float] = None,
+    needs_internet: bool = True,
 ) -> dict[str, Any]:
     """One 0 to 100 score for a day: internet 60, voice 20, video 10, packet drop 10 (plus web when present).
 
     A service with no data that day is left out and the others share its weight. With no internet figure
-    there is no score, because internet is most of it.
+    there is no score, because internet is most of it. An agent that never runs the internet checks (an
+    Android agent) passes needs_internet=False and is scored on what it does run.
     """
     goals = targets or TARGETS
     parts = {
@@ -78,9 +80,11 @@ def health_score(
         "web": _scaled(web, goals.get("web", 99.9), SCORE_ZERO["web"]),
         "loss": _scaled(loss, goals["loss_pct"], SCORE_ZERO_LOSS),
     }
-    if parts["internet"] is None:
+    if parts["internet"] is None and needs_internet:
         return {"score": None, "tone": "none", "parts": {}}
     used = {name: value for name, value in parts.items() if value is not None}
+    if not used:
+        return {"score": None, "tone": "none", "parts": {}}
     weight = sum(SCORE_WEIGHTS[name] for name in used)
     score = sum(SCORE_WEIGHTS[name] * value for name, value in used.items()) / weight
     tone = "good" if score >= SCORE_GREEN else "warn" if score >= SCORE_AMBER else "bad"
@@ -894,7 +898,6 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
     wireless_stale = False
     wired_stale = False
     if monitor_id is not None:
-        from app.models import Monitor
         from app.services.link_correlation import tunnel_is_stale
 
         mon = db.get(Monitor, monitor_id)
@@ -938,8 +941,11 @@ def daily_history(db: Session, first: date, last: date, monitor_id: Optional[UUI
         func.max(KpiDaily.loss_max).label("loss_max"),
         func.sum(KpiDaily.outage_min).label("outage_min"),
     ).where(KpiDaily.day >= first, KpiDaily.day <= last)
+    needs_internet = True
     if monitor_id is not None:
         query = query.where(KpiDaily.monitor_id == monitor_id)
+        monitor = db.get(Monitor, monitor_id)
+        needs_internet = monitor is None or monitor.platform != "android"
     by_day: dict[date, list[dict[str, Any]]] = defaultdict(list)
     for row in db.execute(query.group_by(KpiDaily.day, KpiDaily.link, KpiDaily.kind)).mappings().all():
         by_day[row["day"]].append(dict(row))
@@ -953,7 +959,9 @@ def daily_history(db: Session, first: date, last: date, monitor_id: Optional[UUI
         parts = [(item["loss_avg"], item["samples"]) for item in (voice, video) if item["loss_avg"] is not None]
         weight = sum(count for _value, count in parts)
         loss = sum(value * count for value, count in parts) / weight if weight else None
-        health = health_score(internet["availability"], voice["availability"], video["availability"], loss, web=web["availability"])
+        health = health_score(
+            internet["availability"], voice["availability"], video["availability"], loss, web=web["availability"], needs_internet=needs_internet
+        )
         day_links = {kind: _by_link(rows, kind) for kind in ("internet", "voice", "video", "web")}
         diag = _diagnose_kpi({"internet": internet, "voice": voice, "video": video, "web": web}, day_links, TARGETS)
         out.append(

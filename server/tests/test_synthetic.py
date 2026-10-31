@@ -98,6 +98,8 @@ def test_public_target_uses_the_physical_nic():
     )
     assert "--wire" not in plain
     assert "--srtp-key-file" not in plain
+    # No RTCP without RTP, so the agent asks for reflected packets and a real round trip.
+    assert plain[plain.index("--meter") + 1] == "rtt"
     try:
         send_args(
             "rtnp-send",
@@ -135,6 +137,13 @@ def test_agent_module_matches_the_path_rule():
         raise AssertionError("agent accepted a tunnel target")
     assert module.route_is_physical("203.0.113.10 dev end0 src 192.0.2.10", "end0")
     assert not module.route_is_physical("10.7.0.1 dev wg0 src 10.7.0.2", "end0")
+    limits = {"report_interval_s": 10, "max_rtt_ms": 300, "max_jitter_ms": 30, "max_loss_pct": 1}
+    files = {"control_host": "10.7.0.1", "key_file": "/k", "srtp_key_file": "/s", "forever": True}
+    # The Pi times a real round trip for flows without RTP, as the Android agent does.
+    rdp = module.send_args("rtnp-send", {"preset": "remote-desktop", **limits}, "203.0.113.10", **files)
+    assert rdp[rdp.index("--meter") + 1] == "rtt"
+    voice = module.send_args("rtnp-send", {"preset": "voip-g711a", "wire": "rtp", **limits}, "203.0.113.10", **files)
+    assert "--meter" not in voice
     original_is_file = module.Path.is_file
 
     def deny_wireguard_config(self, *args, **kwargs):

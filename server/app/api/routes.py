@@ -578,6 +578,7 @@ def get_device(
     return {
         "monitor_id": str(monitor.id),
         "name": monitor.name,
+        "platform": monitor.platform,
         "connected": connected,
         "last_seen_at": monitor.last_seen_at.isoformat() if monitor.last_seen_at else None,
         "lan_ip": monitor.lan_ip,

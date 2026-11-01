@@ -28,11 +28,11 @@ export default function MonitorStatusDialog({
       >
         <div className="monitor-dialog-head">
           <h2 id="monitor-status-title">Remote Probe Status</h2>
-          <button className="btn" type="button" onClick={onClose}>
+          <button className="btn btn-sm" type="button" onClick={onClose}>
             Close
           </button>
         </div>
-        <DevicePanel monitorId={monitor.id} />
+        <DevicePanel monitorId={monitor.id} platform={monitor.platform} />
       </div>
     </div>
   );

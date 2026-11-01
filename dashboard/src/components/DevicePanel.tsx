@@ -13,6 +13,7 @@ import { api } from "../api";
 import { AnonPlate, AnonText, coordinate, isAnonymized, joinAnon } from "../anonymized";
 import CityMap from "./CityMap";
 import { formatChartHour } from "../chartTime";
+import { isAndroid } from "../deviceType";
 import { useChartZoom } from "../useChartZoom";
 import type { DeviceReport } from "../types";
 
@@ -79,24 +80,30 @@ function HealthChart({ vital, data }: { vital: VitalKey; data: DevicePoint[] }) 
   const zoom = useChartZoom(data);
   return (
     <div className="chart-zoom" ref={zoom.boxRef} onDoubleClick={zoom.onDoubleClick}>
-      <ResponsiveContainer width="100%" height={230}>
+      <ResponsiveContainer width="100%" height={145}>
         <LineChart data={zoom.visible} onMouseDown={zoom.onMouseDown} onMouseMove={zoom.onMouseMove}>
           <CartesianGrid stroke="var(--line)" vertical={false} />
-          <XAxis dataKey="t" tickFormatter={formatChartHour} minTickGap={28} stroke="var(--muted)" />
-          <YAxis stroke="var(--muted)" width={axisWidth} />
+          <XAxis dataKey="t" tickFormatter={formatChartHour} minTickGap={28} stroke="var(--muted)" tick={{ fontSize: 11 }} />
+          <YAxis stroke="var(--muted)" width={axisWidth} tick={{ fontSize: 11 }} />
           <Tooltip
             labelFormatter={(value) => formatChartHour(String(value))}
             formatter={(value) => [`${value} ${unit}`, title]}
           />
           {zoom.selection}
-          <Line type="monotone" dataKey={dataKey} stroke={color} dot={false} strokeWidth={2} />
+          <Line type="monotone" dataKey={dataKey} stroke={color} dot={false} strokeWidth={1.75} />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-export default function DevicePanel({ monitorId }: { monitorId: string }) {
+export default function DevicePanel({
+  monitorId,
+  platform,
+}: {
+  monitorId: string;
+  platform?: string;
+}) {
   const [vital, setVital] = useState<VitalKey>("cpu");
   const deviceQ = useQuery({
     queryKey: ["monitor-device", monitorId],
@@ -109,6 +116,8 @@ export default function DevicePanel({ monitorId }: { monitorId: string }) {
 
   const report = deviceQ.data;
   const latest = report.latest;
+  const android =
+    isAndroid(platform ?? report.platform) || Boolean(report.agent_version?.startsWith("android-"));
   const place = joinAnon([report.location_label, report.region, report.country]);
   const latitude = coordinate(report.latitude);
   const longitude = coordinate(report.longitude);
@@ -117,14 +126,18 @@ export default function DevicePanel({ monitorId }: { monitorId: string }) {
   const placeHidden = isAnonymized(place) || pinMark.length > 0;
 
   const cpu = cpuLastHour(report.points);
-  const tiles = latest
+  const allTiles = latest
     ? [
-        {
-          key: "cpu" as const,
-          label: "CPU, last hour",
-          value: cpu ? `${percent(cpu.average)} avg` : percent(latest.cpu_percent),
-          note: cpu ? `peak ${percent(cpu.peak)} · now ${percent(latest.cpu_percent)}` : "latest reading",
-        },
+        ...(!android
+          ? [
+              {
+                key: "cpu" as const,
+                label: "CPU (1h)",
+                value: cpu ? `${percent(cpu.average)} avg` : percent(latest.cpu_percent),
+                note: cpu ? `peak ${percent(cpu.peak)} · now ${percent(latest.cpu_percent)}` : "latest reading",
+              },
+            ]
+          : []),
         {
           key: "mem" as const,
           label: "Memory",
@@ -135,93 +148,126 @@ export default function DevicePanel({ monitorId }: { monitorId: string }) {
           key: "disk" as const,
           label: "Disk",
           value: percent((latest.disk_used_mb / Math.max(latest.disk_total_mb, 1)) * 100),
-          note: `${gigabytes(latest.disk_used_mb)} of ${gigabytes(latest.disk_total_mb)} GB`,
+          note: `${gigabytes(latest.disk_used_mb)} / ${gigabytes(latest.disk_total_mb)} GB`,
         },
-        {
-          key: "temp" as const,
-          label: "Temperature",
-          value: latest.temp_c == null ? "—" : `${latest.temp_c.toFixed(1)}°C`,
-          note: temperatureRange(report.points) ?? "no reading",
-        },
+        ...(!android && latest.temp_c != null
+          ? [
+              {
+                key: "temp" as const,
+                label: "Temp",
+                value: `${latest.temp_c.toFixed(1)}°C`,
+                note: temperatureRange(report.points) ?? "latest reading",
+              },
+            ]
+          : []),
       ]
     : [];
 
+  const activeVital: VitalKey = allTiles.some((t) => t.key === vital)
+    ? vital
+    : (allTiles[0]?.key ?? "mem");
+
   return (
-    <>
-      <div className="probe-device-top">
-        <section className="panel device-panel">
-          <h2>Location</h2>
-          {placeHidden ? <p className="anon-mark">{place || pinMark}</p> : <p className="muted">{place || "No location saved."}</p>}
-          {savedPin ? (
-            <CityMap
-              className="location-map"
-              latitude={savedPin.latitude}
-              longitude={savedPin.longitude}
-              label={place || report.name}
-              zoomControl={false}
-            />
-          ) : placeHidden ? (
-            <AnonPlate value={pinMark || place} />
-          ) : null}
-        </section>
-        <section className="panel device-panel">
-          <div className="device-head">
-            <h2>This probe</h2>
-            <span className={report.connected ? "device-live" : "device-quiet"}>
-              {report.connected ? "Connected" : "Waiting"}
-            </span>
+    <div className="probe-inspector">
+      <section className="probe-inspector-section">
+        <div className="probe-inspector-head">
+          <div className="probe-inspector-place">
+            <span className="probe-inspector-kicker">Location</span>
+            {placeHidden ? (
+              <span className="anon-mark">{place || pinMark}</span>
+            ) : (
+              <span className="probe-inspector-place-text">{place || "No location saved"}</span>
+            )}
           </div>
-          {latest ? (
-            <dl className="probe-facts">
-              <dt>Running for</dt>
+          <span className={report.connected ? "device-live" : "device-quiet"}>
+            {report.connected ? "● Connected" : "○ Waiting"}
+          </span>
+        </div>
+
+        {latest ? (
+          <dl className="probe-meta-strip">
+            <div>
+              <dt>Uptime</dt>
               <dd>{formatUptime(latest.uptime_seconds)}</dd>
+            </div>
+            <div>
               <dt>Agent</dt>
               <dd>{report.agent_version || "—"}</dd>
-              <dt>Load</dt>
-              <dd>{latest.load_1.toFixed(2)}</dd>
+            </div>
+            {!android ? (
+              <div>
+                <dt>Load</dt>
+                <dd>{latest.load_1.toFixed(2)}</dd>
+              </div>
+            ) : null}
+            <div>
               <dt>Address</dt>
               <dd>
                 <AnonText value={report.lan_ip || latest.lan_ip} />
               </dd>
+            </div>
+            <div>
               <dt>Host</dt>
               <dd>
                 <AnonText value={report.hostname} />
               </dd>
-            </dl>
-          ) : (
-            <p className="muted">This remote agent has not reported health yet.</p>
-          )}
-          {latest?.last_error ? <p className="state-box">{latest.last_error}</p> : null}
-        </section>
-      </div>
-      {latest ? (
-        <>
-          <div className="vital-tiles" role="group" aria-label="Pick a chart">
-            {tiles.map((tile) => (
+            </div>
+          </dl>
+        ) : (
+          <p className="muted" style={{ margin: "0.35rem 0 0" }}>
+            This remote agent has not reported health yet.
+          </p>
+        )}
+
+        {latest?.last_error ? <p className="state-box">{latest.last_error}</p> : null}
+
+        {savedPin ? (
+          <CityMap
+            className="location-map probe-mini-map"
+            latitude={savedPin.latitude}
+            longitude={savedPin.longitude}
+            label={place || report.name}
+            zoomControl={false}
+          />
+        ) : placeHidden ? (
+          <AnonPlate value={pinMark || place} />
+        ) : null}
+      </section>
+
+      {latest && allTiles.length > 0 ? (
+        <section className="probe-inspector-section">
+          <div
+            className={`vital-tiles${allTiles.length <= 2 ? " vital-tiles-2" : ""}`}
+            role="group"
+            aria-label="Pick a chart"
+          >
+            {allTiles.map((tile) => (
               <button
                 key={tile.key}
                 type="button"
-                className={`vital-tile${vital === tile.key ? " active" : ""}`}
-                aria-pressed={vital === tile.key}
+                className={`vital-tile${activeVital === tile.key ? " active" : ""}`}
+                aria-pressed={activeVital === tile.key}
                 onClick={() => setVital(tile.key)}
               >
-                <span className="vital-label">{tile.label}</span>
-                <strong className="vital-value">{tile.value}</strong>
+                <div className="vital-tile-top">
+                  <span className="vital-label">{tile.label}</span>
+                  <strong className="vital-value">{tile.value}</strong>
+                </div>
                 <span className="vital-note">{tile.note}</span>
               </button>
             ))}
           </div>
           {report.points.length > 1 ? (
-            <section className="panel device-panel">
+            <div className="probe-chart-wrap">
               <div className="vital-chart-head">
-                <h3>{VITALS[vital].title}</h3>
+                <h3>{VITALS[activeVital].title}</h3>
                 <span className="muted">Last 24 hours</span>
               </div>
-              <HealthChart key={vital} vital={vital} data={report.points} />
-            </section>
+              <HealthChart key={activeVital} vital={activeVital} data={report.points} />
+            </div>
           ) : null}
-        </>
+        </section>
       ) : null}
-    </>
+    </div>
   );
 }

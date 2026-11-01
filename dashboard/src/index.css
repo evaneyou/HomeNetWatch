@@ -528,7 +528,18 @@ button:hover,
 }
 
 .monitor-status-dialog {
-  zoom: 0.8;
+  width: min(560px, 100%);
+  padding: 0.75rem 0.9rem 0.9rem;
+}
+
+.monitor-status-dialog .monitor-dialog-head {
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.monitor-status-dialog .monitor-dialog-head h2 {
+  font-size: 1rem;
 }
 
 .monitor-dialog-head {

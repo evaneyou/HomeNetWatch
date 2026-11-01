@@ -282,6 +282,7 @@ export type DeviceSample = {
 export type DeviceReport = {
   monitor_id: string;
   name: string;
+  platform?: string;
   connected: boolean;
   last_seen_at: string | null;
   lan_ip: string | null;

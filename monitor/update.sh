@@ -32,9 +32,17 @@ rm -rf /opt/monitor/__pycache__
 # shellcheck disable=SC2086
 install -o root -g root -m 644 $files /opt/monitor/
 install -o root -g root -m 755 restore_tunnel.sh /opt/monitor/restore_tunnel.sh
+if [ -f tune_wifi.sh ]; then
+  install -o root -g root -m 755 tune_wifi.sh /opt/monitor/tune_wifi.sh
+fi
+if [ -f hnw-wifi-tune.service ] && [ -d /etc/systemd/system ]; then
+  install -o root -g root -m 644 hnw-wifi-tune.service /etc/systemd/system/hnw-wifi-tune.service
+  systemctl daemon-reload
+  systemctl enable hnw-wifi-tune.service 2>/dev/null || true
+fi
 # Narrow sudo so the monitor user can restart only the WireGuard tunnels.
 if [ -d /etc/sudoers.d ]; then
-  printf '%s\n' 'monitor ALL=(root) NOPASSWD: /opt/monitor/restore_tunnel.sh wg0, /opt/monitor/restore_tunnel.sh wg1' \
+  printf '%s\n' 'monitor ALL=(root) NOPASSWD: /opt/monitor/restore_tunnel.sh wg0, /opt/monitor/restore_tunnel.sh wg1, /opt/monitor/tune_wifi.sh' \
     > /etc/sudoers.d/hnw-restore-tunnel
   chmod 440 /etc/sudoers.d/hnw-restore-tunnel
 fi
@@ -49,16 +57,24 @@ elif [ -f rtnp-bind.so ]; then
   install -o root -g root -m 644 rtnp-bind.so /opt/monitor/rtnp-bind.so
 fi
 
-# Keep the Wi-Fi link radio awake so power-save naps do not add latency spikes to probes.
+# Keep the Wi-Fi link radio awake so power-save naps do not add latency spikes to probes,
+# unmanage secondary capture/P2P interfaces, pin 5 GHz BSSID, and apply multicore RPS + fq_codel.
 if [ -d /etc/NetworkManager/conf.d ]; then
   cat > /etc/NetworkManager/conf.d/hnw-wifi-powersave.conf <<'EOF'
 [connection]
 wifi.powersave = 2
 EOF
+  cat > /etc/NetworkManager/conf.d/hnw-radio.conf <<'EOF'
+[keyfile]
+unmanaged-devices=interface-name:hnwradio*;interface-name:p2p-dev-*
+EOF
 fi
 link_wifi="$(python3 -c 'import sys; sys.path.insert(0, "/opt/monitor"); from checks import wifi_roles; print(wifi_roles().get("link") or "")' 2>/dev/null || true)"
 if [ -n "$link_wifi" ] && command -v iw >/dev/null 2>&1; then
   iw dev "$link_wifi" set power_save off 2>/dev/null || true
+fi
+if [ -x /opt/monitor/tune_wifi.sh ]; then
+  /opt/monitor/tune_wifi.sh || true
 fi
 
 # LAN scan tools for Airwaves Security (on-demand ARP + Nmap).

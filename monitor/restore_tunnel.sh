@@ -34,4 +34,7 @@ if ! ip link show "$iface" >/dev/null 2>&1; then
   echo "Interface ${iface} did not come up." >&2
   exit 1
 fi
+if [ -x /opt/monitor/tune_wifi.sh ]; then
+  /opt/monitor/tune_wifi.sh || true
+fi
 echo "Restored ${iface}."

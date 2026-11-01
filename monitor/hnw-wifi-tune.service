@@ -1,0 +1,12 @@
+[Unit]
+Description=HomeNetWatch Wi-Fi and multicore network tuning
+After=network-online.target NetworkManager.service wg-quick@wg0.service wg-quick@wg1.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/monitor/tune_wifi.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

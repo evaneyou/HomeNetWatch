@@ -107,6 +107,8 @@ Setup accepts HTTPS, or HTTP to a private LAN address.
 | `synthetic.py` | Real-time application traffic on the physical NIC |
 | `tunnel_watch.py` | Pings tunnel peers and restarts a dead `wg0` / `wg1` |
 | `restore_tunnel.sh` | Root helper invoked via sudoers to restart one WireGuard unit |
+| `tune_wifi.sh` | Unmanages `hnwradio*`/`p2p-dev-*`, pins 5 GHz BSSID, and sets multicore IRQ/RPS + `fq_codel` |
+| `hnw-wifi-tune.service` | `systemd` oneshot unit that applies `tune_wifi.sh` after boot |
 | `lan_scan.py` | On-demand Scapy ARP + Nmap for Airwaves Security |
 | `rtnp_bind.c` | `LD_PRELOAD` shim that pins a measurement socket to one link; `install.sh` compiles it to `rtnp-bind.so` |
 | `pack.sh` | Builds `dist/monitor.tar.gz` |

@@ -36,6 +36,8 @@ ensure_opt tracker_device_timeout 600
 ensure_opt tracker_max_devices 5000
 ensure_opt dot11_keep_eapol false
 ensure_opt ulimit_mbytes 768
+ensure_opt channel_hop_speed 1/sec
+sed -i 's|^source=hnwradio0:name=hnw-radio,hop=true$|source=hnwradio0:name=hnw-radio,hop=true,hop_rate=1/sec|' "$site"
 chown root:kismet "$site"
 chmod 0640 "$site"
 

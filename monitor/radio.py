@@ -174,6 +174,8 @@ def kismet_survey_text() -> str:
     radio = str(roles.get("radio") or "")
     link = str(roles.get("link") or "")
     radio_text = wifi_survey_text(radio) if radio else ""
+    if radio:
+        return radio_text
     link_text = "" if not link or link == radio else wifi_survey_text(link)
     return prefer_survey(radio_text, link_text)
 

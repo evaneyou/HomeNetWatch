@@ -329,6 +329,19 @@ function missed(row: DailyRow, targets: Report["targets"]): string[] {
 }
 
 type Cell = { day: string; row: DailyRow | null; pad?: boolean };
+type MonthRow = { key: string; label: string; cells: Cell[] };
+
+const MAX_MONTH_DAYS = 31;
+const MAX_MONTH_ROWS = 12;
+
+function daysInUtcMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function monthLabel(year: number, month: number, multiYear: boolean): string {
+  const short = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString(undefined, { month: "short", timeZone: "UTC" });
+  return multiYear ? `${short} '${String(year).slice(-2)}` : short;
+}
 
 /** One coloured square per day. Hover (or focus) a square for that day's numbers, click it to open the day. */
 function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitorId: string; selected: string | null; onPick: (day: string) => void; targets: Report["targets"]; since: string | null }) {
@@ -347,28 +360,44 @@ function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitor
   });
   const list = valid ? rows.data ?? [] : [];
 
-  // Every day in the range, oldest first, so the calendar has no holes. Weeks run top to bottom, Monday first.
-  const cells = useMemo(() => {
-    if (!valid) return [] as Cell[];
+  // One row per calendar month (up to 12 months), with columns 1..31 for the day of the month.
+  const monthRows = useMemo(() => {
+    if (!valid) return [] as MonthRow[];
     const byDay = new Map(list.map((row) => [row.day, row]));
-    const days: Cell[] = [];
-    for (let day = first; day <= last; day = shiftDay(day, 1)) days.push({ day, row: byDay.get(day) ?? null });
-    const [year, month, date] = first.split("-").map(Number);
-    const lead = (new Date(Date.UTC(year, month - 1, date)).getUTCDay() + 6) % 7;
-    return [...Array.from({ length: lead }, (_unused, index) => ({ day: `pad-${index}`, row: null, pad: true }) as Cell), ...days];
-  }, [list, first, last, valid]);
-  const weeks = Math.ceil(cells.length / 7);
-  const monthLabels = useMemo(() => {
-    const labels: string[] = [];
-    let previous = "";
-    for (let week = 0; week < weeks; week += 1) {
-      const firstReal = cells.slice(week * 7, week * 7 + 7).find((cell) => !cell.pad);
-      const name = firstReal ? new Date(`${firstReal.day}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", timeZone: "UTC" }) : "";
-      labels.push(name && name !== previous ? name : "");
-      if (name) previous = name;
+    const [startY, startM] = first.split("-").map(Number);
+    const [endY, endM] = last.split("-").map(Number);
+    const months: { year: number; month: number }[] = [];
+    let y = startY;
+    let m = startM;
+    while (y < endY || (y === endY && m <= endM)) {
+      months.push({ year: y, month: m });
+      m += 1;
+      if (m > 12) {
+        m = 1;
+        y += 1;
+      }
     }
-    return labels;
-  }, [cells, weeks]);
+    const visible = months.slice(-MAX_MONTH_ROWS);
+    const multiYear = new Set(visible.map((item) => item.year)).size > 1;
+    return visible.map(({ year, month }) => {
+      const ym = `${year}-${String(month).padStart(2, "0")}`;
+      const totalDays = daysInUtcMonth(year, month);
+      const cells: Cell[] = [];
+      for (let d = 1; d <= MAX_MONTH_DAYS; d += 1) {
+        const dayIso = `${ym}-${String(d).padStart(2, "0")}`;
+        if (d > totalDays || dayIso < first || dayIso > last) {
+          cells.push({ day: `pad-${ym}-${d}`, row: null, pad: true });
+        } else {
+          cells.push({ day: dayIso, row: byDay.get(dayIso) ?? null });
+        }
+      }
+      return {
+        key: ym,
+        label: monthLabel(year, month, multiYear),
+        cells,
+      };
+    });
+  }, [list, first, last, valid]);
 
   function download() {
     const head = ["Date", "Internet %", "Wired %", "Wi-Fi %", "Voice %", "Video %", "Web %", "Packet drop %", "Offline min", "Outages", "Reporting gap min", "Health score", "Root cause"];
@@ -442,33 +471,43 @@ function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitor
       <div className="kpi-heat" onMouseLeave={() => setTip(null)}>
         <div className="kpi-heat-scroll">
           <div className="kpi-heat-body">
-            <div className="kpi-heat-months" style={{ gridTemplateColumns: `repeat(${weeks}, var(--cell))` }} aria-hidden="true">
-              {monthLabels.map((name, index) => (
-                <span key={index}>{name}</span>
+            <div className="kpi-heat-months" style={{ gridTemplateColumns: `repeat(${MAX_MONTH_DAYS}, var(--cell))` }} aria-hidden="true">
+              {Array.from({ length: MAX_MONTH_DAYS }, (_unused, index) => (
+                <span key={index + 1}>{index + 1}</span>
               ))}
             </div>
             <div className="kpi-heat-main">
-              <div className="kpi-heat-days" aria-hidden="true">
-                {["M", "T", "W", "T", "F", "S", "S"].map((letter, index) => (
-                  <span key={index}>{letter}</span>
+              <div className="kpi-heat-days" style={{ gridTemplateRows: `repeat(${monthRows.length}, var(--cell))` }} aria-hidden="true">
+                {monthRows.map((month) => (
+                  <span key={month.key}>{month.label}</span>
                 ))}
               </div>
-              <div className="kpi-heat-grid" role="list" aria-label="Daily results">
-                {cells.map((cell) =>
-                  cell.pad ? (
-                    <i key={cell.day} className="kpi-cell pad" aria-hidden="true" />
-                  ) : (
-                    <button
-                      key={cell.day}
-                      type="button"
-                      role="listitem"
-                      className={`kpi-cell tone-${dayTone(cell.row)}${cell.day === selected ? " is-selected" : ""}`}
-                      aria-label={`${niceDay(cell.day)}: ${cell.row && cell.row.score != null ? `health score ${Math.round(cell.row.score)}` : "no data"}`}
-                      onMouseEnter={(event) => show(cell, event.currentTarget)}
-                      onFocus={(event) => show(cell, event.currentTarget)}
-                      onBlur={() => setTip(null)}
-                      onClick={() => onPick(cell.day)}
-                    />
+              <div
+                className="kpi-heat-grid"
+                style={{
+                  gridTemplateColumns: `repeat(${MAX_MONTH_DAYS}, var(--cell))`,
+                  gridTemplateRows: `repeat(${monthRows.length}, var(--cell))`,
+                }}
+                role="list"
+                aria-label="Daily results"
+              >
+                {monthRows.flatMap((month) =>
+                  month.cells.map((cell) =>
+                    cell.pad ? (
+                      <i key={cell.day} className="kpi-cell pad" aria-hidden="true" />
+                    ) : (
+                      <button
+                        key={cell.day}
+                        type="button"
+                        role="listitem"
+                        className={`kpi-cell tone-${dayTone(cell.row)}${cell.day === selected ? " is-selected" : ""}`}
+                        aria-label={`${niceDay(cell.day)}: ${cell.row && cell.row.score != null ? `health score ${Math.round(cell.row.score)}` : "no data"}`}
+                        onMouseEnter={(event) => show(cell, event.currentTarget)}
+                        onFocus={(event) => show(cell, event.currentTarget)}
+                        onBlur={() => setTip(null)}
+                        onClick={() => onPick(cell.day)}
+                      />
+                    ),
                   ),
                 )}
               </div>

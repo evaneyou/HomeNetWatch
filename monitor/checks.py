@@ -19,6 +19,8 @@ from urllib.parse import urlsplit
 TUNNEL_HOST = "10.7.0.1"
 LIBRESPEED_PORT = 8080
 LIBRESPEED_SECONDS = 8
+LIBRESPEED_WIRELESS_CONCURRENT = 1
+LIBRESPEED_WIRELESS_UPLOAD_SIZE = 256
 HTTP_SLOW_MS = 3000
 DOWNLOAD_LIMIT = 65536
 # Ping's default gap is one second, so five probes take about four seconds of waiting.
@@ -712,20 +714,30 @@ def check_librespeed(test: dict) -> dict:
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
         json.dump(servers, handle)
         listing = handle.name
+    wireless = test.get("link") == "wireless" or test.get("network_slug") == "wifi"
+    command = [
+        "librespeed-cli",
+        "--json",
+        "--ipv4",
+        "--no-icmp",
+        "--duration",
+        str(LIBRESPEED_SECONDS),
+        "--timeout",
+        "20",
+    ]
+    if wireless:
+        command.extend(
+            [
+                "--concurrent",
+                str(LIBRESPEED_WIRELESS_CONCURRENT),
+                "--upload-size",
+                str(LIBRESPEED_WIRELESS_UPLOAD_SIZE),
+            ]
+        )
+    command.extend(["--local-json", listing])
     try:
         proc = subprocess.run(
-            [
-                "librespeed-cli",
-                "--json",
-                "--ipv4",
-                "--no-icmp",
-                "--duration",
-                str(LIBRESPEED_SECONDS),
-                "--timeout",
-                "20",
-                "--local-json",
-                listing,
-            ],
+            command,
             capture_output=True,
             text=True,
             timeout=LIBRESPEED_SECONDS * 2 + 25,

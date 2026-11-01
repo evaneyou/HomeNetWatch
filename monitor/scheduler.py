@@ -162,23 +162,11 @@ def run_due_tests(config: dict) -> None:
     with link_lock:
         _run_due_tests(config, ready)
 
-def _is_wireless_test(test: dict) -> bool:
-    return test.get("link") == "wireless" or test.get("network_slug") == "wifi"
-
 def _run_due_tests(config: dict, ready: list[dict]) -> None:
     latency = [test for test in ready if test.get("kind") not in state.HEAVY_KINDS | {"mtr"}]
-    wired_latency = [test for test in latency if not _is_wireless_test(test)]
-    wireless_latency = [test for test in latency if _is_wireless_test(test)]
     traces = [test for test in ready if test.get("kind") == "mtr"]
     heavy = [test for test in ready if test.get("kind") in state.HEAVY_KINDS]
-    results = [result for result in state._probes.map(_run_one, wired_latency) if result]
-    # Run wireless checks one at a time so simultaneous probe bursts do not starve real-time UDP flows on wlan0.
-    for index, test in enumerate(wireless_latency):
-        if index > 0 and state._stop.wait(0.15):
-            break
-        result = _run_one(test)
-        if result:
-            results.append(result)
+    results = [result for result in state._probes.map(_run_one, latency) if result]
     # A trace shares the link with nothing else, so its timing is the path, not the other probes.
     results.extend(result for result in state._probes.map(_run_one, traces) if result)
     results.extend(result for result in (_run_one(test) for test in heavy) if result)

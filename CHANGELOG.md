@@ -22,13 +22,11 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 - **Daily KPI history rows by month:** the KPI history heatmap now renders one row per calendar month (up to 12 months
   at a time) with up to 31 day columns (`1`–`31`), instead of 7 weekday rows across week columns.
-- **Raspberry Pi Wi-Fi QoS prioritization, probe pacing, and Kismet hop tuning (agent 0.8.10):** `rtnp_bind.c` now marks
-  synthetic measurement sockets with `IP_TOS = 0xB8` (DSCP EF / 802.11e WMM Voice `AC_VO`) so real-time voice/video/RDP
-  measurement packets take hardware airtime priority ahead of background TCP transfers; Wi-Fi `librespeed-cli` checks use
-  `--concurrent 1 --upload-size 256` to avoid saturating half-duplex Wi-Fi queues; `scheduler.py` paces wireless latency
-  checks one at a time instead of firing bursts concurrently across `wlan0`; `radio.py` skips redundant 60-second
-  `iw dev wlan0 survey dump` calls when a dedicated Kismet radio (`hnwradio0`) is present; and `tune_wifi.sh` /
-  `install.sh` / `repair-kismet-memory.sh` cap Kismet channel hopping at `1/sec`.
+- **Raspberry Pi Wi-Fi throughput & Kismet capture isolation (agent 0.8.11):** restores default `librespeed-cli`
+  multi-stream upload sizing, standard `AC_BE` hardware A-MPDU aggregation on `brcmfmac` (`rtnp_bind.c`), and full
+  MTU `fq_codel` quantum on `wlan0` after single-stream `256 KiB` uploads and `AC_VO` (`0xB8`) tagging reduced Wi-Fi
+  upload throughput and overflowed the `brcmfmac` `AC_VO` firmware ring, while keeping `radio.py` survey isolation
+  and Kismet `1/sec` channel hopping.
 - **Raspberry Pi Wi-Fi stability and multicore tuning (agent 0.8.9):** `update.sh`, `install.sh`, `restore_tunnel.sh`,
   and the `hnw-wifi-tune.service` boot unit now run `tune_wifi.sh` to unmanage `hnwradio*` and `p2p-dev-*` in
   NetworkManager (stopping `wpa_supplicant` background scan clashes against Kismet's capture radio), pin the active

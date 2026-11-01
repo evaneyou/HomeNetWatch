@@ -36,12 +36,6 @@ static void pin(int fd) {
             setsockopt(fd, IPPROTO_IP, IP_UNICAST_IF, &network_order, sizeof network_order);
         }
     }
-    /* Tag measurement packets with DSCP EF (0xB8) so 802.11e WMM places them in
-       the Voice queue (AC_VO) ahead of bulk TCP background transfers. */
-    {
-        int tos = 0xb8;
-        setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof tos);
-    }
     if (src && src[0]) {
         memset(&local, 0, sizeof local);
         local.sin_family = AF_INET;

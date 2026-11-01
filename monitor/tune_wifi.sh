@@ -111,13 +111,15 @@ if [ -d /sys/devices/system/cpu/cpu3 ]; then
   done
 fi
 
-# 4. Apply fq_codel with a 300B real-time quantum on WireGuard and Wi-Fi interfaces.
+# 4. Apply fq_codel on WireGuard tunnels and restore standard MTU quantum on the Wi-Fi interface.
 if command -v tc >/dev/null 2>&1; then
-  for netdev in wg0 wg1 "$link_wifi"; do
-    [ -n "$netdev" ] || continue
+  for netdev in wg0 wg1; do
     [ -d "/sys/class/net/${netdev}" ] || continue
     tc qdisc replace dev "$netdev" root fq_codel quantum 300 limit 10240 flows 1024 2>/dev/null || true
   done
+  if [ -n "$link_wifi" ] && [ -d "/sys/class/net/${link_wifi}" ]; then
+    tc qdisc replace dev "$link_wifi" root fq_codel limit 10240 flows 1024 2>/dev/null || true
+  fi
 fi
 
 # 5. Slow Kismet channel hopping on the USB capture radio to 1/sec to reduce USB bus and adjacent-antenna RF contention.

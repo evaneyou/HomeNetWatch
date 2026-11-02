@@ -28,6 +28,9 @@ from app.wireguard_tunnel import TUNNEL_SERVER_IP, WIRELESS_SERVER_IP, endpoint
 # Web services probe each service's own hostname.
 SERVER_HTTP = f"http://{TUNNEL_SERVER_IP}:8847/api/v1/healthz"
 HEAVY_INTERVAL_SECONDS = 900
+# Bandwidth Test variance: 100% means no drop in speed turns it amber, which is how the owner
+# silences speed alerts. A test with no answer in either direction is still red.
+MAX_TRANSFER_VARIANCE_PCT = 100
 PATH_HTTP_INTERVAL_SECONDS = 60
 PATH_ICMP_INTERVAL_SECONDS = 60
 PATH_MTR_INTERVAL_SECONDS = 300
@@ -335,13 +338,13 @@ def path_variance(setting: InternetServiceSetting, slug: str) -> tuple[int, int 
     if slug == "mtr-path":
         return setting.mtr_variance_pct, None
     if slug == "librespeed":
-        return min(max(setting.librespeed_variance_pct, 0), 50), None
+        return min(max(setting.librespeed_variance_pct, 0), MAX_TRANSFER_VARIANCE_PCT), None
     return None
 
 
 def classify_transfer(db: Session, test: Test, metrics: dict, variance_pct: int) -> tuple[ResultStatus, str]:
     """Amber when throughput falls past the variance. Red when neither direction answers."""
-    variance_pct = min(max(variance_pct, 0), 50)
+    variance_pct = min(max(variance_pct, 0), MAX_TRANSFER_VARIANCE_PCT)
     down = _number(metrics.get("down_mbps"))
     up = _number(metrics.get("up_mbps"))
     down_ok = down is not None and down > 0
@@ -797,8 +800,8 @@ def save_web_services(db: Session, updates: list[dict]) -> list[WebServiceSettin
 def load_internet_service(db: Session) -> InternetServiceSetting:
     row = db.get(InternetServiceSetting, 1)
     if row is not None:
-        if row.librespeed_variance_pct > 50 or row.librespeed_variance_pct < 0:
-            row.librespeed_variance_pct = min(max(row.librespeed_variance_pct, 0), 50)
+        if row.librespeed_variance_pct > MAX_TRANSFER_VARIANCE_PCT or row.librespeed_variance_pct < 0:
+            row.librespeed_variance_pct = min(max(row.librespeed_variance_pct, 0), MAX_TRANSFER_VARIANCE_PCT)
             db.flush()
         return row
     row = InternetServiceSetting(
@@ -830,7 +833,7 @@ def save_internet_service(db: Session, update: dict) -> InternetServiceSetting:
     row.icmp_variance_pct = int(update["icmp_variance_pct"])
     row.mtr_variance_pct = int(update["mtr_variance_pct"])
     row.variance_pct = row.http_variance_pct
-    row.librespeed_variance_pct = min(max(int(update["librespeed_variance_pct"]), 0), 50)
+    row.librespeed_variance_pct = min(max(int(update["librespeed_variance_pct"]), 0), MAX_TRANSFER_VARIANCE_PCT)
     row.librespeed_enabled = bool(update["librespeed_enabled"])
     row.librespeed_interval_seconds = max(int(update["librespeed_interval_seconds"]), 300)
     db.flush()

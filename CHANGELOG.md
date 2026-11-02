@@ -12,6 +12,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Bandwidth Test variance goes up to 100%:** the cap was 50%, and a higher value was quietly saved as 50%. At 100% no drop in speed turns the Bandwidth Test amber, so its alerts are off; a test that gets no answer in either direction is still red. The Internet Service page shows the 0–100% range, and the API rejects values above 100 instead of changing them.
 - **Logo:** the house now sits in a rounded square, centred on the wordmark, on the dashboard and the landing page.
 - **Real-Time Application Health is shorter:** the Voice G.723.1, Market data, Fortnite and Call of Duty presets and the
   Games group are gone, and so is the Timed runs list at the bottom of the page (each preset still has **Run once**).

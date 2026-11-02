@@ -27,6 +27,9 @@ type VarianceField =
 ;
 type IntervalField = "interval_seconds" | "librespeed_interval_seconds";
 
+// At 100% no drop in speed turns the Bandwidth Test amber, which silences its alerts.
+const BANDWIDTH_VARIANCE_MAX = 100;
+
 const SIGNATURE_FIELDS = [
   "interval_seconds",
   "http_enabled",
@@ -99,13 +102,16 @@ function ToolRow({
           aria-label={varianceLabel}
           type="number"
           min={0}
-          max={varianceField === "librespeed_variance_pct" ? 50 : 500}
+          max={varianceField === "librespeed_variance_pct" ? BANDWIDTH_VARIANCE_MAX : 500}
           step={5}
           value={row[varianceField]}
           disabled={locked}
           onChange={(event) => onNumber(varianceField, event.target.value)}
         />
         <span className="muted"> %</span>
+        {varianceField === "librespeed_variance_pct" ? (
+          <div className="muted field-hint">0–100%. 100% turns off speed-drop alerts.</div>
+        ) : null}
       </td>
     </tr>
   );
@@ -186,7 +192,8 @@ export default function InternetServicePage() {
         Each check has its own variance. A response more than that percent off the recent normal is amber, as is an
         error status or packet loss. Red means an active check got no response. HTTP, ICMP, and MTR share one poll
         interval. MTR runs at least every 2 minutes. Bandwidth Test runs at least every 5 minutes, and turns
-        amber when download or upload falls more than its percent below the recent normal.
+        amber when download or upload falls more than its percent below the recent normal; set it to 100% to turn
+        speed-drop alerts off.
       </p>
       <div className="panel table-scroll">
         <table className="table web-service-table">
@@ -312,7 +319,16 @@ export default function InternetServicePage() {
             className={`btn btn-primary${dirty ? " is-dirty" : ""}`}
             type="button"
             disabled={save.isPending}
-            onClick={() => run(() => setConfirming(true))}
+            onClick={() =>
+              run(() => {
+                if (row.librespeed_variance_pct < 0 || row.librespeed_variance_pct > BANDWIDTH_VARIANCE_MAX) {
+                  setError(`Bandwidth Test variance must be between 0 and ${BANDWIDTH_VARIANCE_MAX}%.`);
+                  return;
+                }
+                setError(null);
+                setConfirming(true);
+              })
+            }
           >
             Save
           </button>

@@ -85,7 +85,20 @@ def test_net_down_skipped_when_web_still_ok_on_link(db):
     assert f"tunnel-down:{monitor.id}:wireless" in keys
 
 
-def test_variance_clamped_to_50_and_ingest_refreshes_librespeed_stable_status(db):
+_SETTINGS_25 = {
+    "interval_seconds": 60,
+    "http_enabled": True,
+    "icmp_enabled": True,
+    "mtr_enabled": True,
+    "http_variance_pct": 25,
+    "icmp_variance_pct": 25,
+    "mtr_variance_pct": 25,
+    "librespeed_enabled": True,
+    "librespeed_interval_seconds": 900,
+}
+
+
+def test_variance_up_to_100_and_ingest_refreshes_librespeed_stable_status(db):
     from app.internet_tests import classify_transfer, ensure_internet_tests, load_internet_service, save_internet_service
     from app.schemas import IngestResult
     from app.services.ingest import ingest_results
@@ -104,12 +117,13 @@ def test_variance_clamped_to_50_and_ingest_refreshes_librespeed_stable_status(db
             "mtr_variance_pct": 25,
             "librespeed_enabled": True,
             "librespeed_interval_seconds": 900,
-            "librespeed_variance_pct": 100,
+            "librespeed_variance_pct": 150,
         },
     )
-    assert row.librespeed_variance_pct == 50
+    # The owner can go up to 100% (no speed alerts); anything above is held at 100.
+    assert row.librespeed_variance_pct == 100
     loaded = load_internet_service(db)
-    assert loaded.librespeed_variance_pct == 50
+    assert loaded.librespeed_variance_pct == 100
 
     speed_test = db.scalar(
         select(Test)
@@ -132,10 +146,17 @@ def test_variance_clamped_to_50_and_ingest_refreshes_librespeed_stable_status(db
         )
     db.flush()
 
-    # Even if someone passes 100 into classify_transfer, it clamps to 50% and catches a 0.6 Mbps upload collapse
-    st, reason = classify_transfer(db, speed_test, {"down_mbps": 280.0, "up_mbps": 0.6}, 100)
+    # At 50% a 0.6 Mbps upload collapse is amber
+    st, reason = classify_transfer(db, speed_test, {"down_mbps": 280.0, "up_mbps": 0.6}, 50)
     assert st == ResultStatus.degraded
     assert "Upload 0.6 Mbps" in reason
+    # At 100% no drop in speed turns it amber: that is how speed alerts are turned off
+    st, _reason = classify_transfer(db, speed_test, {"down_mbps": 280.0, "up_mbps": 0.6}, 100)
+    assert st == ResultStatus.ok
+    # Values above 100 are treated as 100
+    st, _reason = classify_transfer(db, speed_test, {"down_mbps": 280.0, "up_mbps": 0.6}, 400)
+    assert st == ResultStatus.ok
+    save_internet_service(db, {**_SETTINGS_25, "librespeed_variance_pct": 50})
 
     # Ingesting degraded librespeed samples updates Test.stable_status
     samples = [
@@ -277,3 +298,14 @@ def test_summary_blames_tunnel_not_wifi_when_web_ok_and_handshake_stale(client: 
     assert wifi_inet["cause"] == "tunnel"
     assert wifi_inet["status"] in ("degraded", "fail")
 
+
+
+def test_settings_reject_a_bandwidth_variance_above_100():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.schemas import InternetServiceSettingIn
+
+    assert InternetServiceSettingIn(**_SETTINGS_25, librespeed_variance_pct=100).librespeed_variance_pct == 100
+    with pytest.raises(ValidationError):
+        InternetServiceSettingIn(**_SETTINGS_25, librespeed_variance_pct=101)

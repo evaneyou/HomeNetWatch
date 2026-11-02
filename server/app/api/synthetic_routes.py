@@ -273,10 +273,10 @@ def _diagnose_bandwidth(
     both_links_failing: bool,
 ) -> Optional[dict[str, str]]:
     """Check if LibreSpeed upload/download collapsed around the time of the application failures."""
-    from app.internet_tests import _baseline_value, load_internet_service
+    from app.internet_tests import MAX_TRANSFER_VARIANCE_PCT, _baseline_value, load_internet_service
 
     setting = load_internet_service(db)
-    variance = min(max(setting.librespeed_variance_pct, 0), 50)
+    variance = min(max(setting.librespeed_variance_pct, 0), MAX_TRANSFER_VARIANCE_PCT)
     floor = max(0.0, 1.0 - variance / 100.0)
     tests = db.execute(
         select(Test, Network)

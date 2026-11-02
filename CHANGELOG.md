@@ -12,6 +12,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Logo:** the house now sits in a rounded square, centred on the wordmark, on the dashboard and the landing page.
 - **Real-Time Application Health is shorter:** the Voice G.723.1, Market data, Fortnite and Call of Duty presets and the
   Games group are gone, and so is the Timed runs list at the bottom of the page (each preset still has **Run once**).
   A continuous or pending run of a removed preset is stopped when the server starts or the page loads, the removed

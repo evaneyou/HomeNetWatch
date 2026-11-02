@@ -561,6 +561,8 @@ button:hover,
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--bg);
+  /* Leaflet stacks its layers at z-index 400 and up. Keep them inside the map so menus that open over it stay on top. */
+  isolation: isolate;
 }
 
 .monitor-map .map-base {

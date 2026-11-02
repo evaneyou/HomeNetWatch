@@ -189,16 +189,16 @@ export default function LocationForm({ monitorId }: { monitorId: string }) {
     return (
       <div className="device-form">
         <div className="field">
-          <label>City</label>
-          <AnonText value={report.location_label} />
+          <label>Country</label>
+          <AnonText value={report.country} />
         </div>
         <div className="field">
           <label>State/Province</label>
           <AnonText value={report.region} />
         </div>
         <div className="field">
-          <label>Country</label>
-          <AnonText value={report.country} />
+          <label>City</label>
+          <AnonText value={report.location_label} />
         </div>
         <AnonPlate
           value={[report.latitude, report.longitude].filter(isAnonymized).map(String).join("  ") || undefined}
@@ -216,14 +216,15 @@ export default function LocationForm({ monitorId }: { monitorId: string }) {
     <>
       <form className="device-form" onSubmit={submitLocation}>
         <div className="field">
-          <label htmlFor="agent-location">City</label>
-          <input
-            id="agent-location"
-            value={location}
-            onChange={(event) => setLocation(event.target.value)}
-            placeholder="City"
-            autoComplete="address-level2"
-          />
+          <label htmlFor="agent-country">Country</label>
+          <SelectMenu id="agent-country" value={country} onChange={(event) => chooseCountry(event.target.value)}>
+            <option value="">Select</option>
+            {COUNTRIES.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </SelectMenu>
         </div>
         <div className="field field-region">
           <label htmlFor="agent-region">State/Province</label>
@@ -237,15 +238,14 @@ export default function LocationForm({ monitorId }: { monitorId: string }) {
           </SelectMenu>
         </div>
         <div className="field">
-          <label htmlFor="agent-country">Country</label>
-          <SelectMenu id="agent-country" value={country} onChange={(event) => chooseCountry(event.target.value)}>
-            <option value="">Select</option>
-            {COUNTRIES.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </SelectMenu>
+          <label htmlFor="agent-location">City</label>
+          <input
+            id="agent-location"
+            value={location}
+            onChange={(event) => setLocation(event.target.value)}
+            placeholder="City"
+            autoComplete="address-level2"
+          />
         </div>
         <div className="form-actions">
           <button

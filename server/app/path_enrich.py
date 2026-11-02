@@ -109,7 +109,12 @@ def _prefix_info(body: dict | None) -> dict[str, Any]:
     }
 
 
-def _announced_path(body: dict | None, origin: int | None) -> list[int] | None:
+def _announced_path(body: dict | None, origin: int | None, via: int | None = None) -> list[int] | None:
+    """The most common path the route collectors see to the origin.
+
+    With `via` (the agent's own provider), a path through that network is preferred and shown from it
+    onward, so it can be compared with the trace. Without one, any collector's path is used.
+    """
     rows = _data(body).get("bgp_state")
     if not isinstance(rows, list):
         return None
@@ -122,9 +127,14 @@ def _announced_path(body: dict | None, origin: int | None) -> list[int] | None:
             continue
         if origin is not None and path[-1] != origin:
             continue
-        paths.append(tuple(path))
+        # An AS repeated to make a route less attractive (prepending) is still one network.
+        paths.append(tuple(asn for index, asn in enumerate(path) if index == 0 or path[index - 1] != asn))
     if not paths:
         return None
+    if via is not None and via != origin:
+        through = [path[path.index(via):] for path in paths if via in path]
+        if through:
+            return list(Counter(through).most_common(1)[0][0])
     return list(Counter(paths).most_common(1)[0][0])
 
 
@@ -193,7 +203,13 @@ def enrich_hops(
     rpki: str | None = None
     if origin_ip:
         resource = prefix or origin_ip
-        announced = _announced_path(_cached(_url("bgp-state", resource=resource), fetcher), origin if isinstance(origin, int) else None)
+        # The agent's provider: the network of the first public hop.
+        provider = infos.get(addresses[0], {}).get("asn")
+        announced = _announced_path(
+            _cached(_url("bgp-state", resource=resource), fetcher),
+            origin if isinstance(origin, int) else None,
+            provider if isinstance(provider, int) else None,
+        )
         if isinstance(origin, int) and prefix:
             rpki = _rpki(_cached(_url("rpki-validation", resource=str(origin), prefix=prefix), fetcher))
 

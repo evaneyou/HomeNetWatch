@@ -164,7 +164,7 @@ def test_enrichment_adds_asn_and_announced_path():
                     "bgp_state": [
                         {"path": [174, 15169]},
                         {"path": [174, 15169]},
-                        {"path": [13335, 15169]},
+                        {"path": [174, 15169]},
                     ]
                 }
             }
@@ -195,6 +195,51 @@ def test_enrichment_adds_asn_and_announced_path():
     assert [group["asn"] for group in trace["groups"]] == [None, 13335, None, 15169]
     assert trace["bgp"]["as_path_announced"][0]["name"] == "COGENT"
     assert trace["bgp"]["as_path_announced"][1]["name"] == "GOOGLE"
+
+
+def _bgp_fetch(paths: list[list[int]]):
+    # RIPEstat answers are cached by URL; each test brings its own.
+    from app import path_enrich
+
+    path_enrich._CACHE.clear()
+
+    def fetch(url: str) -> dict:
+        if "prefix-overview" in url and "1.1.1.1" in url:
+            return {"data": {"asns": [{"asn": 7922, "holder": "COMCAST"}], "block": {"resource": "1.1.1.0/24"}}}
+        if "prefix-overview" in url and "8.8.8.8" in url:
+            return {"data": {"asns": [{"asn": 31898, "holder": "ORACLE"}], "block": {"resource": "8.8.8.0/24"}}}
+        if "bgp-state" in url:
+            return {"data": {"bgp_state": [{"path": path} for path in paths]}}
+        return {"data": {}}
+
+    return fetch
+
+
+_HOME_TO_ORACLE = [
+    {"hop": 1, "host": "192.168.1.1", "loss_pct": 0, "avg_ms": 1, "best_ms": 1, "worst_ms": 1},
+    {"hop": 2, "host": "1.1.1.1", "loss_pct": 0, "avg_ms": 9, "best_ms": 9, "worst_ms": 9},
+    {"hop": 3, "host": "8.8.8.8", "loss_pct": 0, "avg_ms": 30, "best_ms": 30, "worst_ms": 30},
+]
+
+
+def test_announced_path_prefers_a_route_through_the_agents_provider():
+    # Most collectors reach Oracle through NTT; one sees it through Comcast, prepended. That one is shown,
+    # from Comcast onward, so it starts where the trace does.
+    paths = [[24482, 2914, 31898], [24482, 2914, 31898], [3356, 2914, 31898], [6939, 7922, 7922, 31898]]
+    hops, announced, names, _rpki = enrich_hops(_HOME_TO_ORACLE, fetch=_bgp_fetch(paths), resolve_names=False)
+    assert announced == [7922, 31898]
+    trace = build_trace(hops, announced=announced, as_names=names)
+    assert trace["bgp"]["via_isp"] is True
+    assert trace["bgp"]["path_match"] is True
+
+
+def test_announced_path_falls_back_when_no_collector_sees_the_provider():
+    paths = [[24482, 2914, 31898], [24482, 2914, 31898], [3356, 2914, 31898]]
+    hops, announced, names, _rpki = enrich_hops(_HOME_TO_ORACLE, fetch=_bgp_fetch(paths), resolve_names=False)
+    assert announced == [24482, 2914, 31898]
+    trace = build_trace(hops, announced=announced, as_names=names)
+    assert trace["bgp"]["via_isp"] is False
+    assert trace["bgp"]["path_match"] is False
 
 
 def test_mtr_uses_the_destination_hop_not_a_silent_router():

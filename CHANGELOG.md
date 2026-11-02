@@ -12,6 +12,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Path View BGP from your provider:** when a public route collector sees a route to the destination through the agent's own provider, the BGP view shows that route from the provider onward, so it starts where the trace does. Otherwise it shows the most common route and says no collector sees one through the provider. Repeated (prepended) networks count once.
 - **Location fields in order:** a remote agent's Location section asks for Country, then State/Province, then City, so the state list matches the country before the city is typed.
 - **Bandwidth Test variance goes up to 100%:** the cap was 50%, and a higher value was quietly saved as 50%. At 100% no drop in speed turns the Bandwidth Test amber, so its alerts are off; a test that gets no answer in either direction is still red. The Internet Service page shows the 0–100% range, and the API rejects values above 100 instead of changing them.
 - **Logo:** the house now sits in a rounded square, centred on the wordmark, on the dashboard and the landing page.

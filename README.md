@@ -32,8 +32,8 @@ problem starts: DNS, TCP, TLS, the server's first byte, the measurement tunnel, 
   web-service checks.
 - **Real-Time Application Health.** Continuous and manual synthetic UDP/SRTP flows powered by
   [`RTN_PackGen`](https://github.com/evaneyou/RTN_PackGen) (`rtnp-send`): two-way Voice (**G.711 A-law**,
-  **G.711 µ-law**, **G.729**, **G.723.1**), **Video conference**, **Remote desktop**, **Market data**,
-  and gaming presets (**Fortnite**, **Call of Duty**) with real round-trip timing (`--meter rtt`).
+  **G.711 µ-law**, **G.729**), **Video conference** and **Remote desktop**, with real round-trip timing
+  (`--meter rtt`).
 - **Speed Test & Network Test.** Live 30-second LibreSpeed download/upload throughput tests with animated
   path diagrams, plus multi-session stress runs to see how links hold up under load.
 - **Wired and wireless views.** Test over Ethernet (`wg0`) and Wi-Fi (`wg1`) separately on a Raspberry Pi,

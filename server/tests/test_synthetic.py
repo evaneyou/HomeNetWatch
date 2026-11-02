@@ -103,7 +103,7 @@ def test_public_target_uses_the_physical_nic():
     try:
         send_args(
             "rtnp-send",
-            {"preset": "fortnite", "meter": "rtt", "report_interval_s": 10, "max_rtt_ms": 300, "max_jitter_ms": 30, "max_loss_pct": 1},
+            {"preset": "remote-desktop", "meter": "rtt", "report_interval_s": 10, "max_rtt_ms": 300, "max_jitter_ms": 30, "max_loss_pct": 1},
             "203.0.113.10",
             control_host="10.7.0.1",
             key_file="/tmp/rtnp.key",
@@ -249,7 +249,9 @@ def test_recommended_profiles_and_comparison_report(client, db, monitor_token):
     assert listed.status_code == 200, listed.text
     slugs = [item["slug"] for item in listed.json()["profiles"]]
     assert "voip-g711a" in slugs
-    assert "fortnite" in slugs
+    assert "remote-desktop" in slugs
+    for retired in ("voip-g723", "fortnite", "call-of-duty", "market-data"):
+        assert retired not in slugs
     voice = next(item for item in listed.json()["profiles"] if item["slug"] == "voip-g711a")
     assert voice["category"] == "voice"
     assert voice["options"]["report_interval_s"] == 10
@@ -309,7 +311,7 @@ def test_recommended_profiles_and_comparison_report(client, db, monitor_token):
         headers=headers,
         json={
             "monitor_id": str(monitor.id),
-            "profile_slug": "fortnite",
+            "profile_slug": "remote-desktop",
             "links": ["wired"],
             "duration_seconds": 20,
             "options": {},
@@ -340,7 +342,7 @@ def test_recommended_profiles_and_comparison_report(client, db, monitor_token):
 
     detail = client.get(f"/api/v1/monitors/{monitor.id}")
     assert detail.status_code == 200, detail.text
-    assert [item["slug"] for item in detail.json()["probes"]] == ["voip-g711a", "fortnite"]
+    assert [item["slug"] for item in detail.json()["probes"]] == ["voip-g711a", "remote-desktop"]
     voice_log = client.get(f"/api/v1/monitors/{monitor.id}/log?probe=rtnp:voip-g711a")
     assert voice_log.status_code == 200, voice_log.text
     assert voice_log.json()["total"] == 2
@@ -426,14 +428,13 @@ def test_presets_group_by_category_and_skip_empty_or_unknown():
     from app.synthetic import PROFILES, group_profiles
 
     groups = group_profiles(PROFILES)
-    assert [group["category"] for group in groups] == ["voice", "video", "enterprise", "games"]
-    assert [item["slug"] for item in groups[0]["profiles"]] == ["voip-g711a", "voip-g711", "voip-g729", "voip-g723"]
-    assert [item["slug"] for item in groups[2]["profiles"]] == ["remote-desktop", "market-data"]
-    assert [item["slug"] for item in groups[3]["profiles"]] == ["fortnite", "call-of-duty"]
+    assert [group["category"] for group in groups] == ["voice", "video", "enterprise"]
+    assert [item["slug"] for item in groups[0]["profiles"]] == ["voip-g711a", "voip-g711", "voip-g729"]
+    assert [item["slug"] for item in groups[2]["profiles"]] == ["remote-desktop"]
     without_video = [item for item in PROFILES if item.get("category") != "video"]
     without_video.append({"slug": "other", "category": "satellite"})
     grouped = group_profiles(without_video)
-    assert [group["category"] for group in grouped] == ["voice", "enterprise", "games"]
+    assert [group["category"] for group in grouped] == ["voice", "enterprise"]
     assert all(item["slug"] != "other" for group in grouped for item in group["profiles"])
 
 
@@ -988,7 +989,7 @@ def test_ulaw_voice_runs_both_ways_on_every_agent():
     assert ulaw["options"]["rtp"] == "g711" and ulaw["options"]["bidir"] is True
     assert "voip-g711" in VOICE_PRESETS
     voice = sorted((item["position"], item["slug"]) for item in PROFILES if item["category"] == "voice")
-    assert [slug for _position, slug in voice] == ["voip-g711a", "voip-g711", "voip-g729", "voip-g723"]
+    assert [slug for _position, slug in voice] == ["voip-g711a", "voip-g711", "voip-g729"]
     args = send_args(
         "rtnp-send",
         ulaw["options"],
@@ -1015,3 +1016,47 @@ def test_ulaw_voice_runs_both_ways_on_every_agent():
     )
     assert "--bidir" in pi and pi[pi.index("--rtp") + 1] == "g711"
 
+
+
+def test_retired_presets_cannot_start_and_running_ones_stop(client, db):
+    """G.723.1, Market data, Fortnite and Call of Duty were taken off Real-Time Application Health."""
+    if db.scalar(select(User).where(User.username == "admin")) is None:
+        db.add(User(username="admin", password_hash=hash_password("admin-change-me"), role=UserRole.admin, is_active=True))
+        db.commit()
+    monitor = _monitor(db)
+    leftover = SyntheticRun(
+        monitor_id=monitor.id,
+        profile_slug="fortnite",
+        mode="continuous",
+        links=["wired"],
+        options={"preset": "fortnite", "report_interval_s": 10, "max_rtt_ms": 300, "max_jitter_ms": 30, "max_loss_pct": 1},
+        status="running",
+        finished_links=[],
+    )
+    db.add(leftover)
+    db.commit()
+    headers = login(client)
+
+    listed = client.get(f"/api/v1/synthetic/profiles?monitor_id={monitor.id}")
+    assert listed.status_code == 200, listed.text
+    db.refresh(leftover)
+    assert leftover.status == "stopped"
+    assert leftover.finished_at is not None
+
+    for slug in ("voip-g723", "fortnite", "call-of-duty", "market-data"):
+        manual = client.post(
+            "/api/v1/synthetic/manual",
+            headers=headers,
+            json={"monitor_id": str(monitor.id), "profile_slug": slug, "links": ["wired"], "duration_seconds": 20, "options": {}},
+        )
+        assert manual.status_code == 404, manual.text
+        continuous = client.put(
+            "/api/v1/synthetic/continuous",
+            headers=headers,
+            json={"monitor_id": str(monitor.id), "profile_slug": slug, "links": ["wired"], "options": {}},
+        )
+        assert continuous.status_code == 404, continuous.text
+
+    # Stored history for a retired preset can still be filtered.
+    history = client.get(f"/api/v1/monitors/{monitor.id}/log?probe=rtnp:fortnite")
+    assert history.status_code == 200, history.text

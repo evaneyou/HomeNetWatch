@@ -1,10 +1,9 @@
-export const CATEGORY_ORDER = ["voice", "video", "enterprise", "games"] as const;
+export const CATEGORY_ORDER = ["voice", "video", "enterprise"] as const;
 
 export const CATEGORY_NAMES: Record<(typeof CATEGORY_ORDER)[number], string> = {
   voice: "Voice",
   video: "Video",
   enterprise: "Enterprise apps",
-  games: "Games",
 };
 
 export const FIELD_LIMITS = {

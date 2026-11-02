@@ -10,6 +10,14 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Changed
+
+- **Real-Time Application Health is shorter:** the Voice G.723.1, Market data, Fortnite and Call of Duty presets and the
+  Games group are gone, and so is the Timed runs list at the bottom of the page (each preset still has **Run once**).
+  A continuous or pending run of a removed preset is stopped when the server starts or the page loads, the removed
+  presets can no longer be started, and their stored results stay readable. The Network Test (stress run) keeps its own
+  G.723.1 and Market data options.
+
 ### Added
 
 - **Android agent updates itself, with the owner's OK:** each time the app starts (or **Restart agent** is chosen) it

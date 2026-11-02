@@ -100,24 +100,6 @@ PROFILES: list[dict[str, Any]] = [
         },
     },
     {
-        "slug": "voip-g723",
-        "name": "Voice G.723.1",
-        "category": "voice",
-        "position": 4,
-        "options": {
-            "preset": "voip-g723",
-            "wire": "rtp",
-            "rtp": "g723",
-            "ptime_ms": 30,
-            "bidir": True,
-            "rtcp_interval_s": 5,
-            "report_interval_s": 10,
-            "max_rtt_ms": 300,
-            "max_jitter_ms": 30,
-            "max_loss_pct": 1,
-        },
-    },
-    {
         "slug": "video-conference",
         "name": "Video conference",
         "category": "video",
@@ -134,51 +116,12 @@ PROFILES: list[dict[str, Any]] = [
         },
     },
     {
-        "slug": "fortnite",
-        "name": "Fortnite",
-        "category": "games",
-        "position": 5,
-        "options": {
-            "preset": "fortnite",
-            "report_interval_s": 10,
-            "max_rtt_ms": 300,
-            "max_jitter_ms": 30,
-            "max_loss_pct": 1,
-        },
-    },
-    {
-        "slug": "call-of-duty",
-        "name": "Call of Duty",
-        "category": "games",
-        "position": 6,
-        "options": {
-            "preset": "call-of-duty",
-            "report_interval_s": 10,
-            "max_rtt_ms": 300,
-            "max_jitter_ms": 30,
-            "max_loss_pct": 1,
-        },
-    },
-    {
         "slug": "remote-desktop",
         "name": "Remote desktop",
         "category": "enterprise",
-        "position": 7,
+        "position": 5,
         "options": {
             "preset": "remote-desktop",
-            "report_interval_s": 10,
-            "max_rtt_ms": 300,
-            "max_jitter_ms": 30,
-            "max_loss_pct": 1,
-        },
-    },
-    {
-        "slug": "market-data",
-        "name": "Market data",
-        "category": "enterprise",
-        "position": 8,
-        "options": {
-            "preset": "market-data",
             "report_interval_s": 10,
             "max_rtt_ms": 300,
             "max_jitter_ms": 30,
@@ -249,14 +192,16 @@ def route_is_physical(route_text: str, interface: str) -> bool:
 
 VOICE_PRESETS = {"voip-g711", "voip-g711a", "voip-g729", "voip-g723"}
 PRESETS = {item["slug"] for item in PROFILES}
+# Presets taken off Real-Time Application Health. Their stored results can still be read,
+# but they cannot be started, and any run still going is stopped by ensure_profiles.
+RETIRED_PRESETS = {"voip-g723", "fortnite", "call-of-duty", "market-data"}
 MAX_RATE_PPS = 200
 MAX_DURATION_SECONDS = 3600
-CATEGORY_ORDER = ("voice", "video", "enterprise", "games")
+CATEGORY_ORDER = ("voice", "video", "enterprise")
 CATEGORY_NAMES = {
     "voice": "Voice",
     "video": "Video",
     "enterprise": "Enterprise apps",
-    "games": "Games",
 }
 
 
@@ -377,6 +322,16 @@ def ensure_profiles(db: Session) -> list[SyntheticProfile]:
             row.name = item["name"]
             row.position = item["position"]
             row.options = item["options"]
+    retired = db.scalars(
+        select(SyntheticRun).where(
+            SyntheticRun.mode.in_(("continuous", "manual")),
+            SyntheticRun.status.in_(("running", "pending")),
+            SyntheticRun.profile_slug.in_(RETIRED_PRESETS),
+        )
+    ).all()
+    for run in retired:
+        run.status = "stopped"
+        run.finished_at = datetime.now(timezone.utc)
     for run in db.scalars(select(SyntheticRun).where(SyntheticRun.mode == "continuous", SyntheticRun.status.in_(("running", "pending")))).all():
         defaults = by_slug.get(run.profile_slug)
         if not defaults:

@@ -17,6 +17,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.models import Monitor, Network, NetworkKind, ResultStatus, StressRun, SyntheticProfile, SyntheticRun, SyntheticSample, Test, TestResult, User
 from app.synthetic import (
+    PRESETS,
     SOFTWARE,
     apply_options,
     build_report,
@@ -81,7 +82,7 @@ def _now() -> datetime:
 def _profile(db: Session, slug: str) -> SyntheticProfile:
     ensure_profiles(db)
     row = db.get(SyntheticProfile, slug)
-    if row is None:
+    if row is None or slug not in PRESETS:
         raise HTTPException(status_code=404, detail="Unknown traffic type")
     return row
 

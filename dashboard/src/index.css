@@ -1645,6 +1645,12 @@ button:hover,
   width: 5.5rem;
 }
 
+.web-service-table .field-hint {
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  max-width: 11rem;
+}
+
 .settings-block h3,
 h3.settings-block {
   margin: 0 0 0.35rem;

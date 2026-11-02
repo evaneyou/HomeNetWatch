@@ -85,6 +85,8 @@ export type PathTrace = {
     rpki: string | null;
     as_path_announced: AsChip[];
     path_match: boolean | null;
+    /** The announced path starts at the agent's own provider; otherwise it is the path seen from elsewhere. */
+    via_isp?: boolean;
     stable_days: number | null;
   };
   history: Record<string, (number | null)[]>;

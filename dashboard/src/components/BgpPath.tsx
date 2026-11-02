@@ -82,13 +82,22 @@ export function bgpVerdict(trace: PathTrace): BgpVerdict | null {
     return {
       tone: "ok",
       title: "Traffic reaches the right network",
-      body: "The two paths match. An exchange point does not appear in BGP, which is expected.",
+      body: trace.bgp.via_isp
+        ? "The route BGP shows from your provider matches the trace. An exchange point does not appear in BGP, which is expected."
+        : "The two paths match. An exchange point does not appear in BGP, which is expected.",
+    };
+  }
+  if (trace.bgp.via_isp) {
+    return {
+      tone: "ok",
+      title: "Traffic reaches the right network",
+      body: `Your packets end in ${originChip.label}, the network BGP says owns this prefix. The route shown starts at your provider, as public route collectors see it; the trace took a different way in between.`,
     };
   }
   return {
     tone: "ok",
     title: "Traffic reaches the right network",
-    body: `Your packets end in ${originChip.label}, the network BGP says owns this prefix. The networks in between differ, which is common: BGP shows the path as seen from elsewhere on the internet.`,
+    body: `Your packets end in ${originChip.label}, the network BGP says owns this prefix. No public route collector sees a route through your provider, so the path shown is the most common one from elsewhere on the internet. The networks in between differ for that reason.`,
   };
 }
 

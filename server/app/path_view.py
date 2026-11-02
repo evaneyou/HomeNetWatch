@@ -443,6 +443,8 @@ def build_trace(
             "rpki": None,
             "as_path_announced": announced_items,
             "path_match": path_match,
+            # True when the announced path starts at the agent's own provider, so both paths begin in the same place.
+            "via_isp": bool(announced) and first_asn is not None and announced[0] == first_asn,
             "stable_days": None,
         },
         "network_count": len(public_groups) if not asn_count else asn_count,

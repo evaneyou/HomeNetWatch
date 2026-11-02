@@ -34,25 +34,6 @@ type Profile = {
   continuous: Continuous | null;
 };
 
-type Run = {
-  id: string;
-  name: string;
-  links: string[];
-  duration_seconds: number | null;
-  status: string;
-  started_at: string;
-};
-
-type ReportColumn = {
-  link: string;
-  label: string;
-  intervals: number;
-  rtt_avg_ms: number | null;
-  jitter_ms: number | null;
-  loss_pct: number | null;
-  verdict: string;
-};
-
 const OPEN_KEY = "app-health-open-rows";
 
 export default function SyntheticPage() {
@@ -93,17 +74,12 @@ function Profiles({
     queryKey: ["synthetic-profiles", monitorId],
     queryFn: () => api.syntheticProfiles(monitorId) as Promise<{ profiles: Profile[] }>,
   });
-  const runsQ = useQuery({
-    queryKey: ["synthetic-runs", monitorId],
-    queryFn: () => api.syntheticRuns(monitorId) as Promise<Run[]>,
-  });
   const profiles = profilesQ.data?.profiles ?? [];
   const groups = groupPresets(profiles);
   const ids = groups.flatMap((group) => group.items.map((item) => item.slug));
   const [openIds, setOpenIds] = useState<string[] | null>(null);
   const open = new Set(openIds ?? initialOpenIds(ids, readOpen()));
   const anyOpen = ids.some((id) => open.has(id));
-  const [reportId, setReportId] = useState<string | null>(null);
 
   useEffect(() => {
     if (openIds !== null || ids.length === 0) return;
@@ -118,7 +94,6 @@ function Profiles({
   if (profilesQ.isLoading) return <p className="app-health-intro">Loading traffic types…</p>;
   if (profilesQ.isError) return <p className="app-health-intro">Could not load traffic types.</p>;
 
-  const runs = runsQ.data ?? [];
   return (
     <>
       <div className="app-health-toolbar">
@@ -171,26 +146,6 @@ function Profiles({
         </section>
       ))}
       </div>
-      {runs.length > 0 ? (
-        <section className="app-health-card app-health-runs">
-          <h3>Timed runs</h3>
-          {runs.map((run) => (
-            <button
-              key={run.id}
-              className="app-health-run"
-              type="button"
-              aria-expanded={reportId === run.id}
-              onClick={() => setReportId((current) => (current === run.id ? null : run.id))}
-            >
-              <span>
-                {run.name} · {pathPhrase(run.links)} · {run.duration_seconds ?? "—"} s
-              </span>
-              <span className={`app-health-badge ${runTone(run.status)}`}>{runLabel(run.status)}</span>
-            </button>
-          ))}
-          {reportId ? <Report runId={reportId} /> : null}
-        </section>
-      ) : null}
     </>
   );
 }
@@ -234,25 +189,6 @@ function PresetRow({
   );
 }
 
-function Report({ runId }: { runId: string }) {
-  const reportQ = useQuery({
-    queryKey: ["synthetic-report", runId],
-    queryFn: () => api.syntheticReport(runId) as Promise<{ name: string; links: ReportColumn[] }>,
-  });
-  if (reportQ.isLoading) return <p className="app-health-note">Building the report…</p>;
-  if (reportQ.isError || !reportQ.data) return <p className="app-health-note">Could not build the report.</p>;
-  return (
-    <div className="app-health-report">
-      <p>{reportQ.data.name}</p>
-      {reportQ.data.links.map((column) => (
-        <p key={column.link}>
-          {column.label} · {fmt(column.rtt_avg_ms)} ms · {fmt(column.jitter_ms)} ms jitter · {fmt(column.loss_pct)}% · {column.verdict}
-        </p>
-      ))}
-    </div>
-  );
-}
-
 function readOpen(): string[] | null {
   try {
     const raw = sessionStorage.getItem(OPEN_KEY);
@@ -291,22 +227,4 @@ function pathPhrase(links: string[]): string {
   if (wifi) return "Wi-Fi";
   if (wired) return "wired";
   return "both paths";
-}
-
-function runLabel(status: string): string {
-  if (status === "finished") return "done";
-  if (status === "pending" || status === "running" || status === "failed") return status;
-  return status;
-}
-
-function runTone(status: string): string {
-  if (status === "finished") return "done";
-  if (status === "failed") return "failed";
-  if (status === "running") return "running";
-  return "pending";
-}
-
-function fmt(value: number | null): string {
-  if (value == null) return "—";
-  return value >= 100 ? value.toFixed(0) : value.toFixed(1);
 }

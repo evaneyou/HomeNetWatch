@@ -55,7 +55,7 @@ from app.schemas import (
     WifiObservationOut,
 )
 from app.services.stability import cell_quorum, service_status
-from app.synthetic import PRESETS
+from app.synthetic import PRESETS, RETIRED_PRESETS
 
 router = APIRouter(prefix="/api/v1")
 
@@ -625,7 +625,7 @@ def _synthetic_slug(probe: str) -> Optional[str]:
     if not probe.startswith("rtnp:"):
         return None
     slug = probe[5:]
-    if slug not in PRESETS:
+    if slug not in PRESETS and slug not in RETIRED_PRESETS:
         raise ValueError("Invalid probe filter")
     return slug
 

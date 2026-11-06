@@ -1,6 +1,6 @@
 # HomeNetWatch: notes for Claude Code
 
-Home network monitoring. Pi remote agents push test results to a FastAPI + Postgres server. A React dashboard reads the server's API. `SPEC.md` is the source of truth for architecture, API shape and phases; read it before larger changes.
+Home network monitoring. Raspberry Pi and Android TV remote agents push test results to a FastAPI + Postgres server. A React dashboard reads the server's API. `SPEC.md` is the source of truth for architecture, API shape and phases; read it before larger changes.
 
 ## Architecture rules
 
@@ -14,11 +14,12 @@ Home network monitoring. Pi remote agents push test results to a FastAPI + Postg
 
 - `server/`: FastAPI app (`app/`), Alembic migrations (`alembic/`), seed, tests (`tests/`)
 - `dashboard/`: Vite React UI (`src/`)
-- `monitor/`: Raspberry Pi agent package (setup page, enrollment, checks, install scripts)
-- `site/`: the static landing page served at `/welcome/` (description, docs links, bio, one-click guest demo). Plain HTML, CSS and JS; no build.
-- `deploy/`, `docker-compose.yml`, `docker-compose.prod.yml`, `wireguard/`: stack and production deployment
-- `docs/deploy.md`: production deployment guide
-- `scripts/`: backup, local-up, test-server, bump-version
+- `monitor/`: Raspberry Pi agent package (setup page, enrollment, checks, install scripts). Bump `AGENT_VERSION` in `monitor/agent_state.py` when it changes
+- `android/`: Android TV agent (Kotlin). Raise `versionCode` and `versionName` in `android/app/build.gradle.kts` to publish an update; CI builds, tests and releases the APK
+- `site/`: the static landing page served at `/welcome/` and on `www.homenetwatch.com` (description, docs links, bio, one-click guest demo via `enter.html`). Plain HTML, CSS and JS; no build.
+- `deploy/`, `docker-compose.yml`, `docker-compose.prod.yml`, `wireguard/`, `librespeed/`: stack and production deployment (Caddy, RTNP receiver image, UDP 8998 allowlist units)
+- `docs/deploy.md` (any server) and `docs/deploy-oracle.md` (Oracle Cloud Always Free): production deployment guides
+- `scripts/`: deploy, backup, local-up, test-server, bump-version, build-rtnp, rtnp-allowlist, update-geoip
 
 ## Commands
 
@@ -41,13 +42,13 @@ npm run dev                                  # http://127.0.0.1:3847
 npm run build                                # type-check + production build (CI runs this)
 ```
 
-CI (`.github/workflows/ci.yml`) runs server tests, the dashboard build and `docker compose config`. Run the same checks before opening a PR.
+CI (`.github/workflows/ci.yml`) runs server tests, the dashboard build and `docker compose config`; `.github/workflows/android.yml` runs the Android unit tests and builds the APK (`cd android && ./gradlew testDebugUnitTest assembleDebug`). Run the same checks before opening a PR.
 
 ## Conventions
 
 - Conventional commits: `feat:`, `fix:`, `docs:`, `test:`, `chore:`.
 - Add or update tests for any behavior change. Server tests live in `server/tests/`.
-- Update `README.md`, `SPEC.md` or the component README when behavior changes.
+- Update `README.md`, `SPEC.md` or the component README when behavior changes, and add a line under **Unreleased** in `CHANGELOG.md` for user-visible changes.
 - New database changes need an Alembic migration. Check that dev and prod would end at the same head.
 - Seeds are idempotent. Production is seeded with `python -m app.seed --users-only`, never the demo seed.
 

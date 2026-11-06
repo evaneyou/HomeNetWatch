@@ -1,8 +1,11 @@
 # Remote agent (Raspberry Pi)
 
 The agent runs on a Raspberry Pi or other Linux PC inside your home network. It serves a small
-setup page on the LAN, reports device health to the server, and runs the connectivity tests the
-server assigns to it: HTTP, ICMP ping, MTR, and Bandwidth Test.
+setup page on the LAN, reports device health to the server, and runs what the server assigns to it
+over the wired and Wi-Fi links: HTTP and web-service checks, ICMP ping, MTR path traces (including
+on-demand host traces), the Bandwidth Test and live Speed Test, real-time voice/video/remote-desktop
+flows with `rtnp-send`, Network Test stress sessions, Wi-Fi scans and Kismet capture, and on-demand
+LAN scans. It also watches its WireGuard tunnels and restores a dead one.
 
 The agent uses only the Python 3 standard library. Its version is `AGENT_VERSION` in
 [`agent_state.py`](./agent_state.py).
@@ -13,21 +16,25 @@ The agent uses only the Python 3 standard library. Its version is `AGENT_VERSION
 - Python 3 and root access for installation
 - Network access to the server (see [Network](#network))
 
-The installer adds `iputils-ping` and `mtr-tiny` if they are missing, plus `wireguard`
-and `iw` when a tunnel config is present.
+The installer adds `iputils-ping`, `mtr-tiny`, `iw`, `nmap` and `python3-scapy` if they are
+missing, `wireguard` when a tunnel config is present, and Kismet with `--kismet`. It compiles
+`rtnp_bind.c` when a C compiler is present (without it, Wi-Fi measurements would use the wired link).
+
+The real-time flows need the `rtnp-send` binary from
+[RTN_PackGen](https://github.com/evaneyou/RTN_PackGen). It is not committed: build it once with
+`./scripts/build-rtnp.sh` (Docker, cross-compiles for 64-bit ARM into `monitor/rtnp-send`) and
+`pack.sh` includes it. Use the same RTN_PackGen release as the server's receiver.
 
 ## Install
 
-1. In the dashboard open **Settings → Remote Agent Onboarding** and add the device. Note its
-   name and key. If you issue tunnels, save the wired tunnel as `wg0.conf` and the wireless tunnel
-   as `wg1.conf`.
-2. On a machine with this repository, build the package:
+1. On a machine with this repository, build the package:
 
    ```bash
    ./monitor/pack.sh        # writes monitor/dist/monitor.tar.gz
    ```
 
-3. Copy `monitor.tar.gz` (and any `wg0.conf` or `wg1.conf`) to the Pi, then install:
+2. Copy `monitor.tar.gz` to the Pi, then install (add `--kismet` for Airwaves capture on a second
+   Wi-Fi adapter):
 
    ```bash
    mkdir monitor && tar -xzf monitor.tar.gz -C monitor
@@ -35,9 +42,19 @@ and `iw` when a tunnel config is present.
    sudo ./install.sh
    ```
 
-4. From a PC on the same LAN open `http://<hostname>.local/` (or the Pi's IP address on port 80).
-5. Enter the device name, the server address and the device key, then choose **Connect**. The
-   device name must match the dashboard exactly, including capital letters.
+3. From a PC on the same LAN open `http://<hostname>.local/` (or the Pi's IP address on port 80).
+   The page shows this Pi's **installer code**.
+4. In the dashboard open **Settings → Remote Agent Onboarding** and register that installer code with
+   a device name (and an optional location). A registration is valid for 24 hours.
+5. On the setup page enter the server address (for example `https://hns.example.com`) and the
+   server's TLS key pins, then choose **Connect**. Print the pins on the server with
+   `docker compose exec agent-api python -m app.tls pins`.
+6. The Pi checks in over HTTPS on port 8848 with a signed request. Choose **Approve** on its card in
+   the dashboard (as a new agent, or to replace an existing one and keep its history and tunnel
+   address). The Pi receives its wired (`wg0`) and Wi-Fi (`wg1`) tunnels with the approval; no
+   `wgN.conf` files need copying.
+
+To start over on a Pi, run `sudo hnw-reset`. That clears `/etc/monitor/config.json`.
 
 ## Update
 
@@ -80,9 +97,11 @@ journalctl -u monitor -f
 
 | Direction | Destination | Purpose |
 |-----------|-------------|---------|
-| Outbound | Server `8847` (HTTP) or the WireGuard address `10.7.0.1` | Health reports and results |
 | Outbound | Server `8848` (HTTPS) | Enrollment check-in, with a pinned key |
-| Outbound | Server `51820/udp` | WireGuard tunnel |
+| Outbound | Server `51820/udp` | WireGuard tunnels (`wg0` wired, `wg1` Wi-Fi) |
+| Outbound, in the tunnel | `10.7.0.1` / `10.7.1.1` port `8847` | Health reports, config and results |
+| Outbound, in the tunnel | `10.7.0.1` / `10.7.1.1` port `8999` (TCP) and `8080` | RTNP control channel, LibreSpeed |
+| Outbound, outside the tunnel | Server public IP `8998/udp` | Real-time flow packets (measures the real ISP path) |
 | Inbound (LAN only) | Pi `80` | Setup page |
 
 Setup accepts HTTPS, or HTTP to a private LAN address.
@@ -96,12 +115,15 @@ Setup accepts HTTPS, or HTTP to a private LAN address.
 | `enrollment.py` | Identity, TLS pins, WireGuard keys, and enrollment |
 | `health.py` | Device health and the report loop |
 | `radio.py` | Wi-Fi survey upload and Kismet capture |
+| `kismet_view.py` | Turns Kismet JSON into the Airwaves upload |
+| `rf_spool.py` | SQLite queue for Airwaves uploads while the server is unreachable (5 days, at most 50 MB) |
 | `scheduler.py` | Due tests, on-demand traces, and synthetic traffic |
 | `checks.py` | HTTP, ping, MTR, and Bandwidth Test checks |
+| `speedtest.py` | Live Speed Test (speaks the LibreSpeed protocol and streams samples) |
 | `install.sh` | First install: packages, systemd unit, and tunnels when configs are present |
 | `update.sh` | Replaces the agent code and restarts `monitor` |
 | `repair-kismet-memory.sh` | Caps Kismet memory and enables the daily restart on an existing Pi |
-| `kismet-restart.timer` | Restarts Kismet once a day so the capture helper cannot grow without bound |
+| `kismet-restart.service`, `kismet-restart.timer` | Restart Kismet once a day so the capture helper cannot grow without bound |
 | `monitor.service` | `systemd` unit (runs with `CAP_NET_RAW` and `CAP_NET_BIND_SERVICE` only) |
 | `avahi-monitor.service` | Advertises the setup page as `<hostname>.local` |
 | `synthetic.py` | Real-time application traffic on the physical NIC |
@@ -111,4 +133,4 @@ Setup accepts HTTPS, or HTTP to a private LAN address.
 | `hnw-wifi-tune.service` | `systemd` oneshot unit that applies `tune_wifi.sh` after boot |
 | `lan_scan.py` | On-demand Scapy ARP + Nmap for Airwaves Security |
 | `rtnp_bind.c` | `LD_PRELOAD` shim that pins a measurement socket to one link; `install.sh` compiles it to `rtnp-bind.so` |
-| `pack.sh` | Builds `dist/monitor.tar.gz` |
+| `pack.sh` | Builds `dist/monitor.tar.gz` (adds `rtnp-send` when it is present) |

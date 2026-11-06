@@ -1,7 +1,8 @@
 # HomeNetWatch Android agent
 
 An Android (TV) version of the Raspberry Pi agent, for a device such as an NVIDIA Shield. It enrolls like a Pi, then
-runs a continuous two-way G.711 voice stream and the Speed Test over Wi-Fi, and reports to the server.
+runs the Real-Time Application Health flows (voice, video conference, remote desktop) and the Speed Test over Wi-Fi,
+and reports to the server. App version `0.5.0` (`versionName` in `app/build.gradle.kts`).
 
 **Status:** running on a real NVIDIA Shield (Android 11) as a live remote agent: enrollment, the WireGuard tunnel,
 health reports, the voice stream, the Speed Test, start on boot and self-updates all work there and on the Android TV
@@ -13,9 +14,10 @@ emulator.
   tunnel address (`10.7.0.1`): health reports, the voice stream's control channel and the Speed Test go through it.
   Android asks once on the TV ("Connection request") before an app may open a VPN; choose OK.
 - **Health report** every minute (or as set on the dashboard), which marks the agent online.
-- **Voice stream:** runs the bundled `rtnp-send` for each flow the dashboard turns on (Wi-Fi only) and relays each
-  interval to the server. The voice packets go straight to the server's public address over Wi-Fi, outside the
-  tunnel, as on the Pi. A flow that reports nothing for 3 intervals, or loses every packet for 6, is restarted.
+- **Application flows:** runs the bundled `rtnp-send` for each flow the dashboard turns on (Wi-Fi only): Voice
+  G.711 A-law, G.711 µ-law and G.729, Video conference and Remote desktop, timed as a real round trip
+  (`--meter rtt`). It relays each interval to the server. The flow packets go straight to the server's public
+  address (UDP 8998) over Wi-Fi, outside the tunnel, as on the Pi. A flow that reports nothing for 3 intervals, or loses every packet for 6, is restarted.
 - **Speed Test:** started from the dashboard's Speed Test page; LibreSpeed over the tunnel.
 - **Starts by itself** after a reboot, a power cut or an app update.
 - **Updates itself when you agree:** each time the app starts (or you choose Restart agent) it looks for a newer
@@ -78,8 +80,8 @@ every 5 seconds, over ordinary HTTPS, and only takes a setup key for that dashbo
 setup address the TV shows (for example `http://192.168.1.50:8080`) from a computer and follow the checklist there,
 pasting the setup key.
 
-Then allow the VPN connection on the TV, and turn on **Voice G.711** for the device (path **Wi-Fi**) in the
-dashboard's Real-Time Application Health settings.
+Then allow the VPN connection on the TV, and turn on the flows you want for the device (for example
+**Voice G.711 A-law**, path **Wi-Fi**) in the dashboard's **Settings → Real-Time Application Health**.
 
 The app signs its check-in, including `platform: android` and the name. The server gives it one tunnel, does not
 assign the Pi's HTTP and ping checks, and accepts only Wi-Fi tests for it.

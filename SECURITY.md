@@ -26,12 +26,15 @@ The defaults in `.env.example` and `docker-compose.yml` are for local developmen
 expose any part of this stack beyond your own machine:
 
 - Set a long random `SECRET_KEY`.
-- Change `BOOTSTRAP_ADMIN_PASSWORD` and `BOOTSTRAP_VIEWER_PASSWORD`, then re-run the seed.
+- Change `BOOTSTRAP_ADMIN_PASSWORD` and `BOOTSTRAP_VIEWER_PASSWORD`, then re-run the seed. The guest
+  account (`BOOTSTRAP_GUEST_PASSWORD`) is a read-only public demo; set a private password if you do not want one.
 - Change `POSTGRES_PASSWORD` and do not publish the Postgres port (`55432`).
 - Serve the dashboard and API over HTTPS and set `COOKIE_SECURE=true`.
 - Set `CORS_ORIGINS` to the exact origin of your dashboard.
 - Keep a copy of the agent API's `backup-key.pem` off the server (see [`server/README.md`](./server/README.md)).
 - Restrict the WireGuard UDP port (`51820`) and the agent API port (`8848`) to the networks that need them.
+- Install `deploy/rtnp-allowlist.timer` so the public RTNP port (`8998/udp`) accepts only current WireGuard
+  peers (see [`docs/deploy.md`](./docs/deploy.md#allow-udp-8998-only-from-your-agents)).
 
 For a server deployment follow [`docs/deploy.md`](./docs/deploy.md); it uses the
 production overlay, which closes the database, API and dashboard ports and serves HTTPS.

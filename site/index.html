@@ -24,7 +24,7 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap"
     />
-    <link rel="stylesheet" href="site.css?v=0.6.3" />
+    <link rel="stylesheet" href="site.css?v=0.6.11" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
@@ -346,17 +346,30 @@
         </div>
       </section>
 
-      <section class="author" aria-labelledby="about-author">
-        <p class="eyebrow" id="about-author">About the author</p>
-        <div>
+      <section class="author" id="about-author" aria-label="About the author">
+        <div class="author-rail">
+          <span class="author-photo-frame">
+            <img class="author-photo" src="evan-you.jpg" alt="Evan You" width="120" height="120" />
+          </span>
+          <div class="author-roles">
+            <p class="author-rank">Leader</p>
+            <p>Builder</p>
+            <p>Strategist</p>
+            <p>Mentor</p>
+          </div>
+        </div>
+        <div class="author-body">
+          <h2>Evan You</h2>
+          <p class="role">Infrastructure, cloud, networking, and cybersecurity.</p>
           <p>
-            Evan You. An IT degree from Rochester Institute of Technology, then thirty years in infrastructure, cloud,
-            networking, and cybersecurity. That practice is what the written rules are made of. The platform above is
-            the work.
+            An IT degree from Rochester Institute of Technology, then thirty years in charge of those systems, is what
+            he turned into written instructions: how a network fails, what stays private, and what must pass before a
+            change ships. Coding agents built this platform from those instructions.
           </p>
           <p class="author-aside">
-            Away from this project: a five-year member of the Golf Mission Association, and a weekly podcast that turns
-            Golf Genius match data into a match report.
+            Away from this project: a five-year member of the
+            <a href="https://golfmissiontour.com/" target="_blank" rel="noopener">Golf Mission Association</a>, and a
+            weekly podcast that turns Golf Genius match data into a match report.
           </p>
           <div class="proof-links">
             <a class="proof-link" href="https://www.linkedin.com/in/evan-you-9509603" target="_blank" rel="noopener">LinkedIn &nearr;</a>

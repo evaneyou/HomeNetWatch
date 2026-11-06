@@ -244,18 +244,85 @@ h1 {
 
 .author {
   display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 8px 28px;
+  grid-template-columns: 168px 1fr;
   margin-top: 22px;
-  padding: 18px 20px 8px;
   border: 1px solid var(--line);
   border-radius: 16px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.author-rail {
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 22px 16px;
+}
+
+.author-photo-frame {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  display: block;
+}
+
+.author-photo {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: center 6%;
+  transform: scale(1.45);
+  transform-origin: center 15%;
+  display: block;
+}
+
+.author-roles {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.author-body {
+  padding: 18px 20px 8px;
+}
+
+.author h2 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+
+.author .role {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .author p {
   margin: 0 0 10px;
   color: var(--soft);
   font-size: 14.5px;
+}
+
+.author .author-roles p {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+
+.author .author-rank {
+  color: var(--mint);
 }
 
 .author-aside {
@@ -522,11 +589,6 @@ code {
     grid-template-columns: 1fr 1fr;
   }
 
-  .author {
-    grid-template-columns: 1fr;
-    gap: 4px;
-  }
-
   .topology-shell {
     grid-template-columns: 1fr;
   }
@@ -586,6 +648,25 @@ code {
 
   .inspector-pane {
     padding: 20px;
+  }
+}
+
+@media (max-width: 640px) {
+  .author {
+    grid-template-columns: 1fr;
+  }
+
+  .author-rail {
+    flex-direction: row;
+    justify-content: flex-start;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 16px;
+  }
+
+  .author-photo-frame {
+    width: 88px;
+    height: 88px;
   }
 }
 

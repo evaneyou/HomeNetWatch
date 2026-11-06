@@ -57,7 +57,7 @@ problem starts: DNS, TCP, TLS, the server's first byte, the measurement tunnel, 
   up to 2 years.
 - **Three roles.** `admin` can change settings, run scans and approve devices; `viewer` is read-only;
   `guest` is the public read-only demo: identifying fields (home and LAN addresses, city, device and wireless
-  names) are blurred, and the session ends after 3 minutes idle. The **Open live dashboard** button on
+  names) are replaced with `#` on the server and shown blurred, and the session ends after 3 minutes idle. The **Open live dashboard** button on
   www.homenetwatch.com signs a visitor in as the guest with no password to type.
 
 ## How it works

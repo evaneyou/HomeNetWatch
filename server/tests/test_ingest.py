@@ -280,12 +280,12 @@ def test_health_stores_link_interfaces(client: TestClient, db):
     login(guest, "guest", "guest")
     hidden = guest.get(f"/api/v1/monitors/{monitor.id}")
     assert hidden.status_code == 200, hidden.text
-    assert hidden.json()["public_ip"] == BLUR + "1.1.1.1"
-    assert hidden.json()["isp"] == BLUR + "Example Fiber"
-    assert hidden.json()["lan_ip"] == BLUR + "10.0.0.50"
-    assert hidden.json()["wired_iface"] == BLUR + "eth0"
-    assert hidden.json()["wifi_link_iface"] == BLUR + "wlan0"
-    assert hidden.json()["wifi_radio_iface"] == BLUR + "wlan1"
+    assert hidden.json()["public_ip"] == BLUR + "#.#.#.#"
+    assert hidden.json()["isp"] == BLUR + "####### #####"
+    assert hidden.json()["lan_ip"] == BLUR + "##.#.#.##"
+    assert hidden.json()["wired_iface"] == BLUR + "####"
+    assert hidden.json()["wifi_link_iface"] == BLUR + "#####"
+    assert hidden.json()["wifi_radio_iface"] == BLUR + "#####"
     assert hidden.json()["airwave_mode"] == "kismet"
 
     dropped = client.post(

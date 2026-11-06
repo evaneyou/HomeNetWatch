@@ -287,7 +287,7 @@ def test_guest_path_view_only_hides_source_ip():
     guest_trace = redact(trace, UserRole.guest)
 
     # Source hop IP is masked
-    assert guest_trace["hops"][0]["ip"] == BLUR + "10.0.0.1"
+    assert guest_trace["hops"][0]["ip"] == BLUR + "##.#.#.#"
     assert guest_trace["hops"][0]["name"] == "Home network"
     assert guest_trace["hops"][0]["asn_label"] == "LAN"
 

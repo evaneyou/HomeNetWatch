@@ -3,18 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Evan You: technology leadership in the age of AI | HomeNetWatch as proof</title>
+    <title>HomeNetWatch | A network platform built by AI from written operating rules</title>
     <meta
       name="description"
-      content="Evan You leads organizations through AI-augmented delivery. HomeNetWatch, a production system built in nine days under enterprise-style controls, is the working proof."
+      content="HomeNetWatch watches a real home network: sensors, tunnels, path, speed, and wireless security. Coding agents built it from written institutional knowledge, with review and tests on every change."
     />
     <meta name="theme-color" content="#080b11" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="HomeNetWatch" />
-    <meta property="og:title" content="Evan You: leading organizations through AI-augmented delivery" />
+    <meta property="og:title" content="HomeNetWatch: a network platform built by AI from written operating rules" />
     <meta
       property="og:description"
-      content="Thirty years across IT, infrastructure, cloud, networking and cybersecurity, applied to changing how teams build and deliver. HomeNetWatch is the proof."
+      content="Sensors, path, speed, and wireless security in production. Coding agents wrote most of it. The shape came from rules written down first: how networks fail, what stays private, and what must pass before a change ships."
     />
     <meta property="og:image" content="https://live.homenetwatch.com/welcome/homenetwatch.png" />
     <link rel="icon" type="image/png" href="icon.png" />
@@ -24,7 +24,7 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap"
     />
-    <link rel="stylesheet" href="site.css?v=0.6.2" />
+    <link rel="stylesheet" href="site.css?v=0.6.3" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
@@ -49,13 +49,41 @@
 
     <main id="main" class="wrap main-stage">
       <div class="intro">
-        <p class="eyebrow">Evan You &middot; 30 Years in Infrastructure, Cloud &amp; Security</p>
-        <h1>A production network monitor built in nine days with AI. Click any layer to inspect how.</h1>
+        <p class="eyebrow">HomeNetWatch &middot; production home network platform</p>
+        <h1>A live network platform, built by AI that started from the operating rules.</h1>
         <p class="lead">
-          No slideware. Click through the live system topology below to see the architectural choices, AI guardrails,
-          and verifiable Git record behind the build.
+          Sensors on the home network, isolated measurement tunnels, path and speed, wireless security, and a dashboard
+          you can open. Coding agents wrote most of it. They worked from institutional knowledge written down first:
+          how a network actually fails, what has to stay private, and which checks must pass before a change ships.
         </p>
       </div>
+
+      <section class="caps" aria-label="What the platform does">
+        <article class="cap">
+          <b>Path View</b>
+          <span>Traceroute grouped into networks, set next to the BGP path public collectors see from the provider.</span>
+        </article>
+        <article class="cap">
+          <b>Speed Test</b>
+          <span>Live download and upload on Wired or Wi-Fi. A link the device does not have stays visible and disabled.</span>
+        </article>
+        <article class="cap">
+          <b>Airwaves</b>
+          <span>Nearby Wi-Fi, clients, and wireless security from a radio that listens and never joins a network.</span>
+        </article>
+        <article class="cap">
+          <b>Internet checks</b>
+          <span>HTTP, ICMP, and path traces to this server and to the public services a household actually uses.</span>
+        </article>
+        <article class="cap">
+          <b>Real-time health</b>
+          <span>Voice and video streams measured on the link, queued so the test does not create the lag it reports.</span>
+        </article>
+        <article class="cap">
+          <b>Server Health</b>
+          <span>Disk forecast, encrypted backups, and the host the platform runs on, separate from the home network.</span>
+        </article>
+      </section>
 
       <section class="topology-shell" aria-label="Interactive System Architecture">
         <div class="diagram-pane">
@@ -123,27 +151,10 @@
             >
               <span class="node-idx">04</span>
               <span class="node-title">
-                <b>Multi-Agent AI Delivery &amp; Guardrails</b>
-                <span>160+ reviewed PRs, 250+ tests, SPEC.md rules, bounded Gemini RCA</span>
+                <b>Institutional knowledge, then AI coding</b>
+                <span>SPEC.md, house rules, tests, and review before anything reaches production</span>
               </span>
-              <span class="node-tag">Governance</span>
-            </button>
-
-            <button
-              type="button"
-              class="node-btn"
-              role="tab"
-              id="tab-author"
-              aria-selected="false"
-              aria-controls="panel-author"
-              data-node="author"
-            >
-              <span class="node-idx">05</span>
-              <span class="node-title">
-                <b>Evan You &middot; Builder &amp; Leader</b>
-                <span>Why 30 years of operational judgment makes AI speed safe</span>
-              </span>
-              <span class="node-tag">About</span>
+              <span class="node-tag">Method</span>
             </button>
           </div>
         </div>
@@ -282,7 +293,7 @@
             </div>
           </article>
 
-          <!-- Panel 04: AI Governance -->
+          <!-- Panel 04: How it was built -->
           <article
             class="inspector-card"
             id="panel-ai"
@@ -292,82 +303,67 @@
             hidden
           >
             <div>
-              <div class="inspector-tag">04 / AI Engineering Governance</div>
-              <h2>AI Builds at Speed. Humans &amp; Rules Decide.</h2>
+              <div class="inspector-tag">04 / How it was built</div>
+              <h2>Coding agents, working inside written knowledge</h2>
               <p>
-                Instead of single-prompt "vibe coding," multiple AI coding tools worked as a coordinated squad on
-                isolated Git branches under written house rules (<code>CLAUDE.md</code> &amp; <code>SPEC.md</code>).
-                Every change went through pull request review, 250+ automated server tests in throwaway containers, and
-                TypeScript build gates. On-demand Gemini powers KPI root-cause analysis and Fault Simulation.
+                The platform was not one open prompt. Architecture, security, and delivery rules were written first in
+                <code>SPEC.md</code> and <code>CLAUDE.md</code>: remote agents push, browsers only read, roles are
+                enforced on the server, secrets never enter a public repo, and an alert names the cause rather than
+                every symptom under it. Several coding agents then implemented on isolated branches. Each change went
+                through pull-request review, server tests in a throwaway database, and a TypeScript build before it
+                reached the live system.
               </p>
               <div class="tradeoff-box">
-                <strong>Cost &amp; Risk Control</strong>
+                <strong>What the rules refused</strong>
                 <span>
-                  Held back continuous 24/7 autonomous LLM log polling to prevent runaway token burn; deterministic
-                  correlation triggers run first, and guests receive a realistic read-only walkthrough.
+                  No always-on language model reading logs. Deterministic correlation runs first. Gemini is on demand,
+                  for a root-cause note or a fault walkthrough, and a guest session is read-only with the home address
+                  removed on the server.
                 </span>
               </div>
             </div>
             <div class="proof-links">
               <a
                 class="proof-link"
-                href="https://github.com/evaneyou/homenetwatch/pulls?q=is%3Apr+is%3Amerged"
+                href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md"
                 target="_blank"
                 rel="noopener"
-              >160+ Merged PRs &nearr;</a>
+              >SPEC.md &nearr;</a>
               <a
                 class="proof-link"
                 href="https://github.com/evaneyou/homenetwatch/blob/main/CLAUDE.md"
                 target="_blank"
                 rel="noopener"
-              >AI House Rules (CLAUDE.md) &nearr;</a>
-              <a class="proof-link primary" href="https://live.homenetwatch.com/" data-demo>Try guest demo &rarr;</a>
+              >House rules &nearr;</a>
+              <a
+                class="proof-link"
+                href="https://github.com/evaneyou/homenetwatch/pulls?q=is%3Apr+is%3Amerged"
+                target="_blank"
+                rel="noopener"
+              >Reviewed pull requests &nearr;</a>
+              <a class="proof-link primary" href="https://live.homenetwatch.com/" data-demo>Open the platform &rarr;</a>
             </div>
           </article>
+        </div>
+      </section>
 
-          <!-- Panel 05: Author -->
-          <article
-            class="inspector-card"
-            id="panel-author"
-            role="tabpanel"
-            aria-labelledby="tab-author"
-            data-panel="author"
-            hidden
-          >
-            <div>
-              <div class="inspector-tag">05 / About the Builder</div>
-              <h2>Evan You &mdash; 30 Years of Systems Judgment</h2>
-              <p>
-                Grounded by an IT degree from RIT and three decades across infrastructure, cloud, networking, and
-                cybersecurity. AI now handles the typing; experience provides the architectural steering, security
-                validation, and operational judgment that make speed trustworthy. I work with leaders and engineering
-                teams to adopt AI-augmented delivery—assessing workflows, proving on real systems, governing risk, and
-                enabling culture.
-              </p>
-              <div class="tradeoff-box">
-                <strong>Away from the Keyboard</strong>
-                <span>
-                  Five-year member of the Golf Mission Association. Built an automated weekly podcast that pulls match
-                  data from Golf Genius and turns it into deep, accurate, entertaining match analysis.
-                </span>
-              </div>
-            </div>
-            <div class="proof-links">
-              <a
-                class="proof-link"
-                href="https://www.linkedin.com/in/evan-you-9509603"
-                target="_blank"
-                rel="noopener"
-              >LinkedIn Profile &nearr;</a>
-              <a class="proof-link" href="https://github.com/evaneyou" target="_blank" rel="noopener">GitHub (@evaneyou) &nearr;</a>
-              <a
-                class="proof-link"
-                href="https://open.spotify.com/show/0AJatn9IzYBylJqaAYOXNC"
-                target="_blank"
-                rel="noopener"
-              >Listen to the Golf Podcast &nearr;</a>
-            </div>
-          </article>
+      <section class="author" aria-labelledby="about-author">
+        <p class="eyebrow" id="about-author">About the author</p>
+        <div>
+          <p>
+            Evan You. An IT degree from Rochester Institute of Technology, then thirty years in infrastructure, cloud,
+            networking, and cybersecurity. That practice is what the written rules are made of. The platform above is
+            the work.
+          </p>
+          <p class="author-aside">
+            Away from this project: a five-year member of the Golf Mission Association, and a weekly podcast that turns
+            Golf Genius match data into a match report.
+          </p>
+          <div class="proof-links">
+            <a class="proof-link" href="https://www.linkedin.com/in/evan-you-9509603" target="_blank" rel="noopener">LinkedIn &nearr;</a>
+            <a class="proof-link" href="https://github.com/evaneyou" target="_blank" rel="noopener">GitHub &nearr;</a>
+            <a class="proof-link" href="https://open.spotify.com/show/0AJatn9IzYBylJqaAYOXNC" target="_blank" rel="noopener">Golf podcast &nearr;</a>
+          </div>
         </div>
       </section>
     </main>
@@ -379,14 +375,14 @@
           <a href="https://github.com/evaneyou/homenetwatch/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>.
         </span>
         <div class="foot-links">
-          <a href="https://github.com/evaneyou/homenetwatch" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://live.homenetwatch.com/" data-demo>Live platform</a>
+          <a href="https://github.com/evaneyou/homenetwatch" target="_blank" rel="noopener">Source</a>
           <a href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md" target="_blank" rel="noopener">SPEC.md</a>
-          <a href="https://www.linkedin.com/in/evan-you-9509603" target="_blank" rel="noopener">LinkedIn</a>
-          <a href="https://open.spotify.com/show/0AJatn9IzYBylJqaAYOXNC" target="_blank" rel="noopener">Golf Podcast</a>
+          <a href="#about-author">About the author</a>
         </div>
       </div>
     </footer>
 
-    <script src="demo.js?v=0.6.2" defer></script>
+    <script src="demo.js?v=0.6.3" defer></script>
   </body>
 </html>

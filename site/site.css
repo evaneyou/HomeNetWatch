@@ -215,6 +215,60 @@ h1 {
   margin: 0;
 }
 
+.caps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.cap {
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.cap b {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.cap span {
+  display: block;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.author {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 8px 28px;
+  margin-top: 22px;
+  padding: 18px 20px 8px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.author p {
+  margin: 0 0 10px;
+  color: var(--soft);
+  font-size: 14.5px;
+}
+
+.author-aside {
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.author .proof-links {
+  border-top: 0;
+  padding-top: 2px;
+  margin-bottom: 12px;
+}
+
 /* Interactive Topology Canvas */
 .topology-shell {
   display: grid;
@@ -464,6 +518,15 @@ code {
 
 /* Responsive */
 @media (max-width: 900px) {
+  .caps {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .author {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
   .topology-shell {
     grid-template-columns: 1fr;
   }
@@ -502,6 +565,10 @@ code {
 
   .main-stage {
     padding: 28px 0 32px;
+  }
+
+  .caps {
+    grid-template-columns: 1fr;
   }
 
   .topology-shell {

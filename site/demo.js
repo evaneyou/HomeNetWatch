@@ -1,5 +1,5 @@
 // One click into the live demo: sign in as the read-only guest, then open the dashboard.
-// Also drives the interactive 5-layer topology tabs on the welcome page.
+// Also drives the interactive system-layer tabs on the welcome page.
 (function () {
   var APP = "https://live.homenetwatch.com";
   var buttons = document.querySelectorAll("[data-demo]");

@@ -15,10 +15,11 @@ export default function AboutPage() {
           is healthy, what is degraded, and where along the path a problem starts.
         </p>
         <p>
-          The agent only makes outbound connections. The dashboard talks to the server and never
-          to the Pi. Checks cover DNS, TCP, TLS, ping, path traces, file transfer, web services,
-          and Wi-Fi scans. An admin can change settings and approve devices. A viewer is
-          read-only.
+          The agents only make outbound connections. The dashboard talks to the server and never
+          to the agents. Checks cover DNS, TCP, TLS, ping, path traces, the Bandwidth Test and
+          Speed Test, real-time voice and video, web services, and Wi-Fi scans. An admin can change
+          settings and approve devices. A viewer is read-only. A guest can look at every page
+          read-only, with identifying details hidden.
         </p>
       </section>
 

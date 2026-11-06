@@ -12,10 +12,6 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
-- **Server-only sites stay out of the repository:** `deploy/Caddyfile` imports `deploy/local/*.caddy` and the
-  production overlay mounts that folder, and an optional `docker-compose.local.yml` can be added to `COMPOSE_FILE`.
-  Git ignores both, so extra sites and services on the same server no longer have to be edited into tracked files
-  (which blocked `git pull`). See the deploy guide, Server-only sites and services.
 - **Guest view: hidden values are `#` and blurred:** identifying values in a guest's view (home and LAN addresses,
   the city, device and wireless names) are still replaced letter by letter with `#` on the server, so the real value
   never reaches the browser, and the dashboard now also blurs them so a guest can see that something is hidden. The
@@ -47,6 +43,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Added
 
+- **Server-only sites stay out of the repository:** `deploy/Caddyfile` imports `deploy/local/*.caddy` and the
+  production overlay mounts that folder, and an optional `docker-compose.local.yml` can be added to `COMPOSE_FILE`.
+  Git ignores both, so extra sites and services on the same server no longer have to be edited into tracked files
+  (which blocked `git pull`). See the deploy guide, Server-only sites and services.
 - **Android agent updates itself, with the owner's OK:** each time the app starts (or **Restart agent** is chosen) it
   checks for a newer version, asks on the TV, downloads it, checks its SHA-256, package and version, and hands it to
   Android's installer, which asks once more. CI releases each higher `versionCode` built on `main` as `android-v<version>`

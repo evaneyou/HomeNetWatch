@@ -213,7 +213,8 @@ monitor/       Raspberry Pi agent package (setup page, health, checks, tunnel wa
 android/       Android TV agent (Kotlin app, QR onboarding, tunnel, voice stream, Speed Test)
 wireguard/     WireGuard hub container
 librespeed/    LibreSpeed backend used by the Speed Test and Bandwidth Test
-deploy/        Caddy config, RTNP receiver image and the UDP 8998 allowlist units for the production overlay
+deploy/        Caddy config, RTNP receiver image and the UDP 8998 allowlist units for the production overlay;
+               deploy/local/ holds server-only Caddy sites, ignored by git
 docs/          Deployment guides (any server, and Oracle Cloud Always Free)
 scripts/       Helpers (deploy, bring-up, server tests, encrypted backup, GeoIP update, RTNP build,
                UDP allowlist, version bump)

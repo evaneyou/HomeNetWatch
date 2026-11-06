@@ -306,7 +306,7 @@ def _seed_wifi_scans(monitors: list[Monitor]) -> list[WifiObservation]:
 
 
 def ensure_users(db: Session) -> None:
-    """Create or update the bootstrap admin and viewer accounts from the environment."""
+    """Create or update the bootstrap admin, viewer and guest accounts from the environment."""
     settings = get_settings()
     # Upsert by username
     for uid, username, password, role in [
@@ -583,7 +583,7 @@ def main() -> None:
     parser.add_argument(
         "--users-only",
         action="store_true",
-        help="Create only the bootstrap admin and viewer accounts, with no demo data. Use this in production.",
+        help="Create only the bootstrap admin, viewer and guest accounts, with no demo data. Use this in production.",
     )
     args = parser.parse_args()
 
@@ -603,7 +603,8 @@ def main() -> None:
             ensure_users(db)
             db.commit()
             print(f"Created accounts: {get_settings().bootstrap_admin_username} (admin), "
-                  f"{get_settings().bootstrap_viewer_username} (viewer).")
+                  f"{get_settings().bootstrap_viewer_username} (viewer), "
+                  f"{get_settings().bootstrap_guest_username} (guest).")
         else:
             seed(db)
     finally:

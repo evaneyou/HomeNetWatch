@@ -15,7 +15,8 @@ to, and an SSH key pair.
 | 80, 443 | TCP | HTTPS dashboard and API through Caddy | Yes |
 | 443 | UDP | HTTP/3 (optional) | Yes |
 | 8848 | TCP | Agent enrollment, TLS with a pinned key | Yes |
-| 51820 | UDP | WireGuard tunnels from your Pis | Yes |
+| 51820 | UDP | WireGuard tunnels from your agents | Yes |
+| 8998 | UDP | Real-time flow packets (RTNP), outside the tunnel | Yes, limited to WireGuard peers by the allowlist timer (step 6) |
 | 55432, 8847, 3847 | TCP | Postgres, API, dashboard | **No**, internal only |
 
 [`docker-compose.prod.yml`](../docker-compose.prod.yml) closes the last row and adds Caddy.
@@ -51,6 +52,7 @@ cloud networks → your VCN → Security Lists → Default). Add **ingress rules
 | UDP | 443 |
 | TCP | 8848 |
 | UDP | 51820 |
+| UDP | 8998 |
 
 Docker publishes container ports through its own firewall rules, so these usually need no extra
 host configuration. If a port is still unreachable from outside after you add the rule, Oracle's
@@ -84,10 +86,13 @@ docker compose version      # must be 2.24 or newer
 ## 5. Get the code and configure it
 
 ```bash
-git clone https://github.com/evaneyou/Home-Sensor.git
-cd Home-Net-Watch
+git clone https://github.com/evaneyou/homenetwatch.git ~/Home-Net-Watch
+cd ~/Home-Net-Watch
 cp .env.example .env
 ```
+
+Keep the folder name: the backup cron example and `deploy/rtnp-allowlist.service` use
+`/home/ubuntu/Home-Net-Watch`.
 
 Generate secrets with `openssl rand -hex 32` and edit `.env`:
 
@@ -99,6 +104,7 @@ Generate secrets with `openssl rand -hex 32` and edit `.env`:
 | `POSTGRES_PASSWORD` | a long random value |
 | `BOOTSTRAP_ADMIN_PASSWORD` | your admin password |
 | `BOOTSTRAP_VIEWER_PASSWORD` | your viewer password |
+| `BOOTSTRAP_GUEST_PASSWORD` | leave `guest` for a public read-only demo, or set a value to keep it private |
 | `CORS_ORIGINS` | `https://hns.example.com` |
 | `COOKIE_SECURE` | `true` |
 | `WIREGUARD_ENDPOINT` | `<public-ip>:51820` |
@@ -110,14 +116,21 @@ production stack. Lock the file down: `chmod 600 .env`.
 
 ## 6. Start it
 
+Clone the RTNP receiver sources first (a separate repository; use the same release as the agents'
+`rtnp-send`), then start with the deploy script, never plain `docker compose up --build -d`:
+
 ```bash
-docker compose up --build -d
+git clone --branch v0.2.1 --depth 1 https://github.com/evaneyou/RTN_PackGen.git rtnp
+./scripts/deploy.sh
 docker compose exec server python -m app.seed --users-only
 ```
 
 The first build compiles the dashboard and takes a few minutes. Migrations run automatically on
-start. `--users-only` creates the admin and viewer accounts **without demo data**, and refuses to
-run with the default passwords. Do not run the plain seed on this server.
+start. `--users-only` creates the admin, viewer and guest accounts **without demo data**, and refuses
+to run while the admin or viewer password is still the default. Do not run the plain seed on this server.
+
+Then install the UDP 8998 allowlist timer as described in
+[deploy.md, Allow UDP 8998 only from your agents](deploy.md#allow-udp-8998-only-from-your-agents).
 
 Check it:
 
@@ -129,20 +142,12 @@ curl https://hns.example.com/api/v1/healthz
 Then open `https://hns.example.com` and sign in as `admin`. Caddy needs a minute to get its
 certificate on first start; `docker compose logs caddy` shows progress.
 
-## 7. Connect a Raspberry Pi
+## 7. Connect a remote agent
 
-1. In the dashboard open **Settings → Remote Agent Onboarding** and add the device.
-2. Install the agent on the Pi as described in [`monitor/README.md`](../monitor/README.md).
-3. On the Pi's setup page enter the server address `https://hns.example.com`, the device name
-   and key.
-4. When you issue tunnels, the Pi connects to `<public-ip>:51820`. After the tunnel is up the
-   agent uses the tunnel address (`http://10.7.0.1:8847`) for its tests.
-
-Print the agent API's TLS key pins and keep them:
-
-```bash
-docker compose exec agent-api python -m app.tls pins
-```
+Follow [deploy.md, step 5](deploy.md#5-connect-a-remote-agent): register the agent's installer code in
+**Settings → Remote Agent Onboarding**, give a Pi the server address and the TLS pins from
+`docker compose exec agent-api python -m app.tls pins` (an Android TV collects its setup key from the QR
+registration), and approve it when it checks in.
 
 ## 8. Back up
 
@@ -192,10 +197,14 @@ CPU (95th percentile) under 20%, network under 20%, and, on A1 shapes, memory un
 ## Updating
 
 ```bash
-cd Home-Net-Watch
+cd ~/Home-Net-Watch
+./scripts/backup.sh      # when the change touches the database, migrations, enrollment or agent ports
 git pull
-docker compose up --build -d
+./scripts/deploy.sh
 ```
+
+The script keeps `rtnp` attached to the `wireguard` network namespace; see
+[deploy.md, Updating](deploy.md#updating).
 
 ## Troubleshooting
 
@@ -205,6 +214,6 @@ docker compose up --build -d
 | Certificate error or Caddy loops | DNS A record resolves to this IP; ports 80 and 443 reachable; Cloudflare set to DNS only; `docker compose logs caddy` |
 | Login works but you are signed out immediately | `COOKIE_SECURE=true` requires HTTPS; open the `https://` address, and `CORS_ORIGINS` must match it exactly |
 | Dashboard loads but shows API errors | Rebuild after changing `DOMAIN`: `docker compose up --build -d dashboard` |
-| Pi can't enroll | Port 8848/TCP open; Pi can reach `https://<domain>`; `WIREGUARD_ENDPOINT` is the public IP and port |
-| Pi tunnel never connects | Port 51820/UDP open in the security list; `WIREGUARD_ENDPOINT` correct, then re-issue the tunnel |
+| Agent can't enroll | Port 8848/TCP open; Pi can reach `https://<domain>`; `WIREGUARD_ENDPOINT` is the public IP and port |
+| Agent tunnel never connects | Port 51820/UDP open in the security list; `WIREGUARD_ENDPOINT` correct, then re-issue the tunnel |
 | Build is killed or very slow | Not enough memory; use at least 2 OCPU and 12 GB, or build on another machine |

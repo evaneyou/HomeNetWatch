@@ -17,6 +17,8 @@
 
 - [ ] Tests added or updated, and `uv run pytest -q` passes
 - [ ] `npm run build` passes in `dashboard/` (if the dashboard changed)
+- [ ] `./gradlew testDebugUnitTest` passes in `android/` (if the Android agent changed)
+- [ ] Agent version bumped (`AGENT_VERSION` or Android `versionCode`) if an agent changed
 - [ ] Docs updated (`README.md`, `SPEC.md`, or a component README)
 - [ ] `CHANGELOG.md` updated under **Unreleased** for user-visible changes
 - [ ] New schema changes include an Alembic migration

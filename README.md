@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.homenetwatch.com">Overview &amp; Architecture</a> · <a href="https://live.homenetwatch.com">Live Guest Demo</a>
+  <a href="https://www.homenetwatch.com">Overview &amp; Architecture</a> · <a href="https://live.homenetwatch.com/welcome/enter.html">Live Guest Demo</a>
 </p>
 
 Small remote agents on a Raspberry Pi (or any Linux PC) and Android TV boxes (such as an NVIDIA Shield)
@@ -56,7 +56,9 @@ problem starts: DNS, TCP, TLS, the server's first byte, the measurement tunnel, 
 - **Retention built in.** Raw results for 6 months, hourly averages up to 12 months, daily averages
   up to 2 years.
 - **Three roles.** `admin` can change settings, run scans and approve devices; `viewer` is read-only;
-  `guest` provides a read-only demo session that masks identifying fields (`#`) and expires after 3 minutes idle.
+  `guest` is the public read-only demo: identifying fields (home and LAN addresses, city, device and wireless
+  names) are blurred, and the session ends after 3 minutes idle. The **Open live dashboard** button on
+  www.homenetwatch.com signs a visitor in as the guest with no password to type.
 
 ## How it works
 
@@ -122,24 +124,29 @@ The step-by-step guide is in [`docs/deploy.md`](./docs/deploy.md).
 | API | `8847/tcp` | `GET /api/v1/healthz` for liveness (internal behind Caddy in production) |
 | Agent API | `8848/tcp` | HTTPS with pinned TLS key, agent enrollment only |
 | WireGuard | `51820/udp` | Agent tunnels (`wg0` / `wg1`) |
-| RTNP receiver | `8998/udp` | Real-time synthetic voice/video/application UDP flows (`8999/tcp` control on tunnel) |
+| RTNP receiver | `8998/udp` | Real-time synthetic voice/video/application UDP flows, public but limited to WireGuard peers by `deploy/rtnp-allowlist.timer` (`8999/tcp` control on the tunnel) |
 | Postgres | `55432/tcp` | Development access only |
 
 ## Add a Raspberry Pi
 
-1. In the dashboard open **Settings → Remote Agent Onboarding** and register the device's installer code.
-2. Copy the agent package to the Pi and install it. Full steps are in
+1. Copy the agent package to the Pi and install it. Full steps are in
    [`monitor/README.md`](./monitor/README.md).
-3. Open the agent's setup page from a PC on the same LAN, enter the server address, device
-   name and TLS pin (or setup key), and tap **Approve** in the dashboard when it checks in.
+2. Open the agent's setup page (`http://<hostname>.local/`) from a PC on the same LAN. It shows an
+   installer code.
+3. In the dashboard open **Settings → Remote Agent Onboarding** and register that installer code with a
+   device name.
+4. On the setup page enter the server address and the TLS key pins (`sha256/…`, printed by
+   `docker compose exec agent-api python -m app.tls pins`), choose **Connect**, then tap **Approve** in the
+   dashboard when the Pi checks in. The WireGuard tunnels arrive with the approval.
 
 ## Add an Android TV (NVIDIA Shield)
 
 An Android TV box can be a Wi-Fi-only remote agent: it runs the voice and video streams and the Speed
 Test, not the Pi's HTTP, ping or Wi-Fi scans.
 
-1. Download the APK from the latest **Android agent** run on GitHub Actions (artifact
-   `homenetwatch-agent-apk`) and sideload it with `adb install -r app-debug.apk`.
+1. Download the APK from the newest `android-v…` release on the GitHub Releases page (or the
+   `homenetwatch-agent-apk` artifact of an **Android agent** Actions run) and sideload it with
+   `adb install -r app-debug.apk`. Later versions are offered on the TV itself.
 2. Open HomeNetWatch on the TV and scan its QR code with a phone. The onboarding page opens with the
    installer code filled in: name it and tap **Register**. The TV collects its setup key from the server
    automatically; tap **Approve** when it checks in. Without a phone, open the setup address the TV shows
@@ -163,8 +170,11 @@ Settings are read from `.env`. Copy [`.env.example`](./.env.example) and edit it
 | `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_PASSWORD` | Admin account created by the seed |
 | `BOOTSTRAP_VIEWER_USERNAME`, `BOOTSTRAP_VIEWER_PASSWORD` | Viewer account created by the seed |
 | `BOOTSTRAP_GUEST_USERNAME`, `BOOTSTRAP_GUEST_PASSWORD` | Guest account created by the seed |
+| `SERVER_HOST`, `SERVER_PORT` | Address and port the API listens on |
 | `WIREGUARD_ENDPOINT` | `host:port` that agents use to reach the WireGuard hub |
 | `VITE_API_BASE_URL` | API address the dashboard calls |
+| `COMPOSE_PROJECT_NAME` | Keeps container and volume names stable (`home-sensor`); do not change it on an existing server |
+| `DOMAIN`, `COMPOSE_FILE`, `HSTS_MAX_AGE` | Production only (commented out in `.env.example`); see [`docs/deploy.md`](./docs/deploy.md) |
 
 ## Development
 
@@ -202,9 +212,11 @@ site/          Static landing page served at /welcome/ and www.homenetwatch.com
 monitor/       Raspberry Pi agent package (setup page, health, checks, tunnel watchdog, installer)
 android/       Android TV agent (Kotlin app, QR onboarding, tunnel, voice stream, Speed Test)
 wireguard/     WireGuard hub container
-deploy/        Caddy config for the production overlay (docker-compose.prod.yml)
-docs/          Deployment guide
-scripts/       Local helpers (deploy, bring-up, server tests, encrypted backup, GeoIP update, version bump)
+librespeed/    LibreSpeed backend used by the Speed Test and Bandwidth Test
+deploy/        Caddy config, RTNP receiver image and the UDP 8998 allowlist units for the production overlay
+docs/          Deployment guides (any server, and Oracle Cloud Always Free)
+scripts/       Helpers (deploy, bring-up, server tests, encrypted backup, GeoIP update, RTNP build,
+               UDP allowlist, version bump)
 SPEC.md        Architecture, API and design principles
 CHANGELOG.md   Release history
 VERSION        Current project version
@@ -218,7 +230,7 @@ VERSION        Current project version
 | 1 | Server hardening: Ed25519 enrollment, QR pairing, issue & correlation engine, KPI & Gemini RCA | Done |
 | 2 | Agents: Raspberry Pi (dual-link HTTP, ping, MTR, Speed Test, RTNP flows, tunnel self-heal) & Android TV | Done |
 | 3 | Airwaves: dual-radio scans (iw / Kismet), trust and evil-twin, Security tab (WIDS filters + LAN scan) | Done |
-| 4 | Cloud deployment with Caddy TLS, security headers, Server Health, and encrypted age backups | Done |
+| 4 | Cloud deployment (Oracle Cloud Always Free) with Caddy TLS, security headers, Server Health, and encrypted age backups | Done |
 
 Details and architecture notes are in [`SPEC.md`](./SPEC.md).
 
@@ -242,8 +254,9 @@ tests go to your own server over the WireGuard tunnel.
 
 The project follows [Semantic Versioning](https://semver.org/) and is pre-1.0, so minor releases may
 include breaking changes. The version is in [`VERSION`](./VERSION) and history is in
-[`CHANGELOG.md`](./CHANGELOG.md). The Pi agent (`0.8.8`) and Android TV agent (`0.4.1`) carry their own
-versions, reported to the server.
+[`CHANGELOG.md`](./CHANGELOG.md). The Pi agent (`0.8.11`, `AGENT_VERSION` in `monitor/agent_state.py`) and
+the Android TV agent (`0.5.0`, `versionName` in `android/app/build.gradle.kts`) carry their own versions,
+reported to the server.
 
 ## Contributing
 

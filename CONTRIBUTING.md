@@ -14,7 +14,7 @@ problems privately, as described in [SECURITY.md](./SECURITY.md).
 
 ## Development setup
 
-You need Docker (with Compose v2), plus [uv](https://docs.astral.sh/uv/) and Node.js 22 if you work outside containers.
+You need Docker (with Compose v2), plus [uv](https://docs.astral.sh/uv/) and Node.js 22 if you work outside containers. The Android agent needs JDK 17 and the Android SDK (see [`android/README.md`](./android/README.md)).
 
 ```bash
 cp .env.example .env
@@ -49,6 +49,9 @@ cd server && uv run pytest -q
 
 # Dashboard type-check and production build
 cd dashboard && npm run build
+
+# Android agent unit tests and APK (when android/ changed)
+cd android && ./gradlew testDebugUnitTest assembleDebug
 ```
 
 Add or update tests for any behavior you change. Server tests live in `server/tests/`.
@@ -85,14 +88,17 @@ The project follows [Semantic Versioning](https://semver.org/). The version live
 [`VERSION`](./VERSION). Maintainers cut a release with:
 
 ```bash
-./scripts/bump-version.sh 0.3       # updates VERSION, server/pyproject.toml, dashboard/package.json
-# move the Unreleased entries in CHANGELOG.md under the new version heading
-git commit -am "chore: release v0.3"
-git tag v0.3
+./scripts/bump-version.sh 0.7       # updates VERSION, server/pyproject.toml, dashboard/package.json
+# move the Unreleased entries in CHANGELOG.md under the new version heading,
+# update the version badge in README.md and add the link at the bottom of CHANGELOG.md
+git commit -am "chore: release v0.7"
+git tag v0.7
 ```
 
 The Pi agent in `monitor/` carries its own `AGENT_VERSION` in `monitor/agent_state.py`. Bump it when
-you change the agent.
+you change the agent. The Android agent carries `versionCode` and `versionName` in
+`android/app/build.gradle.kts`; raising `versionCode` on `main` publishes an `android-v<version>` release
+that agents offer to install.
 
 ## License
 

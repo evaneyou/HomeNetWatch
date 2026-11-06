@@ -1,41 +1,45 @@
 # HomeNetWatch — SPEC v2
 
-Ops-style monitoring for a home LAN: Raspberry Pi (or Linux PC) remote agents run staged connectivity tests and push results to a central FastAPI + Postgres server. A React dashboard reads those APIs only — the remote agent never talks to the browser.
+Ops-style monitoring for a home LAN: Raspberry Pi (or Linux PC) and Android TV remote agents run staged connectivity, real-time application and throughput tests and push results to a central FastAPI + Postgres server. A React dashboard reads those APIs only — the remote agent never talks to the browser.
 
 ## Topology
 
 | Piece | Where | Role |
 |---|---|---|
-| **Remote agent** | Home Pi / Linux PC | Runs tests, pulls config, pushes ingest (Bearer). Offline SQLite spool. |
+| **Remote agent** | Home Pi / Linux PC | Runs tests on the wired and Wi-Fi links, pulls config, pushes ingest (Bearer). Airwaves uploads wait in an SQLite spool (5 days, 50 MB) while the server is unreachable. |
 | **Android agent** | Android TV (NVIDIA Shield) | Wi-Fi only: voice/video streams and the Speed Test. Same signed enrollment (`platform: android`), one tunnel; the server refuses Wired and Network Test for it. |
-| **Central server** | PC now → cloud later | Enrollment, config, ingest, issues, read APIs. FastAPI + Postgres. |
+| **Central server** | Cloud VM (production: Oracle Cloud Always Free, Ubuntu 24.04 ARM) | Enrollment, config, ingest, issues, alerts, read APIs. FastAPI + Postgres, WireGuard hub, RTNP receiver, LibreSpeed, behind Caddy. |
 | **Dashboard** | Served with server | React UI; cookie auth; reads APIs only. |
+| **Landing page** | `site/`, at `/welcome/` and `www` | Static description of the platform with a link that opens the dashboard signed in as the guest. |
 
 ```
 Remote agent ──pull config / push ingest──▶ Server ◀──read APIs── Dashboard ◀── Browser
 ```
 
-The Pi stays on the LAN and reaches the server over outbound HTTPS. Only server + dashboard move to the cloud.
+Agents stay on the LAN and make outbound connections only: HTTPS to port 8848 for enrollment, then WireGuard (UDP 51820) for config, results, path checks and the Speed Test. Real-time flow packets go to the server's public address on UDP 8998, outside the tunnel, so they measure the real ISP path; a host timer limits that port to the current WireGuard peer addresses.
 
 ## Stack
 
 - **Server:** FastAPI, SQLAlchemy, Alembic, Postgres 16, cookie session auth (`admin` / `viewer` / `guest`)
 - **Dashboard:** React + Vite + TypeScript, TanStack Query, **Recharts** (no Grafana in this product slice)
-- **Dev:** Docker Compose (db + server + dashboard)
+- **Pi agent:** Python 3 standard library, systemd, WireGuard, Kismet, Nmap, Scapy, `rtnp-send` ([RTN_PackGen](https://github.com/evaneyou/RTN_PackGen))
+- **Android agent:** Kotlin, `wireguard-android`, bundled `rtnp-send`
+- **Dev and production:** Docker Compose (db, server, agent-api, wireguard, rtnp, librespeed, dashboard; Caddy in the production overlay)
 
 ## Data model (core)
 
 - `groups` — tenancy / home site
-- `monitors` — enrolled Pi agents (`pi-living-room`, …)
+- `monitors` — enrolled remote agents, with `platform` `pi` or `android`
 - `monitor_health` — device samples (CPU, memory, disk, temperature, uptime), kept 7 days
 - `networks` — wired / Wi-Fi targets under a group
 - `tests` — `http`, `dns`, `ping`, `wifi`, … bound to a remote agent and network
 - `test_results` — staged timings + metrics + status (`ok` / `degraded` / `fail`)
 - Retention for `test_results` and `wifi_observations`: raw for 6 months, hourly averages from 6 to 12 months, daily averages from 12 months to 2 years, then deleted. The server runs this once a day. Issues are kept as written.
-- `users` — admin, viewer, and guest with a password hash. A guest can read every page. Changes stay admin-only, and a guest session ends after 3 minutes idle. Identifying fields in a guest response, including coordinates, keep their shape but each letter and digit is replaced with `#` (addresses, place, provider, host name, interface names, and wireless names) so the map cannot plot the house.
+- `users` — admin, viewer, and guest with a password hash. A guest can read every page. Changes stay admin-only (enforced by the server), and a guest session ends after 3 minutes idle. `GET /api/v1/auth/guest` opens `/welcome/enter.html`, which signs the visitor in as the guest from the same site. In a guest response the server marks identifying fields (addresses, city, provider, host names, interface names, device MACs and wireless names) with a leading word joiner (U+2060) and the dashboard blurs them; a saved place keeps its state and country readable, and Path View blurs only the source (home) hop. Traffic-class markings (`tos`, `dscp`) are dropped. Note: a marked value is still the real text in the response.
 - `issues` — open/resolved problems with optional `root_cause_stage`
+- Also: `installer_codes` and `enrollment_checkins` (enrollment), `adhoc_traces`, `speed_tests` / `speed_samples`, `synthetic_profiles` / `synthetic_runs` / `synthetic_samples` and `stress_runs` (RTNP flows), `rtnp_secrets`, `ap_inventory`, `rf_alerts`, `rf_channel_stats`, `rf_clients`, `lan_scan_runs` / `lan_scan_hosts` (Airwaves), `kpi_hourly` / `kpi_daily`, `alert_events` and `telegram_settings`, `gemini_settings`, `guest_visits` (kept a year), `server_samples`, `server_storage`, `server_db_daily`, `server_advisories`, `server_stuck` (Server Health), settings tables, `audit_events` and `system_logs`
 
-## API surface (dashboard-first)
+## API surface
 
 | Method | Path | Notes |
 |---|---|---|
@@ -63,31 +67,53 @@ The Pi stays on the LAN and reaches the server over outbound HTTPS. Only server 
 | `GET` | `/api/v1/kpi` | KPI summary, per-link breakdown, hourly/daily series, and rule-based diagnosis |
 | `POST` | `/api/v1/kpi/root-cause` | Admin. On-demand Google Gemini LLM root cause analysis over the KPI window's event and metric log. Guests use the same UI control with a labeled demo report instead |
 | `GET`/`PUT`/`DELETE` | `/api/v1/settings/gemini` | Admin + CSRF. Encrypted Google Gemini API key and model selection |
+| `GET` | `/api/v1/auth/guest` | Public demo link. Redirects to `/welcome/enter.html` |
+| `POST` | `/api/v1/auth/guest/session` | Sets the guest session cookie; the `Origin` must be the site serving the request |
+| `POST` | `/api/v1/agents/pairing` | Android agent, before setup. Collects its setup key and name after the QR registration |
+
+Other route groups, all under `/api/v1` (the full list with request and response shapes is the OpenAPI page at `/docs`):
+
+| Area | Paths |
+|---|---|
+| Remote agents | `/monitors`, `/monitors/{id}` (`PATCH` settings, `/restart`, `/tunnel`, `/path`, `/traces`, `/log`), agent-side `/monitors/command`, `/monitors/wifi-scans`, `/monitors/rf-capture`, `/monitors/lan-scan`, `/monitors/speedtest` |
+| Speed Test | `/speedtest`, `/speedtest/active`, `/speedtest/history`, `/speedtest/{id}`, `/speedtest/{id}/cancel` |
+| Real-Time Application Health | `/synthetic/*` (catalog, profiles, continuous and manual runs, samples, events, health) |
+| Network Test | `/stress/*` (start, sessions, live data, stop, report) |
+| Airwaves | `/rf/*` (overview, access points and trust, clients, channel snapshot, alerts, security, scan now, LAN scans), `/wifi-scans` |
+| KPI | `/kpi`, `/kpi/daily`, `/kpi/root-cause` |
+| Server Health | `/server-health`, `/server-health/software`, `POST /server-health/fault-simulation` |
+| Settings | `/settings/internet-service`, `/settings/web-services`, `/settings/web-stability`, `/settings/telegram/*`, `/settings/gemini`, `/settings/guest-visits` |
+| Logs | `/logs/unified` |
 
 Enrollment / config ETag matrix and webhooks are deferred.
 
-## Dashboard screens (this slice)
+## Dashboard screens
 
-1. **Overview** — open-issue severity banner; remote agent × network health matrix; last test time
-2. **Remote agent detail** — device health and admin config (name, report interval); per-network tabs; test status; log of results
+1. **Home** — open-issue severity banner; one card per remote agent with its platform and Web, Wired, Wi-Fi and Apps tiles
+2. **Remote agent detail** — device health and admin config (name, report interval, location); per-network tabs; test status; log of results
 3. **Test detail** — range picker; stage waterfall; pass/fail strip; RTT/loss charts
-4. **Issues** — open/resolved list + detail (`root_cause_stage`, recent failures)
+4. **Path View** — traceroute grouped into networks, latency by hop, BGP view from the agent's own provider when collectors see one, trace any host (admin)
+5. **Speed Test** and **Network Test** — live LibreSpeed test and multi-session stress runs
+6. **KPI Dashboard** — availability and quality reports, daily history, CSV, Determine Root Cause
+7. **Airwaves** — networks, clients, channels, Security (WIDS alerts, trust, LAN scans)
+8. **Issues** and **Server Health**
+9. **Settings** — onboarding, per-agent settings, internet service, Real-Time Application Health, web services, Telegram, Gemini, guest visits
 
-Loading / empty states required. Dark/light theme when cheap. Viewer role hides write controls.
+Loading / empty states required. Dark theme. Viewer role hides write controls and has no Settings or Server Health. Guest sees every page read-only.
 
 ## Phases
 
 | Phase | Scope |
 |---|---|
-| **0 — Dashboard-first (this repo slice)** | Thin server + seed + core UI on Compose. No Pi required. |
-| **1 — Server hardening** | Full enrollment, config ETag, auth polish, issue engine |
-| **2 — Remote agent** | Pi package: LAN setup page, enroll, device health, HTTP, ICMP, and MTR against the server at 10.7.0.1, Bandwidth Test over the tunnel, plus web-service HTTP checks. Other staged tests and the offline spool come later |
-| **3 — Wireless / RF** | Airwaves. The link adapter carries traffic. A second radio adapter, preferably a USB MediaTek, runs the scans. With only one adapter, scans wait at least 15 minutes and never run during a test. A new access point of the joined SSID is trusted when it shares the OUI (the first three MAC bytes) with the BSSID the remote agent is associated to, and is labeled a mesh node. A different OUI opens a possible evil-twin issue. Access points already seen are checked again the first time that association is known. Manual trust is left alone. The Security tab (sub-tabs Alerts, Trust, Scans) presents WIDS (Kismet alerts) with severity/type/trusted/search filters, attention items (evil twins and untrusted same-SSID APs), and admin-only on-demand LAN scans: Scapy ARP discovery then Nmap on a fixed common-port set, on the Pi's wired LAN subnet only (never WireGuard). Each host carries its maker (IEEE OUI lookup on the Pi, from Nmap's prefix table) and mDNS name when announced. One scan at a time per agent; results kept 30 days. |
-| **4 — Cloud** | Same Compose on a small VPS (Hetzner CX / DO droplet) + TLS |
+| **0 — Dashboard-first** (done) | Thin server + seed + core UI on Compose. No Pi required. |
+| **1 — Server hardening** (done, except the config ETag) | Signed installer-code enrollment, QR pairing, auth polish, issue and correlation engine, Telegram alerts, KPI and Gemini root cause |
+| **2 — Remote agent** (done) | Pi package: LAN setup page, enroll, device health, HTTP, ICMP, and MTR against the server at 10.7.0.1 / 10.7.1.1, Bandwidth Test and Speed Test over the tunnel, web-service HTTP checks, RTNP real-time flows, Network Test, tunnel self-heal. Android TV agent: Wi-Fi flows and Speed Test |
+| **3 — Wireless / RF** (done) | Airwaves. The link adapter carries traffic. A second radio adapter, preferably a USB MediaTek, runs the scans. With only one adapter, scans wait at least 15 minutes and never run during a test. A new access point of the joined SSID is trusted when it shares the OUI (the first three MAC bytes) with the BSSID the remote agent is associated to, and is labeled a mesh node. A different OUI opens a possible evil-twin issue. Access points already seen are checked again the first time that association is known. Manual trust is left alone. The Security tab (sub-tabs Alerts, Trust, Scans) presents WIDS (Kismet alerts) with severity/type/trusted/search filters, attention items (evil twins and untrusted same-SSID APs), and admin-only on-demand LAN scans: Scapy ARP discovery then Nmap on a fixed common-port set, on the Pi's wired LAN subnet only (never WireGuard). Each host carries its maker (IEEE OUI lookup on the Pi, from Nmap's prefix table) and mDNS name when announced. One scan at a time per agent; results kept 30 days. |
+| **4 — Cloud** (done) | Same Compose on Oracle Cloud Always Free (Ampere A1, Ubuntu 24.04) with Caddy TLS, security headers, Server Health and encrypted backups. `docs/deploy.md` covers any VPS |
 
-## Out of scope for this slice
+## Out of scope
 
-Ping, MTR, Wi-Fi test runner, offline spool, Grafana, webhooks, full enrollment ETag test matrix, Playwright journeys.
+A staged test runner, an offline spool for test results (only Airwaves uploads are spooled), Grafana, webhooks, the full enrollment ETag test matrix, Playwright journeys, and inbound Telegram commands.
 
 ## Design principles
 

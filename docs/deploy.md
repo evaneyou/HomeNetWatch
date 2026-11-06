@@ -10,7 +10,8 @@ This guide runs the stack on a Linux server with automatic HTTPS. Any small clou
 | 80, 443 | TCP | HTTPS dashboard and API through Caddy | Yes |
 | 443 | UDP | HTTP/3 (optional) | Yes |
 | 8848 | TCP | Agent enrollment, TLS with a pinned key | Yes |
-| 51820 | UDP | WireGuard tunnels from your Pis | Yes |
+| 51820 | UDP | WireGuard tunnels from your agents | Yes |
+| 8998 | UDP | Real-time flow packets (RTNP), sent outside the tunnel | Yes, but only from current WireGuard peers once the allowlist timer runs ([step 4](#allow-udp-8998-only-from-your-agents)) |
 | 55432, 8847, 3847 | TCP | Postgres, API, dashboard | **No**, internal only |
 
 [`docker-compose.prod.yml`](../docker-compose.prod.yml) closes the last row and adds Caddy.
@@ -23,13 +24,15 @@ sudo iptables -I INPUT 6 -p tcp --dport 80 -j ACCEPT
 sudo apt-get install -y iptables-persistent && sudo netfilter-persistent save
 ```
 
-Repeat the insert for 443/tcp, 443/udp, 8848/tcp, and 51820/udp.
+Repeat the insert for 443/tcp, 443/udp, 8848/tcp, 51820/udp and 8998/udp.
 
 ## 1. Point your domain at the server
 
 Create an **A record** for the name you want (for example `hns.example.com`) pointing at the public IP. If you use Cloudflare, set it to **DNS only** (grey cloud), because Caddy needs to reach Let's Encrypt directly and the agent ports can't go through the proxy.
 
 Wait until `dig +short hns.example.com` returns your IP.
+
+`deploy/Caddyfile` also serves the landing page (`site/`) on `homenetwatch.com` and `www.homenetwatch.com`. On your own server, change those two names to yours (and add their A records), or delete that block.
 
 ## 2. Install Docker
 
@@ -44,10 +47,13 @@ docker compose version      # must be 2.24 or newer
 ## 3. Get the code and configure it
 
 ```bash
-git clone https://github.com/evaneyou/homenetwatch.git
-cd homenetwatch
+git clone https://github.com/evaneyou/homenetwatch.git ~/Home-Net-Watch
+cd ~/Home-Net-Watch
 cp .env.example .env
 ```
+
+The folder name matters: the backup cron example and `deploy/rtnp-allowlist.service` use
+`/home/ubuntu/Home-Net-Watch`. If your user or folder differs, change those paths too.
 
 Generate secrets with `openssl rand -hex 32` and edit `.env`:
 
@@ -59,6 +65,7 @@ Generate secrets with `openssl rand -hex 32` and edit `.env`:
 | `POSTGRES_PASSWORD` | a long random value |
 | `BOOTSTRAP_ADMIN_PASSWORD` | your admin password |
 | `BOOTSTRAP_VIEWER_PASSWORD` | your viewer password |
+| `BOOTSTRAP_GUEST_PASSWORD` | leave `guest` for a public read-only demo, or set a value to keep it private |
 | `CORS_ORIGINS` | `https://hns.example.com` |
 | `COOKIE_SECURE` | `true` |
 | `WIREGUARD_ENDPOINT` | `<public-ip>:51820` |
@@ -69,22 +76,20 @@ Because `COMPOSE_FILE` is set, plain `docker compose` commands in this directory
 
 ## 4. Start it
 
+Clone the RTNP sources **before** the first `./scripts/deploy.sh`: the `rtnp` image builds from a copy of the
+[RTN_PackGen](https://github.com/evaneyou/RTN_PackGen) project in `rtnp/`. It is a separate repository,
+not part of this one. Use the same release for the receiver and the Pi `rtnp-send`
+(currently `v0.2.1`). 0.2 speaks real SRTP, so a 0.1 sender cannot talk to a 0.2 receiver.
+0.2.1 encrypts the return stream of a two-way call with the same key. `./scripts/build-rtnp.sh` builds the Pi's
+`rtnp-send` from this same `rtnp/` clone.
+
 ```bash
+git clone --branch v0.2.1 --depth 1 https://github.com/evaneyou/RTN_PackGen.git rtnp
 ./scripts/deploy.sh
 docker compose exec server python -m app.seed --users-only
 ```
 
-The `rtnp` image builds from a copy of the [RTN_PackGen](https://github.com/evaneyou/RTN_PackGen)
-project in `rtnp/`. It is a separate repository, so clone it there first; it is not
-part of this one. Use the same release for the receiver and the Pi `rtnp-send`
-(currently `v0.2.1`). 0.2 speaks real SRTP, so a 0.1 sender cannot talk to a 0.2 receiver.
-0.2.1 encrypts the return stream of a two-way call with the same key.
-
-```bash
-git clone --branch v0.2.1 --depth 1 https://github.com/evaneyou/RTN_PackGen.git rtnp
-```
-
-The first build compiles the dashboard and takes a few minutes. Migrations run automatically on start. `--users-only` creates the admin and viewer accounts **without demo data**, and refuses to run with the default passwords. Do not run the plain seed on this server.
+The first build compiles the dashboard and takes a few minutes. Migrations run automatically on start. `--users-only` creates the admin, viewer and guest accounts **without demo data**, and refuses to run while the admin or viewer password is still the default. Do not run the plain seed on this server.
 
 Check it:
 
@@ -95,18 +100,40 @@ curl https://hns.example.com/api/v1/healthz
 
 Then open `https://hns.example.com` and sign in as `admin`. Caddy needs a minute to get its certificate on first start; `docker compose logs caddy` shows progress.
 
-## 5. Connect a Raspberry Pi
+### Allow UDP 8998 only from your agents
 
-1. In the dashboard open **Settings → Remote Agent Onboarding** and add the device.
-2. Install the agent on the Pi as described in [`monitor/README.md`](../monitor/README.md).
-3. On the Pi's setup page enter the server address `https://hns.example.com`, the device name and key.
-4. When you issue tunnels, the Pi connects to `<public-ip>:51820`. After the tunnel is up the agent uses the tunnel address (`http://10.7.0.1:8847`) for its tests.
-
-Print the agent API's TLS key pins and keep them:
+The real-time flows reach the receiver on public UDP 8998, outside the tunnel. A root timer reads the current
+WireGuard peer endpoints every 60 seconds and rebuilds an nftables set that `DOCKER-USER` checks, so only your
+agents' current public addresses get through (an empty set drops everything). Install it once:
 
 ```bash
-docker compose exec agent-api python -m app.tls pins
+sudo apt-get install -y nftables
+# Edit WorkingDirectory and ExecStart in the .service file if your checkout is not /home/ubuntu/Home-Net-Watch
+sudo cp deploy/rtnp-allowlist.service deploy/rtnp-allowlist.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now rtnp-allowlist.timer
+sudo nft list set ip filter rtnp_sources    # lists your agents' public addresses after the first run
 ```
+
+Keep `--meter rtt` (round-trip timing, which reflects each packet back) behind this allowlist; without it the
+receiver would reflect packets to any spoofed source.
+
+## 5. Connect a remote agent
+
+1. Install the agent on the Pi as described in [`monitor/README.md`](../monitor/README.md), or the Android
+   TV agent as described in [`android/README.md`](../android/README.md).
+2. Print the agent API's TLS key pins and keep them:
+
+   ```bash
+   docker compose exec agent-api python -m app.tls pins
+   ```
+
+3. **Pi:** open its setup page, note the installer code, register that code in **Settings → Remote Agent
+   Onboarding**, then enter the server address `https://hns.example.com` and the TLS pins on the setup page.
+   **Android TV:** scan the QR code on the TV and register it; the TV collects its setup key itself.
+4. Choose **Approve** when the agent checks in. It receives its tunnel config, connects to
+   `<public-ip>:51820`, and from then on uses the tunnel address (`http://10.7.0.1:8847`) for reports
+   and path checks.
 
 ## 6. Back up
 
@@ -170,7 +197,8 @@ The server picks up a replaced file on the next request. Without the file the pa
 ## Updating
 
 ```bash
-cd homenetwatch
+cd ~/Home-Net-Watch
+./scripts/backup.sh      # when the change touches the database, migrations, enrollment or agent ports
 git pull
 ./scripts/deploy.sh
 ```
@@ -232,7 +260,8 @@ cloud snapshot, and do it on its own, not as part of routine patching.
 | Certificate error or Caddy loops | DNS A record resolves to this IP; ports 80 and 443 reachable; Cloudflare set to DNS only; `docker compose logs caddy` |
 | Login works but you are signed out immediately | `COOKIE_SECURE=true` requires HTTPS; open the `https://` address, and `CORS_ORIGINS` must match it exactly |
 | Dashboard loads but shows API errors | Rebuild after changing `DOMAIN`: `docker compose up --build -d dashboard` |
-| Pi can't enroll | Port 8848/TCP open; Pi can reach `https://<domain>`; `WIREGUARD_ENDPOINT` is the public IP and port |
-| Pi tunnel never connects | Port 51820/UDP open; `WIREGUARD_ENDPOINT` correct, then re-issue the tunnel |
+| Agent can't enroll | Port 8848/TCP open; Pi can reach `https://<domain>`; `WIREGUARD_ENDPOINT` is the public IP and port |
+| Agent tunnel never connects | Port 51820/UDP open; `WIREGUARD_ENDPOINT` correct, then re-issue the tunnel |
 | Build is killed or very slow | The machine needs more memory, or build on another machine |
+| Application checks show no packets from one agent | `sudo nft list set ip filter rtnp_sources` includes that agent's public address; `systemctl status rtnp-allowlist.timer` |
 | Application checks stop reporting after a deploy | `rtnp` lost the tunnel's network namespace: `docker compose up -d --force-recreate rtnp`. From the Pi, `10.7.0.1:8999` refusing a connection confirms it |

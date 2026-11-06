@@ -12,6 +12,25 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Guest view blurs instead of printing `#`:** identifying values in a guest's view (home and LAN addresses, the
+  city, device and wireless names) are shown blurred rather than replaced letter by letter with `#`. A saved place
+  keeps its state and country readable, and Path View keeps the public hops, networks and BGP details visible and
+  blurs only the source (home) hop. The server marks each such value with a leading word joiner (U+2060) and the
+  dashboard blurs what it marks.
+- **Live dashboard opens already signed in as the guest:** the landing page's **Open live dashboard** button goes to
+  `/welcome/enter.html`, which signs the visitor in as the guest from the same site (`POST /api/v1/auth/guest/session`,
+  accepted only when the request's `Origin` is that site) and opens the dashboard. `GET /api/v1/auth/guest` redirects
+  there. Sign-in limits and guest-visit recording are unchanged.
+- **Landing page:** it now leads with the platform and the written operating rules the coding agents built it from,
+  and the author section has a portrait and a short leadership line.
+- **Speed Test link buttons:** Wired or Wi-Fi is greyed out when the selected device does not have that link (for
+  example Wired on an Android agent), instead of being offered and then refused.
+- **Remote Probe Status dialog:** a compact, phone-friendly inspector, with Pi-only details left out for an Android
+  agent.
+- **Documentation refresh:** README, SPEC, CLAUDE.md, CONTRIBUTING, SECURITY, the deploy guides and the Pi, Android
+  and dashboard READMEs now match the code: installer-code enrollment, the Android agent, current agent versions
+  (Pi 0.8.11, Android 0.5.0), every dashboard route, the API route groups, the guest blur, and the UDP 8998 allowlist
+  timer, which the deploy guides now install. The Oracle guide's clone command and update steps are fixed.
 - **Path View BGP from your provider:** when a public route collector sees a route to the destination through the agent's own provider, the BGP view shows that route from the provider onward, so it starts where the trace does. Otherwise it shows the most common route and says no collector sees one through the provider. Repeated (prepended) networks count once.
 - **Location fields in order:** a remote agent's Location section asks for Country, then State/Province, then City, so the state list matches the country before the city is typed.
 - **Bandwidth Test variance goes up to 100%:** the cap was 50%, and a higher value was quietly saved as 50%. At 100% no drop in speed turns the Bandwidth Test amber, so its alerts are off; a test that gets no answer in either direction is still red. The Internet Service page shows the 0–100% range, and the API rejects values above 100 instead of changing them.
@@ -40,7 +59,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
   MTU `fq_codel` quantum on `wlan0` after single-stream `256 KiB` uploads and `AC_VO` (`0xB8`) tagging reduced Wi-Fi
   upload throughput and overflowed the `brcmfmac` `AC_VO` firmware ring, while keeping `radio.py` survey isolation
   and Kismet `1/sec` channel hopping.
-- **Raspberry Pi Wi-Fi stability and multicore tuning (agent 0.8.9):** `update.sh`, `install.sh`, `restore_tunnel.sh`,
+- **Raspberry Pi Wi-Fi stability and multicore tuning (agent 0.8.10):** `update.sh`, `install.sh`, `restore_tunnel.sh`,
   and the `hnw-wifi-tune.service` boot unit now run `tune_wifi.sh` to unmanage `hnwradio*` and `p2p-dev-*` in
   NetworkManager (stopping `wpa_supplicant` background scan clashes against Kismet's capture radio), pin the active
   5 GHz Wi-Fi connection's band and BSSID so the single-radio `brcmfmac` adapter does not roam onto 2.4 GHz or run

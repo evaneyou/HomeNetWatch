@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import verify_password
 from app.enrollment import CONNECTED_WITHIN, is_token_hash, token_hash
-from app.models import Group, Monitor
+from app.models import Group, Monitor, MonitorHealth
 from app.schemas import MonitorAdminOut
 
 # How long a requested trace stays with the agent before it is given up on.
@@ -109,7 +109,7 @@ def _tunnel_state(monitor: Monitor) -> str | None:
     return _handshake_state(monitor.identity_public_key, monitor.last_handshake_at)
 
 
-def monitor_admin_out(monitor: Monitor) -> MonitorAdminOut:
+def monitor_admin_out(monitor: Monitor, health: Optional[MonitorHealth] = None) -> MonitorAdminOut:
     return MonitorAdminOut(
         id=monitor.id,
         slug=monitor.slug,
@@ -132,6 +132,8 @@ def monitor_admin_out(monitor: Monitor) -> MonitorAdminOut:
             monitor.last_wireless_handshake_at,
         ),
         last_handshake_at=monitor.last_handshake_at,
+        wired_iface=health.wired_iface if health else None,
+        wifi_link_iface=health.wifi_link_iface if health else None,
         health_interval_seconds=monitor.health_interval_seconds,
         config_version=monitor.config_version,
         applied_config_version=monitor.applied_config_version,

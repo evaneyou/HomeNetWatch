@@ -154,6 +154,8 @@ class MonitorAdminOut(BaseModel):
     tunnel_state: Optional[str] = None
     wireless_tunnel_state: Optional[str] = None
     last_handshake_at: Optional[datetime] = None
+    wired_iface: Optional[str] = None
+    wifi_link_iface: Optional[str] = None
     health_interval_seconds: int
     config_version: int
     applied_config_version: int

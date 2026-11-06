@@ -63,7 +63,25 @@ def list_monitors(
     monitors = db.scalars(select(Monitor).order_by(Monitor.name)).all()
     refresh_handshakes(db, list(monitors))
     db.commit()
-    return [monitor_admin_out(monitor) for monitor in monitors]
+    latest_health: dict[UUID, MonitorHealth] = {}
+    if monitors:
+        latest_id_subq = (
+            select(MonitorHealth.id)
+            .where(MonitorHealth.monitor_id == Monitor.id)
+            .order_by(MonitorHealth.reported_at.desc())
+            .limit(1)
+            .correlate(Monitor)
+            .scalar_subquery()
+        )
+        for row in db.scalars(
+            select(MonitorHealth).where(
+                MonitorHealth.id.in_(
+                    select(latest_id_subq).where(Monitor.id.in_([m.id for m in monitors]))
+                )
+            )
+        ).all():
+            latest_health[row.monitor_id] = row
+    return [monitor_admin_out(monitor, latest_health.get(monitor.id)) for monitor in monitors]
 
 
 @router.delete("/monitors/{monitor_id}", status_code=204)

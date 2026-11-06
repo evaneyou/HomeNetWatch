@@ -203,7 +203,8 @@ export default function SpeedTestPage() {
   const monitors = monitorsQ.data ?? [];
   const agent = monitors.find((item) => item.id === agentId) ?? monitors[0];
   const sensorValue = draft ?? agent?.id ?? "";
-  const links = agentLinks(agent?.platform);
+  const selectedAgent = monitors.find((item) => item.id === sensorValue) ?? agent;
+  const links = agentLinks(selectedAgent);
 
   const activeQ = useQuery({
     queryKey: ["speedtest-active", agent?.id],
@@ -225,14 +226,14 @@ export default function SpeedTestPage() {
     enabled: Boolean(agent),
   });
   const { live, samples } = useLiveTest(testId, link);
-  // An agent without a Wired link (the Android agent) starts on, and only offers, Wi-Fi.
-  useEffect(() => {
-    if (!testId && !links.includes(link)) setLink(links[0]);
-  }, [links, link, testId]);
-
   const status = live?.status ?? "idle";
   const running = status === "pending" || status === "running";
   const finished = status === "finished" || status === "failed" || status === "cancelled";
+
+  // An agent without Wired or Wi-Fi starts on, and only enables, the link(s) it has.
+  useEffect(() => {
+    if (!running && !links.includes(link)) setLink(links[0] ?? "wired");
+  }, [links, link, running]);
   const phase: SpeedPhase = !live ? "idle" : status === "pending" ? "waiting" : finished ? "done" : live.phase === "download" || live.phase === "upload" ? live.phase : "ping";
   const latest = samples.length ? samples[samples.length - 1] : null;
   const instant = phase === "download" || phase === "upload" ? (latest && latest.phase === phase ? latest.mbps : 0) : 0;
@@ -266,7 +267,11 @@ export default function SpeedTestPage() {
                   : "Test failed";
 
   function start() {
-    if (!agent) return;
+    if (!selectedAgent) return;
+    if (selectedAgent.id !== agent?.id) {
+      setAgentId(selectedAgent.id);
+      setDraft(null);
+    }
     // A guest cannot run a real test, so Start plays the simulated one, labelled as a demo.
     if (isGuest) {
       startDemo();
@@ -276,7 +281,7 @@ export default function SpeedTestPage() {
       setBusy(true);
       setError("");
       api
-        .speedtestStart({ monitor_id: agent.id, link }, csrf)
+        .speedtestStart({ monitor_id: selectedAgent.id, link }, csrf)
         .then((body) => {
           setTestId((body as Test).id);
         })
@@ -350,14 +355,29 @@ export default function SpeedTestPage() {
         ) : null}
         <div className="st-controls">
           <div className="st-seg" role="group" aria-label="Connection to test">
-            {links.map((item) => (
-              <button key={item} type="button" className={link === item ? "active" : ""} aria-pressed={link === item} disabled={running} onClick={() => setLink(item)}>
-                {item === "wired" ? "Wired" : "Wi-Fi"}
-              </button>
-            ))}
+            {(["wired", "wireless"] as const).map((item) => {
+              const enabled = links.includes(item);
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  className={link === item ? "active" : ""}
+                  aria-pressed={link === item}
+                  disabled={running || !enabled}
+                  title={
+                    !enabled
+                      ? `${selectedAgent?.name ?? "Selected device"} does not have ${item === "wired" ? "Wired" : "Wi-Fi"} enabled`
+                      : undefined
+                  }
+                  onClick={() => setLink(item)}
+                >
+                  {item === "wired" ? "Wired" : "Wi-Fi"}
+                </button>
+              );
+            })}
           </div>
           {idle ? (
-            <button type="button" className="st-go" disabled={busy || (!isGuest && agent.status !== "online")} onClick={start}>
+            <button type="button" className="st-go" disabled={busy || (!isGuest && (selectedAgent ?? agent).status !== "online")} onClick={start}>
               {busy ? "Starting…" : finished ? "Run again" : "Start test"}
             </button>
           ) : (

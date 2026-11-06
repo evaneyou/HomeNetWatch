@@ -328,6 +328,8 @@ export type MonitorAdmin = {
   tunnel_state: "never_connected" | "connected" | "disconnected" | null;
   wireless_tunnel_state: "never_connected" | "connected" | "disconnected" | null;
   last_handshake_at: string | null;
+  wired_iface?: string | null;
+  wifi_link_iface?: string | null;
   health_interval_seconds: number;
   config_version: number;
   applied_config_version: number;

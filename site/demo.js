@@ -2,7 +2,7 @@
 // An older /welcome/#demo address still does that. This also drives the system-layer tabs.
 (function () {
   if (window.location.hash === "#demo") {
-    window.location.replace("https://live.homenetwatch.com/api/v1/auth/guest");
+    window.location.replace("https://live.homenetwatch.com/welcome/enter.html");
   }
 
   // Interactive topology layer switcher

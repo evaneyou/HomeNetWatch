@@ -13,21 +13,23 @@ import type {
   WebStability,
 } from "./types";
 
-// The session cookie is stored for the API host only. A page opened at
-// localhost cannot use a cookie set by 127.0.0.1, so keep the API on the
-// same hostname as the page.
+// The session cookie belongs to the site that served the page. Local dev talks to the API
+// port directly. Anywhere else, including a dev build opened on the public site, the API is
+// the same origin: Caddy serves both. Keeping the dev port there would drop the guest session.
 function apiBase(): string {
   const configured = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8847";
   if (typeof window === "undefined") return configured;
-  try {
-    const url = new URL(configured);
-    if (window.location.hostname && url.hostname !== window.location.hostname) {
-      url.hostname = window.location.hostname;
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") {
+    try {
+      const url = new URL(configured);
+      if (url.hostname !== host) url.hostname = host;
+      return url.origin;
+    } catch {
+      return configured;
     }
-    return url.origin;
-  } catch {
-    return configured;
   }
+  return window.location.origin;
 }
 
 const API_BASE = apiBase();

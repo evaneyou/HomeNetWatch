@@ -82,13 +82,7 @@ def login(
     return _user_out(user, token, settings)
 
 
-@router.get("/auth/guest")
-def enter_as_guest(
-    request: Request,
-    db: Annotated[Session, Depends(get_db)],
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> RedirectResponse:
-    """Sign in as the read-only guest and open the dashboard. This is the public demo link."""
+def _issue_guest_session(request: Request, db: Session, settings: Settings) -> tuple[User, str]:
     address = _visitor_address(request)
     if login_failures.blocked(address):
         raise HTTPException(
@@ -102,9 +96,35 @@ def enter_as_guest(
     db.add(AuditEvent(username=user.username, action="guest_login", detail=address))
     guest_visits_module.record(db, address)
     db.commit()
-    redirect = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-    set_session_cookie(redirect, token, settings, max_age=settings.guest_idle_seconds)
-    return redirect
+    return user, token
+
+
+def _request_host(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-host", "")
+    host = forwarded.split(",")[0].strip() or request.headers.get("host", "")
+    return host.split(":")[0].lower()
+
+
+@router.get("/auth/guest")
+def enter_as_guest() -> RedirectResponse:
+    """Open the page that signs in as the guest. The cookie is set from that page, not this redirect."""
+    return RedirectResponse(url="/welcome/enter.html", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/auth/guest/session", status_code=status.HTTP_204_NO_CONTENT)
+def guest_session(
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    """Set the guest session from the public site itself, so the dashboard on that site receives it."""
+    origin = request.headers.get("origin", "")
+    host = _request_host(request)
+    if not origin or origin.split("://", 1)[-1].split(":")[0].lower() != host:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Open the dashboard from this site")
+    _user, token = _issue_guest_session(request, db, settings)
+    set_session_cookie(response, token, settings, max_age=settings.guest_idle_seconds)
 
 
 @router.post("/auth/logout")

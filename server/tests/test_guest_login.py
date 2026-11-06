@@ -18,9 +18,13 @@ def _ensure_guest(db) -> None:
 
 def test_guest_entry_link_signs_in_and_opens_the_dashboard(client, db):
     _ensure_guest(db)
-    response = client.get("/api/v1/auth/guest", follow_redirects=False)
-    assert response.status_code == 303, response.text
-    assert response.headers["location"] == "/"
+    opened = client.get("/api/v1/auth/guest", follow_redirects=False)
+    assert opened.status_code == 303, opened.text
+    assert opened.headers["location"] == "/welcome/enter.html"
+    refused = client.post("/api/v1/auth/guest/session")
+    assert refused.status_code == 403
+    signed_in = client.post("/api/v1/auth/guest/session", headers={"Origin": "https://testserver"})
+    assert signed_in.status_code == 204, signed_in.text
     me = client.get("/api/v1/auth/me")
     assert me.status_code == 200, me.text
     assert me.json()["role"] == "guest"

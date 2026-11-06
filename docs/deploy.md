@@ -181,6 +181,31 @@ Caddy sets these on every response (`deploy/Caddyfile`):
 
 **If a page breaks under the CSP.** Open the browser console: a line starting "Refused to ..." names the blocked source. Add it to the policy in `deploy/Caddyfile` and run `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile`. To log violations without blocking while you investigate, rename the header to `Content-Security-Policy-Report-Only`.
 
+## Server-only sites and services
+
+To run something that is not part of HomeNetWatch on the same server, behind the same Caddy, keep it out of
+the tracked files so `git pull` never conflicts with it and this public repository never shows it:
+
+1. Put each extra Caddy site in its own `deploy/local/<name>.caddy` (see
+   [`deploy/local/README.md`](../deploy/local/README.md)). `deploy/Caddyfile` imports `/etc/caddy/local/*.caddy`,
+   and the production overlay mounts `deploy/local/` there read-only.
+2. Put the services those sites proxy to, and any extra settings for existing services, in
+   `docker-compose.local.yml` at the repository root. Compose merges it over the other two files, and its
+   services share the stack's network, so Caddy reaches them by service name.
+3. Add the file to `COMPOSE_FILE` in `.env`:
+   `COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml:docker-compose.local.yml`.
+
+Git ignores both (`.gitignore`). Check and apply a change:
+
+```bash
+docker compose config -q
+docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile
+./scripts/deploy.sh caddy
+```
+
+Never edit `deploy/Caddyfile` or `docker-compose.prod.yml` on the server for these: a later `git pull` either
+refuses to run or, after a stash, silently drops the edit.
+
 ## Guest visit locations
 
 Settings, Guest visits shows where each guest sign-in came from. The lookup reads a local copy of the free

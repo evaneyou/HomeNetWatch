@@ -17,7 +17,7 @@ Home network monitoring. Raspberry Pi and Android TV remote agents push test res
 - `monitor/`: Raspberry Pi agent package (setup page, enrollment, checks, install scripts). Bump `AGENT_VERSION` in `monitor/agent_state.py` when it changes
 - `android/`: Android TV agent (Kotlin). Raise `versionCode` and `versionName` in `android/app/build.gradle.kts` to publish an update; CI builds, tests and releases the APK
 - `site/`: the static landing page served at `/welcome/` and on `www.homenetwatch.com` (description, docs links, bio, one-click guest demo via `enter.html`). Plain HTML, CSS and JS; no build.
-- `deploy/`, `docker-compose.yml`, `docker-compose.prod.yml`, `wireguard/`, `librespeed/`: stack and production deployment (Caddy, RTNP receiver image, UDP 8998 allowlist units)
+- `deploy/`, `docker-compose.yml`, `docker-compose.prod.yml`, `wireguard/`, `librespeed/`: stack and production deployment (Caddy, RTNP receiver image, UDP 8998 allowlist units). Server-only sites and services go in the git-ignored `deploy/local/*.caddy` and `docker-compose.local.yml`, never in tracked files
 - `docs/deploy.md` (any server) and `docs/deploy-oracle.md` (Oracle Cloud Always Free): production deployment guides
 - `scripts/`: deploy, backup, local-up, test-server, bump-version, build-rtnp, rtnp-allowlist, update-geoip
 

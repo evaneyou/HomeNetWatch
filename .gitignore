@@ -42,3 +42,8 @@ backups/
 
 # GeoIP database (downloaded by scripts/update-geoip.sh)
 geoip/
+
+# Server-only configuration that stays out of this public repository
+/docker-compose.local.yml
+/deploy/local/*
+!/deploy/local/README.md

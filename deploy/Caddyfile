@@ -58,3 +58,8 @@ homenetwatch.com, www.homenetwatch.com {
 	root * /srv/site
 	file_server
 }
+
+# Server-only sites that are not part of this repository. Put each in its own
+# deploy/local/<name>.caddy (git ignores those files; see deploy/local/README.md).
+# A glob that matches no file is not an error, so a server without any still starts.
+import /etc/caddy/local/*.caddy

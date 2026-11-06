@@ -4,6 +4,7 @@
 #
 # Or set COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml in .env and use plain
 # `docker compose` commands. Needs Docker Compose 2.24 or newer (for `!reset`).
+# Server-only services go in an untracked docker-compose.local.yml, added to COMPOSE_FILE.
 # See docs/deploy.md.
 services:
   db:
@@ -41,6 +42,7 @@ services:
       HSTS_MAX_AGE: ${HSTS_MAX_AGE:-300}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/local:/etc/caddy/local:ro
       - ./site:/srv/site:ro
       - caddy_data:/data
       - caddy_config:/config

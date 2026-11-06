@@ -3,8 +3,9 @@
 An Android (TV) version of the Raspberry Pi agent, for a device such as an NVIDIA Shield. It enrolls like a Pi, then
 runs a continuous two-way G.711 voice stream and the Speed Test over Wi-Fi, and reports to the server.
 
-**Status:** enrollment, the WireGuard tunnel, health reports, the voice stream, the Speed Test and start on boot work
-on the Android TV emulator. It has not run on a real Shield yet.
+**Status:** running on a real NVIDIA Shield (Android 11) as a live remote agent: enrollment, the WireGuard tunnel,
+health reports, the voice stream, the Speed Test, start on boot and self-updates all work there and on the Android TV
+emulator.
 
 ## What it does
 

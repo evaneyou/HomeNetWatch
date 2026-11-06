@@ -273,6 +273,38 @@ def test_large_step_marks_only_the_entering_hop():
     assert trace["stats"]["biggest_step_ms"] == 36.0
 
 
+def test_guest_path_view_only_hides_source_ip():
+    from app.models import UserRole
+    from app.redact import redact, BLUR
+
+    hops = [
+        _hop(ttl=1, ip="10.0.0.1", avg_ms=1.2),
+        _hop(ttl=2, ip="96.120.74.221", avg_ms=12.0, asn=7922, as_name="Comcast", prefix="96.120.0.0/14"),
+        _hop(ttl=3, ip="141.148.163.207", rdns="edge.oracle.example", avg_ms=85.0, asn=31898, as_name="Oracle", prefix="141.148.128.0/18"),
+    ]
+    trace = build_trace(hops, announced=[7922, 31898], target_name="HomeNetWatch server")
+    trace["target"] = {"name": "HomeNetWatch server", "ip": "141.148.163.207"}
+    guest_trace = redact(trace, UserRole.guest)
+
+    # Source hop IP is masked
+    assert guest_trace["hops"][0]["ip"] == BLUR + "10.0.0.1"
+    assert guest_trace["hops"][0]["name"] == "Home network"
+    assert guest_trace["hops"][0]["asn_label"] == "LAN"
+
+    # Subsequent hops and BGP/network details remain visible
+    assert guest_trace["hops"][1]["ip"] == "96.120.74.221"
+    assert guest_trace["hops"][1]["asn"] == 7922
+    assert guest_trace["hops"][1]["as_name"] == "Comcast"
+    assert guest_trace["hops"][1]["prefix"] == "96.120.0.0/14"
+    assert guest_trace["hops"][2]["ip"] == "141.148.163.207"
+    assert guest_trace["hops"][2]["rdns"] == "edge.oracle.example"
+    assert guest_trace["groups"][1]["name"] == "Comcast"
+    assert guest_trace["groups"][1]["asn_label"] == "AS7922"
+    assert guest_trace["bgp"]["origin_asn"] == 31898
+    assert guest_trace["bgp"]["prefix"] == "141.148.128.0/18"
+    assert guest_trace["target"]["ip"] == "141.148.163.207"
+
+
 if __name__ == "__main__":
     test_mockup_groups_silent_hop_and_matching_path()
     test_consecutive_silent_hops_stay_separate()

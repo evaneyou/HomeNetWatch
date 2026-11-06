@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "../api";
-import { AnonPlate, AnonText, coordinate, isAnonymized } from "../anonymized";
+import { AnonPlate, AnonText, coordinate, isAnonymized, shownAnon } from "../anonymized";
 import { useGuestGate } from "../guestGate";
 import { cityPlace, lookupCities, type CityMatch } from "../geocode";
 import { regionsFor } from "../regions";
@@ -200,9 +200,19 @@ export default function LocationForm({ monitorId }: { monitorId: string }) {
           <label>City</label>
           <AnonText value={report.location_label} />
         </div>
-        <AnonPlate
-          value={[report.latitude, report.longitude].filter(isAnonymized).map(String).join("  ") || undefined}
-        />
+        {savedPin ? (
+          <CityMap
+            className="location-map"
+            latitude={savedPin.latitude}
+            longitude={savedPin.longitude}
+            label={[report.region, report.country].filter(Boolean).join(", ") || report.name}
+            zoomControl={false}
+          />
+        ) : (
+          <AnonPlate
+            value={[report.latitude, report.longitude].filter(isAnonymized).map((item) => shownAnon(String(item))).join("  ") || undefined}
+          />
+        )}
       </div>
     );
   }

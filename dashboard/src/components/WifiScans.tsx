@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../api";
-import { isAnonymized, stableId } from "../anonymized";
+import { isAnonymized, shownAnon, stableId } from "../anonymized";
 import { CHART_COLORS } from "../chartTheme";
 import { formatChartHour } from "../chartTime";
 import { useChartZoom } from "../useChartZoom";
@@ -36,7 +36,10 @@ export default function WifiScans({ monitorId }: { monitorId: string }) {
   const keys = useMemo(() => [...new Set(rows.map(seriesKey))], [rows]);
   const anonymizedScan = rows.some((row) => isAnonymized(row.ssid) || isAnonymized(row.bssid));
   const scanLabels = anonymizedScan
-    ? keys.map((key) => rows.find((row) => stableId(row, row.bssid) === key)?.ssid || key)
+    ? keys.map((key) => {
+        const row = rows.find((item) => stableId(item, item.bssid) === key);
+        return row?.ssid ? shownAnon(row.ssid) : key;
+      })
     : undefined;
 
   const chart = useMemo(() => {
@@ -110,9 +113,15 @@ export default function WifiScans({ monitorId }: { monitorId: string }) {
               <tbody>
                 {latest.map((row) => (
                   <tr key={stableId(row, row.bssid)}>
-                    <td className={isAnonymized(row.ssid) ? "anon-mark" : undefined}>{row.ssid}</td>
-                    <td className={isAnonymized(row.bssid) ? "anon-mark" : "mono"}>{row.bssid}</td>
-                    <td>{row.vendor}</td>
+                    <td className={isAnonymized(row.ssid) ? "anon-mark" : undefined}>
+                      {isAnonymized(row.ssid) ? shownAnon(row.ssid) : row.ssid}
+                    </td>
+                    <td className={isAnonymized(row.bssid) ? "anon-mark" : "mono"}>
+                      {isAnonymized(row.bssid) ? shownAnon(row.bssid) : row.bssid}
+                    </td>
+                    <td className={isAnonymized(row.vendor) ? "anon-mark" : undefined}>
+                      {isAnonymized(row.vendor) ? shownAnon(row.vendor) : row.vendor}
+                    </td>
                     <td className="mono">{row.band} GHz</td>
                     <td className="mono">{row.channel}</td>
                     <td className="mono">{row.channel_width} MHz</td>
@@ -132,6 +141,7 @@ export default function WifiScans({ monitorId }: { monitorId: string }) {
             data={rssiChange}
             keys={keys}
             labels={scanLabels}
+            blurred={anonymizedScan}
             unit=" dB"
             domain={changeDomain}
             zeroLine
@@ -141,6 +151,7 @@ export default function WifiScans({ monitorId }: { monitorId: string }) {
             data={chart}
             keys={keys.map((key) => `${key} noise`)}
             labels={scanLabels ?? keys}
+            blurred={anonymizedScan}
             unit=" dBm"
             domain={[-100, -70]}
           />
@@ -149,6 +160,7 @@ export default function WifiScans({ monitorId }: { monitorId: string }) {
             data={chart}
             keys={keys.map((key) => `${key} rate`)}
             labels={scanLabels ?? keys}
+            blurred={anonymizedScan}
             unit=" Mbps"
           />
 
@@ -175,9 +187,15 @@ export default function WifiScans({ monitorId }: { monitorId: string }) {
                 {recent.map((row) => (
                   <tr key={`${row.scanned_at}-${stableId(row, row.bssid)}`}>
                     <td className="mono">{new Date(row.scanned_at).toLocaleString()}</td>
-                    <td className={isAnonymized(row.ssid) ? "anon-mark" : undefined}>{row.ssid}</td>
-                    <td className={isAnonymized(row.bssid) ? "anon-mark" : "mono"}>{row.bssid}</td>
-                    <td>{row.vendor}</td>
+                    <td className={isAnonymized(row.ssid) ? "anon-mark" : undefined}>
+                      {isAnonymized(row.ssid) ? shownAnon(row.ssid) : row.ssid}
+                    </td>
+                    <td className={isAnonymized(row.bssid) ? "anon-mark" : "mono"}>
+                      {isAnonymized(row.bssid) ? shownAnon(row.bssid) : row.bssid}
+                    </td>
+                    <td className={isAnonymized(row.vendor) ? "anon-mark" : undefined}>
+                      {isAnonymized(row.vendor) ? shownAnon(row.vendor) : row.vendor}
+                    </td>
                     <td className="mono">{row.band} GHz</td>
                     <td className="mono">{row.channel}</td>
                     <td className="mono">{row.channel_width} MHz</td>
@@ -235,6 +253,7 @@ function ScanChart({
   data,
   keys,
   labels,
+  blurred,
   unit,
   domain,
   zeroLine,
@@ -243,6 +262,7 @@ function ScanChart({
   data: Record<string, string | number>[];
   keys: string[];
   labels?: string[];
+  blurred?: boolean;
   unit: string;
   domain?: [number, number];
   zeroLine?: boolean;
@@ -251,7 +271,7 @@ function ScanChart({
   return (
     <>
       <h3 className="wifi-heading">{title}</h3>
-      <div className="chart-zoom" ref={zoom.boxRef} style={{ width: "100%", height: 300 }} onDoubleClick={zoom.onDoubleClick}>
+      <div className={`chart-zoom${blurred ? " is-blurred" : ""}`} ref={zoom.boxRef} style={{ width: "100%", height: 300 }} onDoubleClick={zoom.onDoubleClick}>
         <ResponsiveContainer>
           <LineChart
             data={zoom.visible}

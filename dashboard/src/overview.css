@@ -193,6 +193,10 @@
 .device-pi-chip { fill: #C0DD97; }
 .device-pi-port { fill: #97C459; }
 .probe-text p.probe-id { margin-top: 8px; font-size: 14px; color: var(--lav-soft); opacity: 0.8; }
+.probe-text p.probe-id .place-city {
+  filter: blur(5px);
+  user-select: none;
+}
 
 .orb-wrap {
   position: relative;

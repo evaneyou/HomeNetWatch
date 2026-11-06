@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../api";
-import { AnonPlate, AnonText, coordinate, isAnonymized, joinAnon } from "../anonymized";
+import { AnonPlate, AnonText, PlaceText, coordinate, isAnonymized, shownAnon } from "../anonymized";
 import CityMap from "./CityMap";
 import { formatChartHour } from "../chartTime";
 import { isAndroid } from "../deviceType";
@@ -118,12 +118,11 @@ export default function DevicePanel({
   const latest = report.latest;
   const android =
     isAndroid(platform ?? report.platform) || Boolean(report.agent_version?.startsWith("android-"));
-  const place = joinAnon([report.location_label, report.region, report.country]);
   const latitude = coordinate(report.latitude);
   const longitude = coordinate(report.longitude);
   const savedPin = latitude != null && longitude != null ? { latitude, longitude } : null;
-  const pinMark = [report.latitude, report.longitude].filter(isAnonymized).map(String).join("  ");
-  const placeHidden = isAnonymized(place) || pinMark.length > 0;
+  const pinMark = [report.latitude, report.longitude].filter(isAnonymized).map((item) => shownAnon(String(item))).join("  ");
+  const placeHidden = pinMark.length > 0;
 
   const cpu = cpuLastHour(report.points);
   const allTiles = latest
@@ -173,11 +172,7 @@ export default function DevicePanel({
         <div className="probe-inspector-head">
           <div className="probe-inspector-place">
             <span className="probe-inspector-kicker">Location</span>
-            {placeHidden ? (
-              <span className="anon-mark">{place || pinMark}</span>
-            ) : (
-              <span className="probe-inspector-place-text">{place || "No location saved"}</span>
-            )}
+            <PlaceText city={report.location_label} region={report.region} country={report.country} />
           </div>
           <span className={report.connected ? "device-live" : "device-quiet"}>
             {report.connected ? "● Connected" : "○ Waiting"}
@@ -226,11 +221,11 @@ export default function DevicePanel({
             className="location-map probe-mini-map"
             latitude={savedPin.latitude}
             longitude={savedPin.longitude}
-            label={place || report.name}
+            label={[report.region, report.country].filter(Boolean).join(", ") || report.name}
             zoomControl={false}
           />
         ) : placeHidden ? (
-          <AnonPlate value={pinMark || place} />
+          <AnonPlate value={pinMark} />
         ) : null}
       </section>
 

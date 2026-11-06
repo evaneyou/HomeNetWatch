@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api";
-import { isAnonymized } from "../anonymized";
+import { isAnonymized, shownAnon } from "../anonymized";
 import { useGuestGate } from "../guestGate";
 import type { User } from "../types";
 import BgpPath, { bgpVerdict } from "./BgpPath";
@@ -185,18 +185,18 @@ export default function NetworkPathView({
     setSelected(answered ?? item.hop_ttls[0] ?? null);
   }
 
-  /** With a host typed in, trace to it now; without, refresh the path for the chosen destination. */
+  // With a host typed in, trace to it now; without, refresh the path for the chosen destination.
   async function runTrace() {
     if (running || waiting) return;
     setTraceError("");
+    // A guest can look but not start work on the Pi; the gate explains that instead of failing.
+    if (hostMode && me.data?.role === "guest") {
+      run(() => undefined);
+      return;
+    }
     const typed = hostMode ? hostText.trim() : "";
     if (hostMode && !typed) {
       setTraceError("Type a host name or a public IP address to trace.");
-      return;
-    }
-    // A guest can look but not start work on the Pi; the gate explains that instead of failing.
-    if (typed && me.data?.role === "guest") {
-      run(() => undefined);
       return;
     }
     setRunning(true);
@@ -593,7 +593,9 @@ function HopDetail({ trace, hop, headless = false }: { trace: PathTrace; hop: Pa
         {rows.map(([label, value, mono]) => (
           <div className="npv-kv" key={label}>
             <span className="k">{label}</span>
-            <span className={isAnonymized(value) ? "v anon-mark" : mono ? "v mono" : "v"}>{value}</span>
+            <span className={isAnonymized(value) ? "v anon-mark" : mono ? "v mono" : "v"}>
+              {isAnonymized(value) ? shownAnon(value) : value}
+            </span>
           </div>
         ))}
       </div>

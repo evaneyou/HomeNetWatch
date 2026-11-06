@@ -1,7 +1,7 @@
 import { Background, Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { ReactElement } from "react";
-import { isAnonymized } from "../anonymized";
+import { isAnonymized, shownAnon } from "../anonymized";
 
 export type LinkStatus = "ok" | "degraded" | "fail" | "unknown";
 
@@ -92,7 +92,7 @@ function MiniBox({ data }: NodeProps<MiniNode>) {
         <strong>{data.title}</strong>
         {data.lines.map((line, index) => (
           <span key={`${index}-${line}`} className={isAnonymized(line) ? "anon-mark" : undefined}>
-            {line}
+            {isAnonymized(line) ? shownAnon(line) : line}
           </span>
         ))}
       </span>

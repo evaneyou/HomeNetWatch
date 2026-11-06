@@ -384,6 +384,7 @@ def test_recommended_profiles_and_comparison_report(client, db, monitor_token):
 
 def test_guest_cannot_start_a_check_or_see_the_home_address(client, db, monitor_token):
     from app.models import UserRole
+    from app.redact import BLUR
 
     if db.scalar(select(User).where(User.username == "guest")) is None:
         db.add(User(username="guest", password_hash=hash_password("guest"), role=UserRole.guest, is_active=True))
@@ -395,7 +396,7 @@ def test_guest_cannot_start_a_check_or_see_the_home_address(client, db, monitor_
     listed = client.get("/api/v1/monitors", headers=guest)
     assert listed.status_code == 200
     mine = next(item for item in listed.json() if item["id"] == str(monitor.id))
-    assert mine["public_ip"] == "###.#.###.##"
+    assert mine["public_ip"] == BLUR + "203.0.113.50"
     denied = client.put(
         "/api/v1/synthetic/continuous",
         headers=guest,
@@ -523,7 +524,7 @@ def test_guest_middleware_hashes_the_streamed_json_body(monkeypatch):
     from fastapi.testclient import TestClient
 
     from app import redact as redact_mod
-    from app.redact import GuestAnonymizeMiddleware
+    from app.redact import GuestAnonymizeMiddleware, BLUR
 
     monkeypatch.setattr(redact_mod, "_request_is_guest", lambda _request: True)
     mini = FastAPI()
@@ -538,12 +539,12 @@ def test_guest_middleware_hashes_the_streamed_json_body(monkeypatch):
     client = TestClient(mini)
     response = client.get("/probe")
     assert response.status_code == 200, response.text
-    assert response.json() == {"public_ip": "###.#.###.#", "rtt_ms": 12}
+    assert response.json() == {"public_ip": BLUR + "203.0.113.9", "rtt_ms": 12}
     assert response.cookies.get("hns_session") == "refreshed"
 
 
 def test_guest_redaction_drops_markings_and_leaves_admin_results():
-    from app.redact import redact
+    from app.redact import redact, BLUR
 
     payload = {
         "public_ip": "203.0.113.9",
@@ -554,13 +555,13 @@ def test_guest_redaction_drops_markings_and_leaves_admin_results():
         "aps": [{"ssid": "Home", "bssid": "aa:bb"}, {"ssid": "Cafe", "bssid": "cc:dd"}],
     }
     hidden = redact(payload, UserRole.guest)
-    assert hidden["public_ip"] == "###.#.###.#"
+    assert hidden["public_ip"] == BLUR + "203.0.113.9"
     assert hidden["lan_ip"] == ""
-    assert hidden["latitude"] == "##.#"  # no monitor_id, so this is not the probe's own place
-    assert hidden["hostname"] == "######-####"
+    assert hidden["latitude"] == BLUR + "40.1"  # no monitor_id, so this is not the probe's own place
+    assert hidden["hostname"] == BLUR + "living-room"
     assert hidden["metrics"] == {"rtt_ms": 20}
-    assert hidden["aps"][0]["ssid"] == "####"
-    assert hidden["aps"][0]["bssid"] == "##:##"
+    assert hidden["aps"][0]["ssid"] == BLUR + "Home"
+    assert hidden["aps"][0]["bssid"] == BLUR + "aa:bb"
     assert hidden["aps"][0]["anon_key"] != hidden["aps"][1]["anon_key"]
     probe = {
         "monitor_id": "m1",
@@ -572,13 +573,13 @@ def test_guest_redaction_drops_markings_and_leaves_admin_results():
         "public_ip": "203.0.113.9",
     }
     shown = redact(probe, UserRole.guest)
-    assert shown["location_label"] == "Living room"
+    assert shown["location_label"] == BLUR + "Living room"
     assert shown["region"] == "New York"
     assert shown["latitude"] == 40.75
-    assert shown["public_ip"] == "###.#.###.#"
+    assert shown["public_ip"] == BLUR + "203.0.113.9"
     visitor = redact({"country": "Canada", "region": "Ontario", "city": "Toronto"}, UserRole.guest)
-    assert visitor["country"] == "######"
-    assert visitor["region"] == "#######"
+    assert visitor["country"] == BLUR + "Canada"
+    assert visitor["region"] == BLUR + "Ontario"
     visible = redact(payload, UserRole.admin)
     assert visible["metrics"]["tos"] == 184
     assert visible["public_ip"] == "203.0.113.9"

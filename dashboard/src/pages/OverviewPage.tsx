@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { joinAnon } from "../anonymized";
+import { isAnonymized, shownAnon } from "../anonymized";
 import { isAndroid } from "../deviceType";
-import type { HealthCell, MonitorAdmin, Summary } from "../types";
+import type { HealthCell, MonitorAdmin, Summary, User } from "../types";
 import "../overview.css";
 
 type CheckState = "ok" | "slow" | "down" | "unknown";
@@ -294,16 +294,16 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
         `${join(unknown)} ${unknown.length === 1 ? "hasn't" : "haven't"} been tested yet.`;
       reason = `The face is lavender and mint because ${join(unknown)} ${unknown.length === 1 ? "has" : "have"} not completed a full test window yet.`;
     }
-    const place = joinAnon(
-      [monitor.location_label, monitor.region ?? regionById.get(monitor.id)]
-        .map((part) => part?.trim() || "")
-        .filter((part, index, all) => part !== "" && part !== monitor.name && all.indexOf(part) === index),
-    );
+    const city = (monitor.location_label?.trim() || "").trim();
+    const state = (monitor.region ?? regionById.get(monitor.id) ?? "").trim();
+    const cityShown = city && city !== monitor.name ? city : "";
+    const stateShown = state && state !== monitor.name && state !== cityShown ? state : "";
     return {
       id: monitor.id,
       name: monitor.name,
       android,
-      place: place || null,
+      city: cityShown || null,
+      state: stateShown || null,
       checks,
       mood,
       moodLabel: MOOD_LABEL[mood],
@@ -328,6 +328,8 @@ export default function OverviewPage() {
     queryFn: () => api.monitors() as Promise<MonitorAdmin[]>,
     refetchInterval: 30_000,
   });
+  const me = useQuery({ queryKey: ["me"], queryFn: () => api.me() as Promise<User> });
+  const hideCity = me.data?.role === "guest" || !me.data;
 
   if (q.isLoading) {
     return (
@@ -414,7 +416,20 @@ export default function OverviewPage() {
                   {location.android ? "NVIDIA Shield · Android" : "Raspberry Pi · Linux"}
                 </span>
                 <p>{location.blurb}</p>
-                {location.place ? <p className="probe-id">{location.place}</p> : null}
+                {location.city || location.state ? (
+                  <p className="probe-id">
+                    {location.city ? (
+                      <span
+                        className={hideCity || isAnonymized(location.city) ? "place-city" : undefined}
+                        aria-hidden={hideCity || isAnonymized(location.city) || undefined}
+                      >
+                        {shownAnon(location.city)}
+                      </span>
+                    ) : null}
+                    {location.city && location.state ? <span aria-hidden={hideCity || undefined}>, </span> : null}
+                    {location.state ? <span>{location.state}</span> : null}
+                  </p>
+                ) : null}
               </div>
             </div>
             <ul className="checks">

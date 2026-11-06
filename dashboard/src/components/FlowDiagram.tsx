@@ -17,7 +17,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useMemo, useState } from "react";
-import { isAnonymized } from "../anonymized";
+import { isAnonymized, shownAnon } from "../anonymized";
 import { EDGE_IDS, NODE, SCAN_EDGE, edgeId, hostOf, hostsOf, pathsFor, type FlowLink, type FlowTest } from "../flowPaths";
 import type { MonitorAdmin, MonitorDetail, RfOverview } from "../types";
 
@@ -98,7 +98,7 @@ function PathBox({ data }: NodeProps<FlowNodeType>) {
       <strong>{data.title}</strong>
       {data.lines.map((line, index) => (
         <span key={`${index}-${line}`} className={isAnonymized(line) ? "anon-mark" : undefined}>
-          {line}
+            {isAnonymized(line) ? shownAnon(line) : line}
         </span>
       ))}
       <NodeToolbar isVisible={open} position={side} align={align} offset={12}>
@@ -109,7 +109,9 @@ function PathBox({ data }: NodeProps<FlowNodeType>) {
               {facts.map(([label, value]) => (
                 <div key={label}>
                   <dt>{label}</dt>
-                  <dd className={isAnonymized(value) ? "anon-mark" : undefined}>{value}</dd>
+                  <dd className={isAnonymized(value) ? "anon-mark" : undefined}>
+                    {isAnonymized(value) ? shownAnon(value) : value}
+                  </dd>
                 </div>
               ))}
             </dl>

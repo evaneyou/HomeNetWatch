@@ -13,7 +13,7 @@ import {
   Tooltip,
   YAxis,
 } from "recharts";
-import { isAnonymized } from "../anonymized";
+import { isAnonymized, shownAnon } from "../anonymized";
 import { chartWindow, formatChartTick, zoomedDomain } from "../chartTime";
 import { TimeAxis } from "./TimeAxis";
 import { useChartZoom } from "../useChartZoom";
@@ -313,7 +313,9 @@ export function InternetDetail({
                   {latestHops.map((hop) => (
                     <tr key={hop.hop}>
                       <td className="mono">{hop.hop}</td>
-                      <td className={isAnonymized(hop.host) ? "anon-mark" : "mono"}>{hop.host}</td>
+                      <td className={isAnonymized(hop.host) ? "anon-mark" : "mono"}>
+                        {isAnonymized(hop.host) ? shownAnon(hop.host) : hop.host}
+                      </td>
                       <td className="mono">{fmt(hop.loss_pct)}%</td>
                       <td className="mono">{fmt(hop.best_ms)} ms</td>
                       <td className="mono">{fmt(hop.avg_ms)} ms</td>

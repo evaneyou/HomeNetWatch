@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
-import { AnonText, joinAnon } from "../anonymized";
+import { AnonText, PlaceText } from "../anonymized";
 import { canOperate, useGuestGate } from "../guestGate";
 import ConfirmDialog from "../components/ConfirmDialog";
 import SelectMenu from "../components/SelectMenu";
@@ -50,10 +50,6 @@ function tunnelLabel(monitor: MonitorAdmin): string {
   if (action === "wireless") return "Issue Wi-Fi tunnel";
   if (action === "replace") return "Replace tunnels";
   return "Issue tunnels";
-}
-
-function placeLabel(city: string | null, region: string | null, country: string | null): string {
-  return joinAnon([city?.trim(), region?.trim(), country?.trim()]) || "No location";
 }
 
 function formatSeen(iso: string | null): string {
@@ -686,7 +682,12 @@ export default function MonitorOnboardingPage() {
                       <span className="device-type">{deviceTypeLabel(monitor.platform)}</span>
                     </span>
                     <span className="muted">
-                      <AnonText value={placeLabel(monitor.location_label, monitor.region, monitor.country)} fallback="No location" />
+                      <PlaceText
+                        city={monitor.location_label}
+                        region={monitor.region}
+                        country={monitor.country}
+                        fallback="No location"
+                      />
                     </span>
                     <span className="mono">
                       <AnonText value={monitor.lan_ip} fallback="No address yet" />

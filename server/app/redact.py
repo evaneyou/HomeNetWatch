@@ -1,7 +1,7 @@
-"""Replace each letter and digit of a guest's identifying fields with #.
+"""Mark a guest's identifying fields so the dashboard can blur them.
 
-Dots, colons, and spaces stay, so an address still has the shape of an address.
-The real value never leaves the server.
+The mark is a word joiner in front of the real text. Empty values stay empty.
+State and country on a saved place stay readable. The city is marked.
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ from app.models import UserRole
 # Path markings that name a traffic class. Dropped rather than shown.
 _DROP = {"tos", "dscp", "dscp_seen"}
 
-# Present values are hashed character by character. Empty values stay empty so "not set yet"
-# does not look like a hidden address.
+# Present values are marked for the dashboard to blur. Empty values stay empty.
+BLUR = "\u2060"
 _MASK = {
     "public_ip",
     "lan_ip",
@@ -67,9 +67,8 @@ _MASK = {
 _ID_KEYS = {"bssid", "mac", "client_mac", "asn", "origin_asn"}
 
 
-# The probe's own place. It is a chosen pin, not the real home address, so a guest may see it.
-# A guest visitor's region and country are different records and stay masked.
-_PROBE_PLACE = {"location_label", "region", "country", "latitude", "longitude"}
+# The probe's own state, country, and pin stay readable. The city is marked and blurred.
+_PROBE_PLACE = {"region", "country", "latitude", "longitude"}
 
 
 def redact(value, role: UserRole):
@@ -80,14 +79,24 @@ def redact(value, role: UserRole):
 
 def _scrub(value, ids: dict):
     if isinstance(value, dict):
+        # In Path View, only the source (home/LAN) IP address is hidden for guests;
+        # public hops, ASNs, prefixes, reverse DNS, and BGP path details stay visible.
+        if "hops" in value and "groups" in value and "bgp" in value:
+            return _scrub_path_trace(value, ids)
         cleaned = {}
         token = None
         probe = "monitor_id" in value and ("location_label" in value or "latitude" in value)
+        # A saved place: blur the city, leave the state and country readable.
+        # A guest visitor's region and country have no location_label, so they stay marked.
+        saved_place = "location_label" in value
         for key, item in value.items():
             if key in _DROP:
                 continue
             if key in {"name", "label"} and any(marker in value for marker in ("asn", "bssid", "ssid")):
                 cleaned[key] = _masked(item, ids)
+                continue
+            if saved_place and key in {"region", "country"}:
+                cleaned[key] = item
                 continue
             if key in _PROBE_PLACE and probe:
                 cleaned[key] = _scrub(item, ids)
@@ -106,6 +115,22 @@ def _scrub(value, ids: dict):
     return value
 
 
+def _scrub_path_trace(trace: dict, ids: dict) -> dict:
+    cleaned = dict(trace)
+    hops = []
+    for index, hop in enumerate(trace.get("hops") or []):
+        if isinstance(hop, dict):
+            hop_copy = dict(hop)
+            if hop_copy.get("role") == "home" or index == 0:
+                hop_copy["ip"] = _masked(hop_copy.get("ip"), ids)
+                hop_copy["rdns"] = _masked(hop_copy.get("rdns"), ids)
+            hops.append(hop_copy)
+        else:
+            hops.append(hop)
+    cleaned["hops"] = hops
+    return cleaned
+
+
 def _masked(value, ids: dict):
     if value is None or value == "":
         return value
@@ -113,12 +138,12 @@ def _masked(value, ids: dict):
         return [_masked(item, ids) for item in value]
     if isinstance(value, dict):
         return _scrub(value, ids)
-    return _hash_chars(value)
+    return _conceal(value)
 
 
-def _hash_chars(value) -> str:
-    """Swap each letter or digit for # and leave dots, colons, and spaces in place."""
-    return "".join("#" if char.isalnum() else char for char in str(value))
+def _conceal(value) -> str:
+    """Keep the real text and mark it so the dashboard blurs it instead of printing hashes."""
+    return BLUR + str(value)
 
 
 def _token(ids: dict, value) -> str:

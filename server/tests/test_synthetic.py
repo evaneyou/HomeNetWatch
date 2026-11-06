@@ -396,7 +396,7 @@ def test_guest_cannot_start_a_check_or_see_the_home_address(client, db, monitor_
     listed = client.get("/api/v1/monitors", headers=guest)
     assert listed.status_code == 200
     mine = next(item for item in listed.json() if item["id"] == str(monitor.id))
-    assert mine["public_ip"] == BLUR + "203.0.113.50"
+    assert mine["public_ip"] == BLUR + "###.#.###.##"
     denied = client.put(
         "/api/v1/synthetic/continuous",
         headers=guest,
@@ -539,7 +539,7 @@ def test_guest_middleware_hashes_the_streamed_json_body(monkeypatch):
     client = TestClient(mini)
     response = client.get("/probe")
     assert response.status_code == 200, response.text
-    assert response.json() == {"public_ip": BLUR + "203.0.113.9", "rtt_ms": 12}
+    assert response.json() == {"public_ip": BLUR + "###.#.###.#", "rtt_ms": 12}
     assert response.cookies.get("hns_session") == "refreshed"
 
 
@@ -555,13 +555,13 @@ def test_guest_redaction_drops_markings_and_leaves_admin_results():
         "aps": [{"ssid": "Home", "bssid": "aa:bb"}, {"ssid": "Cafe", "bssid": "cc:dd"}],
     }
     hidden = redact(payload, UserRole.guest)
-    assert hidden["public_ip"] == BLUR + "203.0.113.9"
+    assert hidden["public_ip"] == BLUR + "###.#.###.#"
     assert hidden["lan_ip"] == ""
-    assert hidden["latitude"] == BLUR + "40.1"  # no monitor_id, so this is not the probe's own place
-    assert hidden["hostname"] == BLUR + "living-room"
+    assert hidden["latitude"] == BLUR + "##.#"  # no monitor_id, so this is not the probe's own place
+    assert hidden["hostname"] == BLUR + "######-####"
     assert hidden["metrics"] == {"rtt_ms": 20}
-    assert hidden["aps"][0]["ssid"] == BLUR + "Home"
-    assert hidden["aps"][0]["bssid"] == BLUR + "aa:bb"
+    assert hidden["aps"][0]["ssid"] == BLUR + "####"
+    assert hidden["aps"][0]["bssid"] == BLUR + "##:##"
     assert hidden["aps"][0]["anon_key"] != hidden["aps"][1]["anon_key"]
     probe = {
         "monitor_id": "m1",
@@ -573,16 +573,34 @@ def test_guest_redaction_drops_markings_and_leaves_admin_results():
         "public_ip": "203.0.113.9",
     }
     shown = redact(probe, UserRole.guest)
-    assert shown["location_label"] == BLUR + "Living room"
+    assert shown["location_label"] == BLUR + "###### ####"
     assert shown["region"] == "New York"
     assert shown["latitude"] == 40.75
-    assert shown["public_ip"] == BLUR + "203.0.113.9"
+    assert shown["public_ip"] == BLUR + "###.#.###.#"
     visitor = redact({"country": "Canada", "region": "Ontario", "city": "Toronto"}, UserRole.guest)
-    assert visitor["country"] == BLUR + "Canada"
-    assert visitor["region"] == BLUR + "Ontario"
+    assert visitor["country"] == BLUR + "######"
+    assert visitor["region"] == BLUR + "#######"
     visible = redact(payload, UserRole.admin)
     assert visible["metrics"]["tos"] == 184
     assert visible["public_ip"] == "203.0.113.9"
+
+
+def test_guest_redaction_never_sends_the_real_value():
+    import json
+
+    from app.redact import redact
+
+    payload = {
+        "public_ip": "203.0.113.9",
+        "hostname": "living-room",
+        "ssid": "HomeNet",
+        "mac": "aa:bb:cc:dd:ee:ff",
+        "location": {"monitor_id": "m1", "location_label": "Springfield", "region": "Ohio", "country": "US"},
+    }
+    text = json.dumps(redact(payload, UserRole.guest), ensure_ascii=False)
+    for secret in ("203.0.113.9", "living-room", "HomeNet", "aa:bb:cc:dd:ee:ff", "Springfield"):
+        assert secret not in text
+    assert "Ohio" in text
 
 
 def test_allowlist_keeps_ipv4_peer_endpoints_only():

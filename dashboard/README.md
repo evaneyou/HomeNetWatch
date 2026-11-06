@@ -57,7 +57,7 @@ Old `/sensors/:id` links redirect to `/monitors/:id`.
 
 Roles are enforced by the server. A viewer gets a read-only UI with write controls hidden and no Settings
 or Server Health. A guest can open every page, including Settings, read-only: the server refuses its
-changes, and the dashboard blurs the fields the server marks as identifying. A guest session ends after
+changes, and the server sends identifying fields as `#` marks, which the dashboard blurs. A guest session ends after
 3 minutes idle.
 
 ## Layout

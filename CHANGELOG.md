@@ -12,11 +12,11 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
-- **Guest view blurs instead of printing `#`:** identifying values in a guest's view (home and LAN addresses, the
-  city, device and wireless names) are shown blurred rather than replaced letter by letter with `#`. A saved place
-  keeps its state and country readable, and Path View keeps the public hops, networks and BGP details visible and
-  blurs only the source (home) hop. The server marks each such value with a leading word joiner (U+2060) and the
-  dashboard blurs what it marks.
+- **Guest view: hidden values are `#` and blurred:** identifying values in a guest's view (home and LAN addresses,
+  the city, device and wireless names) are still replaced letter by letter with `#` on the server, so the real value
+  never reaches the browser, and the dashboard now also blurs them so a guest can see that something is hidden. The
+  server marks each hidden value with a leading word joiner (U+2060). A saved place keeps its state and country
+  readable, and Path View keeps the public hops, networks and BGP details visible and hides only the source (home) hop.
 - **Live dashboard opens already signed in as the guest:** the landing page's **Open live dashboard** button goes to
   `/welcome/enter.html`, which signs the visitor in as the guest from the same site (`POST /api/v1/auth/guest/session`,
   accepted only when the request's `Origin` is that site) and opens the dashboard. `GET /api/v1/auth/guest` redirects

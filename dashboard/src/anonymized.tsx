@@ -1,16 +1,16 @@
 import type { ReactNode } from "react";
 
-/** A word joiner the server puts in front of a value the dashboard should blur. */
+/** A word joiner the server puts in front of a hidden (#) value the dashboard should blur. */
 export const BLUR_MARK = "\u2060";
 
-/** A guest value the server marked for blurring, or an older value made of #. */
+/** A guest value the server hid and marked for blurring, or an unmarked value made of #. */
 export function isAnonymized(value: unknown): boolean {
   if (typeof value !== "string") return false;
   if (value.startsWith(BLUR_MARK)) return true;
   return value.includes("#") && !/[A-Za-z0-9]/.test(value);
 }
 
-/** The text to show inside a blur. Older hashed values stay as they are. */
+/** The text to show inside a blur: the server's # marks, without the word joiner. */
 export function shownAnon(value: string): string {
   return value.startsWith(BLUR_MARK) ? value.slice(BLUR_MARK.length) : value;
 }

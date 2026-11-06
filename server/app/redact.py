@@ -1,7 +1,9 @@
-"""Mark a guest's identifying fields so the dashboard can blur them.
+"""Hide a guest's identifying fields and mark them so the dashboard can blur them.
 
-The mark is a word joiner in front of the real text. Empty values stay empty.
-State and country on a saved place stay readable. The city is marked.
+Each letter and digit becomes #, so the real value never leaves the server. Dots, colons and
+spaces stay, so an address still has the shape of an address. A word joiner in front marks the
+value, and the dashboard blurs what it marks so a guest can see that something is hidden.
+Empty values stay empty. State and country on a saved place stay readable. The city is hidden.
 """
 
 from __future__ import annotations
@@ -20,7 +22,8 @@ from app.models import UserRole
 # Path markings that name a traffic class. Dropped rather than shown.
 _DROP = {"tos", "dscp", "dscp_seen"}
 
-# Present values are marked for the dashboard to blur. Empty values stay empty.
+# Present values are hashed and marked for the dashboard to blur. Empty values stay empty so
+# "not set yet" does not look like a hidden address.
 BLUR = "\u2060"
 _MASK = {
     "public_ip",
@@ -142,8 +145,8 @@ def _masked(value, ids: dict):
 
 
 def _conceal(value) -> str:
-    """Keep the real text and mark it so the dashboard blurs it instead of printing hashes."""
-    return BLUR + str(value)
+    """Swap each letter or digit for #, keep dots, colons and spaces, and mark it for the blur."""
+    return BLUR + "".join("#" if char.isalnum() else char for char in str(value))
 
 
 def _token(ids: dict, value) -> str:

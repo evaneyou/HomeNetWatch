@@ -16,6 +16,16 @@ def _ensure_guest(db) -> None:
         db.commit()
 
 
+def test_guest_entry_link_signs_in_and_opens_the_dashboard(client, db):
+    _ensure_guest(db)
+    response = client.get("/api/v1/auth/guest", follow_redirects=False)
+    assert response.status_code == 303, response.text
+    assert response.headers["location"] == "/"
+    me = client.get("/api/v1/auth/me")
+    assert me.status_code == 200, me.text
+    assert me.json()["role"] == "guest"
+
+
 def test_guest_login_records_the_proxy_address_and_hides_the_list(client, db):
     _ensure_guest(db)
     before = db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.action == "guest_login"))

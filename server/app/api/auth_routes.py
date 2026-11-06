@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -79,6 +80,31 @@ def login(
     else:
         set_session_cookie(response, token, settings)
     return _user_out(user, token, settings)
+
+
+@router.get("/auth/guest")
+def enter_as_guest(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RedirectResponse:
+    """Sign in as the read-only guest and open the dashboard. This is the public demo link."""
+    address = _visitor_address(request)
+    if login_failures.blocked(address):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many sign-in attempts. Wait a few minutes and try again.",
+        )
+    user = db.scalar(select(User).where(User.username == settings.bootstrap_guest_username))
+    if user is None or not user.is_active or user.role != UserRole.guest:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guest access is not available")
+    token = create_session_token(user.id, settings)
+    db.add(AuditEvent(username=user.username, action="guest_login", detail=address))
+    guest_visits_module.record(db, address)
+    db.commit()
+    redirect = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    set_session_cookie(redirect, token, settings, max_age=settings.guest_idle_seconds)
+    return redirect
 
 
 @router.post("/auth/logout")

@@ -12,6 +12,9 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **Guests see sample software and processes in Server Health:** the public guest could read the host's OS, kernel,
+  running programs, home folder names and every package with a known vulnerability. Guests now get a fixed sample for
+  those parts; the CPU, memory, disk, traffic and database charts stay real. The admin view is unchanged.
 - **The agent port serves enrollment only:** port 8848 is public so agents at home can enroll, but it ran the whole
   API, including sign-in and every admin route, and the API docs. It now serves only `/api/v1/agents/*`
   (`AGENT_API_ONLY=1` in `docker-compose.yml`); the dashboard API stays behind Caddy.

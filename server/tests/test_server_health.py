@@ -619,3 +619,59 @@ def test_fault_simulation_viewer_refused_missing_key_and_mocked_success(client, 
     assert body["overview"]["cause"] == "tunnel"
     assert "tunnel-down:{id}:wireless" in body["alerts"]["fires"]
     assert "ISP" in body["will_not_happen"][0] or "net-down:wan" in body["will_not_happen"][0]
+
+
+def test_a_guest_sees_sample_software_and_processes(client, db):
+    """The host's packages, advisories, kernel and process names are for the admin only."""
+    real = {
+        "version": 2,
+        "os": "Real OS 99",
+        "kernel": "9.9.9-real",
+        "error": "",
+        "packages": [
+            {"name": "real-ssl", "installed": "1", "newest": "2", "behind": True, "advisories": [{"id": "CVE-2026-1", "risk": "high", "summary": "x"}], "risk": "high"}
+        ],
+        "groups": [],
+    }
+    db.execute(delete(ServerAdvisory))
+    db.add(ServerAdvisory(id=1, checked_at=datetime.now(timezone.utc), payload=real))
+    db.commit()
+    _user(db, "guest-sample", UserRole.guest)
+    login(client, "guest-sample", "guest-sample")
+
+    body = client.get("/api/v1/server-health?range=1h").json()
+    text = str(body)
+    assert "real-ssl" not in text and "9.9.9-real" not in text and "Real OS" not in text
+    assert body["advisories"]["demo"] is True
+    assert body["stuck"] == []
+    assert {row["name"] for row in body["processes"]} <= {"postgres: writer", "uvicorn app.main:app", "caddy run"}
+    assert client.get("/api/v1/server-health/software", params={"source": "host", "name": "real-ssl"}).status_code == 404
+    sample = client.get("/api/v1/server-health/software", params={"source": "host", "name": "libexample-ssl3"})
+    assert sample.status_code == 200 and sample.json()["demo"] is True
+
+    _user(db, "admin", UserRole.admin)
+    login(client)
+    admin = client.get("/api/v1/server-health?range=1h").json()
+    assert admin["advisories"]["packages"][0]["name"] == "real-ssl"
+    db.execute(delete(ServerAdvisory))
+    db.commit()
+
+
+def test_guest_storage_hides_home_folder_names():
+    from app.server_health_demo import guest_report
+
+    real = {
+        "latest": None,
+        "storage": {
+            "projection": None,
+            "breakdown": {
+                "groups": [
+                    {"key": "home", "title": "Home folders", "bytes": 10, "children": [{"name": "secret-project", "bytes": 10}]},
+                    {"key": "system", "title": "System programs", "bytes": 5, "children": [{"name": "Installed programs", "bytes": 5}]},
+                ]
+            },
+        },
+    }
+    groups = guest_report(real)["storage"]["breakdown"]["groups"]
+    assert groups[0]["children"][0]["name"] == "Folder 1"
+    assert groups[1]["children"][0]["name"] == "Installed programs"

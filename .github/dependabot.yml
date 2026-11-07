@@ -26,8 +26,16 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
+  - package-ecosystem: npm
+    directory: /dashboard/serve
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: docker
-    directories: [/server, /dashboard, /wireguard]
+    directories: [/server, /dashboard, /librespeed, /wireguard]
     schedule:
       interval: monthly
     ignore:

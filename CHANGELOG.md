@@ -12,6 +12,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **Images build from the lockfiles:** the server image installed the newest release of every dependency instead of
+  what `uv.lock` pins, so production could run code CI never tested. It now installs from `uv.lock` with hash checks;
+  the dashboard uses `npm ci` and a pinned `serve` (`dashboard/serve/`); LibreSpeed checks the release file's SHA-256;
+  base images are pinned by digest, and Dependabot proposes updates.
 - **Guests see sample software and processes in Server Health:** the public guest could read the host's OS, kernel,
   running programs, home folder names and every package with a known vulnerability. Guests now get a fixed sample for
   those parts; the CPU, memory, disk, traffic and database charts stay real. The admin view is unchanged.

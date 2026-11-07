@@ -99,6 +99,8 @@ type Report = {
     os: string;
     kernel: string;
     error?: string;
+    demo?: boolean;
+    note?: string;
     packages: PackageRow[];
     groups?: SoftwareGroup[];
   } | null;
@@ -605,7 +607,9 @@ function SoftwarePanel({ advisories }: { advisories: NonNullable<Report["advisor
   return (
     <>
       <p className="muted server-health-note">
-        Last checked {when(advisories.checked_at)}. The next check is Sunday at 3:00 AM Eastern.
+        {advisories.demo && advisories.note
+          ? advisories.note
+          : `Last checked ${when(advisories.checked_at)}. The next check is Sunday at 3:00 AM Eastern.`}
       </p>
       <div className="software-tiles" role="group" aria-label="Packages by risk">
         {RISK_ORDER.map((risk) => (

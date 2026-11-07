@@ -10,6 +10,14 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Security
+
+- **Guests no longer see Wi-Fi names, BSSIDs or home addresses inside sentences:** guest redaction hid these only
+  under known field names, so they still reached guests in issue titles ("Possible evil twin <SSID> on <BSSID>"), airwave
+  test names and log messages. Every other string a guest receives is now searched for MAC addresses, private and
+  CGNAT addresses, the agents' own addresses, and the Wi-Fi names, places and AP labels this installation knows; only
+  those parts become `#`. Path View's public hops stay visible as before.
+
 ### Changed
 
 - **Guest view: hidden values are `#` and blurred:** identifying values in a guest's view (home and LAN addresses,

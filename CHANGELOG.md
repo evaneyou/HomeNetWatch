@@ -10,6 +10,17 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Security
+
+- **The agent port serves enrollment only:** port 8848 is public so agents at home can enroll, but it ran the whole
+  API, including sign-in and every admin route, and the API docs. It now serves only `/api/v1/agents/*`
+  (`AGENT_API_ONLY=1` in `docker-compose.yml`); the dashboard API stays behind Caddy.
+- **Sign-in limit can't be dodged with a forged header:** `X-Forwarded-For` is used only when the request comes from
+  a trusted proxy (`TRUSTED_PROXIES`, default `caddy`). Anyone else is limited by their own address, so a client that
+  writes a new address on every try no longer gets unlimited guesses.
+- **Per-account sign-in limit:** besides 8 failures per address, an account name allows 30 failed sign-ins per
+  15 minutes from all addresses together. The public guest account is exempt, so it can't be locked for visitors.
+
 ### Changed
 
 - **Guest view: hidden values are `#` and blurred:** identifying values in a guest's view (home and LAN addresses,

@@ -12,6 +12,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **Images build from the lockfiles:** the server image installed the newest release of every dependency instead of
+  what `uv.lock` pins, so production could run code CI never tested. It now installs from `uv.lock` with hash checks;
+  the dashboard uses `npm ci` and a pinned `serve` (`dashboard/serve/`); LibreSpeed checks the release file's SHA-256;
+  base images are pinned by digest, and Dependabot proposes updates.
 - **The agent port serves enrollment only:** port 8848 is public so agents at home can enroll, but it ran the whole
   API, including sign-in and every admin route, and the API docs. It now serves only `/api/v1/agents/*`
   (`AGENT_API_ONLY=1` in `docker-compose.yml`); the dashboard API stays behind Caddy.

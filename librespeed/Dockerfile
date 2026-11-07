@@ -1,6 +1,9 @@
-FROM debian:12-slim
+# Base images are pinned by digest; Dependabot (docker) proposes new digests.
+FROM debian:12-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
 ARG VERSION=1.4.0
+# SHA-256 of the release file for VERSION, as GitHub lists it on the release. Change both together.
+ARG SHA256=1eb58f1a83974069b16c5dd0f792b23054f10cb578cabfdcd1a233418a7ffbf5
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl xz-utils nginx \
@@ -11,6 +14,7 @@ WORKDIR /opt/librespeed
 
 RUN curl -fsSL -o /tmp/librespeed.tar.xz \
         "https://github.com/librespeed/speedtest-rust/releases/download/v${VERSION}/librespeed-rs-aarch64-unknown-linux-gnu.tar.xz" \
+    && echo "${SHA256}  /tmp/librespeed.tar.xz" | sha256sum -c - \
     && tar -xJf /tmp/librespeed.tar.xz -C /opt/librespeed \
     && rm /tmp/librespeed.tar.xz /opt/librespeed/configs.toml \
     && chmod 755 /opt/librespeed/librespeed-rs

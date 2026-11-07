@@ -1,16 +1,22 @@
-FROM python:3.15-slim
+# Base images are pinned by digest; Dependabot (docker) proposes new digests.
+FROM python:3.15-slim@sha256:e97b88e416c3c01eb427b21fd8cd3ebf006e6ee38afcfcc3cae1c54ee2ab0a75
+
+COPY --from=ghcr.io/astral-sh/uv:0.13.1@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336 /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir uv
+# Install exactly what uv.lock lists, checked against its hashes, so production runs what CI tested.
+COPY pyproject.toml uv.lock README.md ./
+RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt -o /tmp/requirements.txt \
+    && uv pip install --system --require-hashes -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
-COPY pyproject.toml README.md ./
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY tests ./tests
 
-RUN uv pip install --system .
+RUN uv pip install --system --no-deps .
 
 EXPOSE 8847
 

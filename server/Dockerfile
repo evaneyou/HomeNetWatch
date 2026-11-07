@@ -5,6 +5,9 @@ COPY --from=ghcr.io/astral-sh/uv:0.13.1@sha256:4a1f3666816dafadd20ceb71eac9a7d56
 
 WORKDIR /app
 
+# The containers run read-only, so compile bytecode at build time and never try to write it later.
+ENV UV_COMPILE_BYTECODE=1 PYTHONDONTWRITEBYTECODE=1
+
 # Install exactly what uv.lock lists, checked against its hashes, so production runs what CI tested.
 COPY pyproject.toml uv.lock README.md ./
 RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt -o /tmp/requirements.txt \

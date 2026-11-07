@@ -7,6 +7,7 @@ A missing mount falls back to this process, which is what tests and a local run 
 from __future__ import annotations
 
 import gzip
+import json
 import logging
 import math
 import os
@@ -92,10 +93,16 @@ def host_proc() -> Path:
 
 
 def host_root() -> Path:
+    """The host's files. In production, the copies the hoststat container leaves (see app.host_snapshot)."""
     configured = Path(os.environ.get("HNS_HOST_ROOT", "/host"))
-    if os.path.ismount(configured):
+    if os.path.ismount(configured) or (configured / "etc" / "os-release").is_file():
         return configured
     return Path("/")
+
+
+def hostinfo_dir() -> Optional[Path]:
+    raw = os.environ.get("HNS_HOSTINFO_DIR", "").strip()
+    return Path(raw) if raw else None
 
 
 # backup.sh names files db-<stamp>.sql.gz.age, wireguard-<stamp>.tar.gz.age, and
@@ -905,7 +912,9 @@ def read_machine(proc: Path, root: Path, previous_cpu: Optional[tuple[int, int]]
         disk = shutil.disk_usage("/")
     # proc/net follows this process, so inside the container it is the app's eth0.
     # proc/1/net is the host init process, which sees the machine's real interface.
-    iface, rx, tx = read_iface(_read(proc / "net" / "dev"))
+    # The hoststat copy has no net/dev of its own: this container's /proc/net/dev is the same reading.
+    own = proc / "net" / "dev"
+    iface, rx, tx = read_iface(_read(own if own.is_file() else Path("/proc/net/dev")))
     host_iface, host_rx, host_tx = read_iface(_read(proc / "1" / "net" / "dev"))
     return {
         "cpu_percent": cpu_percent(previous_cpu, counters),
@@ -1430,6 +1439,28 @@ def storage_due(db: Session, now: datetime) -> bool:
     return now - last >= STORAGE_EVERY
 
 
+def read_storage_snapshot(path: Path, db_bytes: int) -> Optional[tuple[datetime, dict[str, Any]]]:
+    """The hoststat container's disk measurement, with the database split out of the Docker volumes."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        measured_at = datetime.fromisoformat(data["measured_at"])
+        payload = data["payload"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    for group in payload.get("groups") or []:
+        if group.get("key") == "volumes":
+            volumes = int(group.get("bytes") or 0)
+            group["children"] = [
+                child
+                for child in (
+                    {"name": "Database", "bytes": min(db_bytes, volumes)},
+                    {"name": "Other volumes", "bytes": max(0, volumes - db_bytes)},
+                )
+                if child["bytes"] > 0
+            ]
+    return measured_at, payload
+
+
 def run_storage() -> None:
     """Measure what uses the disk when the last measurement is old. It walks big folders, so it runs apart."""
     from app.db import SessionLocal
@@ -1442,9 +1473,18 @@ def run_storage() -> None:
         db_bytes = read_database(db)[0]
     finally:
         db.close()
-    root = host_root()
-    disk = shutil.disk_usage(root if root.exists() else "/")
-    payload = measure_storage(root, disk.used, disk.total, db_bytes)
+    snapshot = hostinfo_dir()
+    measured_at = now
+    if snapshot is not None:
+        found = read_storage_snapshot(snapshot / "storage.json", db_bytes)
+        if found is None:
+            return
+        measured_at, payload = found
+    else:
+        root = host_root()
+        disk = shutil.disk_usage(root if root.exists() else "/")
+        payload = measure_storage(root, disk.used, disk.total, db_bytes)
+    now = measured_at
     db = SessionLocal()
     try:
         row = db.get(ServerStorage, 1)

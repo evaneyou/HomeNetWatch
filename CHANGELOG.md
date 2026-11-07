@@ -12,6 +12,11 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **Gemini actions need the CSRF token:** Fault Simulation (`POST /server-health/fault-simulation`) and Root Cause
+  (`POST /kpi/root-cause`) spend Gemini quota and store results, but skipped the CSRF check every other admin action
+  has. Another site under the same domain could have made a signed-in admin's browser run them.
+- **API docs are off:** `/docs`, `/redoc` and `/openapi.json` listed every route and schema. They are off unless
+  `API_DOCS=1` is set for development.
 - **The API no longer mounts the host:** the server container ran as root with the whole host filesystem and
   `/proc` mounted read-only, so any file-read bug or code execution in the API would have exposed every secret on
   the machine (SSH keys, other projects' `.env`, every Docker volume). A new `hoststat` container with no network

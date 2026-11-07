@@ -761,6 +761,8 @@ def test_gemini_settings_and_on_demand_root_cause_analysis(client: TestClient, d
 
     monkeypatch.setattr(gemini_rca, "call_gemini", fake_call_gemini)
     monitor = _pi(db)
+    forged = client.post("/api/v1/kpi/root-cause", json={"period": "day", "monitor_id": str(monitor.id)})
+    assert forged.status_code == 403
     rca = client.post(
         "/api/v1/kpi/root-cause",
         headers=headers,

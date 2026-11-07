@@ -162,7 +162,8 @@ def create_app(agent_api_only: bool | None = None) -> FastAPI:
             route for route in enrollment_router.routes if getattr(route, "path", "").startswith("/api/v1/agents/")
         )
         return agent_app
-    app = FastAPI(title="HomeNetWatch", version=__version__, lifespan=_lifespan)
+    docs = {} if settings.api_docs else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    app = FastAPI(title="HomeNetWatch", version=__version__, lifespan=_lifespan, **docs)
     # Added first so it sits inside CORS and rewrites the body before headers are copied.
     app.add_middleware(GuestAnonymizeMiddleware)
 

@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     agent_require_https: bool = True
     # The agent API port (8848) is public so agents at home can enroll. It serves only /api/v1/agents/*.
     agent_api_only: bool = False
+    # /docs and /openapi.json list every route and schema. Off unless a developer turns them on (API_DOCS=1).
+    api_docs: bool = False
     # Only these peers may say who the client is in X-Forwarded-For: host names (resolved) or addresses.
     # In production that is the Caddy container. A request from anyone else is keyed by its own address.
     trusted_proxies: str = "caddy"

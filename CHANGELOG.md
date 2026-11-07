@@ -20,6 +20,11 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
   writes a new address on every try no longer gets unlimited guesses.
 - **Per-account sign-in limit:** besides 8 failures per address, an account name allows 30 failed sign-ins per
   15 minutes from all addresses together. The public guest account is exempt, so it can't be locked for visitors.
+- **Guests no longer see Wi-Fi names, BSSIDs or home addresses inside sentences:** guest redaction hid these only
+  under known field names, so they still reached guests in issue titles ("Possible evil twin <SSID> on <BSSID>"), airwave
+  test names and log messages. Every other string a guest receives is now searched for MAC addresses, private and
+  CGNAT addresses, the agents' own addresses, and the Wi-Fi names, places and AP labels this installation knows; only
+  those parts become `#`. Path View's public hops stay visible as before.
 
 ### Changed
 

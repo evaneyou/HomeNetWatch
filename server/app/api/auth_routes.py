@@ -17,6 +17,8 @@ from app.auth import (
     account_failures,
     clear_session_cookie,
     create_session_token,
+    revoke_sessions,
+    session_user,
     csrf_token_for,
     get_current_user,
     login_failures,
@@ -109,7 +111,7 @@ def login(
     login_failures.forget(address)
     if account is not None:
         account_failures.forget(account)
-    token = create_session_token(user.id, settings)
+    token = create_session_token(user, settings)
     if user.role == UserRole.guest:
         db.add(AuditEvent(username=user.username, action="guest_login", detail=address))
         guest_visits_module.record(db, address)
@@ -130,7 +132,7 @@ def _issue_guest_session(request: Request, db: Session, settings: Settings) -> t
     user = db.scalar(select(User).where(User.username == settings.bootstrap_guest_username))
     if user is None or not user.is_active or user.role != UserRole.guest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guest access is not available")
-    token = create_session_token(user.id, settings)
+    token = create_session_token(user, settings)
     db.add(AuditEvent(username=user.username, action="guest_login", detail=address))
     guest_visits_module.record(db, address)
     db.commit()
@@ -168,8 +170,19 @@ def guest_session(
 @router.post("/auth/logout")
 def logout(
     response: Response,
+    db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
+    hns_session: Annotated[Optional[str], Cookie(alias="hns_session")] = None,
 ) -> dict[str, str]:
+    """Sign out. For a named account this ends every session it has, so a copied cookie stops working too.
+
+    The guest account is shared by every visitor, so signing one guest out only drops that browser's cookie.
+    """
+    user = session_user(hns_session, db, settings)
+    if user is not None and user.role != UserRole.guest:
+        revoke_sessions(user)
+        db.add(AuditEvent(username=user.username, action="logout", detail="all sessions ended"))
+        db.commit()
     clear_session_cookie(response, settings)
     return {"status": "ok"}
 

@@ -38,6 +38,8 @@ expose any part of this stack beyond your own machine:
   container (no network, read-only), which copies only counters, process names, the OS package list and disk
   use into the `hostinfo` volume. Don't add host mounts such as `/` or `/proc` to `server` or `agent-api`:
   read as root, `/proc` alone reaches every file on the machine.
+- If a session cookie may have been copied, run `docker compose exec server python -m app.sessions revoke <username>`
+  (or `--all`). Signing out or setting a new password does the same for that account.
 - If Caddy is not the container named `caddy`, set `TRUSTED_PROXIES` to its name or address, or the sign-in
   limit counts every visitor as the proxy's address.
 - Install `deploy/rtnp-allowlist.timer` so the public RTNP port (`8998/udp`) accepts only current WireGuard

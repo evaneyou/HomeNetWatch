@@ -69,6 +69,8 @@ services:
       WIREGUARD_STATE_DIR: /var/lib/hns-wireguard
       TLS_DIR: /var/lib/hns-tls
       RUN_BACKGROUND_TASKS: "0"
+      # This port is public. It serves only /api/v1/agents/* (enrollment); the dashboard API stays behind Caddy.
+      AGENT_API_ONLY: "1"
     ports:
       - "8848:8848"
     volumes:

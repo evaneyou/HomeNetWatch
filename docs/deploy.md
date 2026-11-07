@@ -9,7 +9,7 @@ This guide runs the stack on a Linux server with automatic HTTPS. Any small clou
 | 22 | TCP | SSH | Yes (restrict to your IP if you can) |
 | 80, 443 | TCP | HTTPS dashboard and API through Caddy | Yes |
 | 443 | UDP | HTTP/3 (optional) | Yes |
-| 8848 | TCP | Agent enrollment, TLS with a pinned key | Yes |
+| 8848 | TCP | Agent enrollment only (`/api/v1/agents/*`), TLS with a pinned key | Yes |
 | 51820 | UDP | WireGuard tunnels from your agents | Yes |
 | 8998 | UDP | Real-time flow packets (RTNP), sent outside the tunnel | Yes, but only from current WireGuard peers once the allowlist timer runs ([step 4](#allow-udp-8998-only-from-your-agents)) |
 | 55432, 8847, 3847 | TCP | Postgres, API, dashboard | **No**, internal only |

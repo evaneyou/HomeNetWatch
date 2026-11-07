@@ -31,6 +31,9 @@ def verify_password(password: str, password_hash: str) -> bool:
 # A real bcrypt hash so a missing account costs the same as a wrong password.
 DUMMY_PASSWORD_HASH = pwd_context.hash("hns-login-timing-pad")
 LOGIN_FAILURE_LIMIT = 8
+# Failed sign-ins for one account name, from any address. High enough that the owner is not locked out by a few
+# typos, low enough that guessing a password from many addresses gets about two tries a minute.
+ACCOUNT_FAILURE_LIMIT = 30
 
 
 class _FailureWindow:
@@ -75,6 +78,7 @@ class _FailureWindow:
 
 
 login_failures = _FailureWindow(LOGIN_FAILURE_LIMIT, 15 * 60)
+account_failures = _FailureWindow(ACCOUNT_FAILURE_LIMIT, 15 * 60)
 
 
 def _serializer(settings: Settings) -> URLSafeTimedSerializer:

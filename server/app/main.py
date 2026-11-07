@@ -151,8 +151,17 @@ async def _lifespan(_app: FastAPI):
                 pass
 
 
-def create_app() -> FastAPI:
+def create_app(agent_api_only: bool | None = None) -> FastAPI:
     settings = get_settings()
+    if settings.agent_api_only if agent_api_only is None else agent_api_only:
+        # The public agent port: enrollment only. No sign-in, no admin routes, and no API docs to map them.
+        agent_app = FastAPI(
+            title="HomeNetWatch agent API", version=__version__, docs_url=None, redoc_url=None, openapi_url=None
+        )
+        agent_app.router.routes.extend(
+            route for route in enrollment_router.routes if getattr(route, "path", "").startswith("/api/v1/agents/")
+        )
+        return agent_app
     app = FastAPI(title="HomeNetWatch", version=__version__, lifespan=_lifespan)
     # Added first so it sits inside CORS and rewrites the body before headers are copied.
     app.add_middleware(GuestAnonymizeMiddleware)

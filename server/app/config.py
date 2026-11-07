@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     wireguard_state_dir: str = ""
     # Remote agents pin this key, so check-in and poll only answer over HTTPS.
     agent_require_https: bool = True
+    # The agent API port (8848) is public so agents at home can enroll. It serves only /api/v1/agents/*.
+    agent_api_only: bool = False
+    # Only these peers may say who the client is in X-Forwarded-For: host names (resolved) or addresses.
+    # In production that is the Caddy container. A request from anyone else is keyed by its own address.
+    trusted_proxies: str = "caddy"
     tls_dir: str = "/var/lib/hns-tls"
     rtnp_state_dir: str = ""
     rtnp_udp_port: int = 8998
@@ -42,6 +47,10 @@ class Settings(BaseSettings):
         if self.cookie_secure and self.secret_key == DEFAULT_SECRET_KEY:
             raise ValueError("SECRET_KEY is still the development default. Set a long random value in .env.")
         return self
+
+    @property
+    def trusted_proxy_list(self) -> list[str]:
+        return [item.strip() for item in self.trusted_proxies.split(",") if item.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import socket
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
@@ -12,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import (
     DUMMY_PASSWORD_HASH,
+    account_failures,
     clear_session_cookie,
     create_session_token,
     csrf_token_for,
@@ -38,15 +41,40 @@ def _user_out(user: User, session_token: str, settings: Settings) -> UserOut:
     )
 
 
-def _visitor_address(request: Request) -> str:
-    """The last forwarded hop is the one the proxy added. A client-supplied prefix is ignored."""
-    forwarded = request.headers.get("x-forwarded-for", "")
-    parts = [part.strip() for part in forwarded.split(",") if part.strip()]
-    if parts:
-        return parts[-1][:64]
-    if request.client is not None and request.client.host:
-        return request.client.host[:64]
-    return "unknown"
+_PROXY_TTL_SECONDS = 60.0
+_proxy_cache: tuple[float, frozenset[str]] = (float("-inf"), frozenset())
+
+
+def _proxy_addresses(settings: Settings) -> frozenset[str]:
+    """The trusted proxies' addresses, with host names resolved and remembered for a minute."""
+    global _proxy_cache
+    now = time.monotonic()
+    if now - _proxy_cache[0] < _PROXY_TTL_SECONDS:
+        return _proxy_cache[1]
+    found: set[str] = set()
+    for item in settings.trusted_proxy_list:
+        found.add(item)
+        try:
+            found.update(socket.gethostbyname_ex(item)[2])
+        except OSError:
+            continue
+    _proxy_cache = (now, frozenset(found))
+    return _proxy_cache[1]
+
+
+def _visitor_address(request: Request, settings: Settings) -> str:
+    """Who is signing in. X-Forwarded-For counts only from a trusted proxy (Caddy), and only its last entry.
+
+    Anyone else, such as a client on the agent port or through the tunnel, could write any address there and dodge
+    the sign-in limit, so for them the connection's own address is used.
+    """
+    peer = request.client.host if request.client is not None and request.client.host else ""
+    if peer and peer in _proxy_addresses(settings):
+        forwarded = request.headers.get("x-forwarded-for", "")
+        parts = [part.strip() for part in forwarded.split(",") if part.strip()]
+        if parts:
+            return parts[-1][:64]
+    return peer[:64] or "unknown"
 
 
 @router.post("/auth/login", response_model=UserOut)
@@ -58,19 +86,29 @@ def login(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserOut:
     user = db.scalar(select(User).where(User.username == body.username))
-    address = _visitor_address(request)
+    address = _visitor_address(request, settings)
+    # The public demo account is not limited per account, or anyone could lock every visitor out of it.
+    account = None if user is not None and user.role == UserRole.guest else body.username.lower()
     # Hash even when the name is missing, so the two answers take the same time.
     password_ok = verify_password(body.password, user.password_hash if user is not None else DUMMY_PASSWORD_HASH)
-    if login_failures.blocked(address) or user is None or not password_ok:
+
+    def blocked() -> bool:
+        return login_failures.blocked(address) or (account is not None and account_failures.blocked(account))
+
+    if blocked() or user is None or not password_ok:
         if user is None or not password_ok:
             login_failures.record(address)
-        if login_failures.blocked(address):
+            if account is not None:
+                account_failures.record(account)
+        if blocked():
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many sign-in attempts. Wait a few minutes and try again.",
             )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     login_failures.forget(address)
+    if account is not None:
+        account_failures.forget(account)
     token = create_session_token(user.id, settings)
     if user.role == UserRole.guest:
         db.add(AuditEvent(username=user.username, action="guest_login", detail=address))
@@ -83,7 +121,7 @@ def login(
 
 
 def _issue_guest_session(request: Request, db: Session, settings: Settings) -> tuple[User, str]:
-    address = _visitor_address(request)
+    address = _visitor_address(request, settings)
     if login_failures.blocked(address):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

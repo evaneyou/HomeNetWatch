@@ -34,6 +34,10 @@ expose any part of this stack beyond your own machine:
 - Keep a copy of the agent API's `backup-key.pem` off the server (see [`server/README.md`](./server/README.md)).
 - Restrict the WireGuard UDP port (`51820`) and the agent API port (`8848`) to the networks that need them.
   The agent API port serves only enrollment (`AGENT_API_ONLY=1`); keep that set.
+- The API containers mount nothing from the host. Server Health reads the machine through the `hoststat`
+  container (no network, read-only), which copies only counters, process names, the OS package list and disk
+  use into the `hostinfo` volume. Don't add host mounts such as `/` or `/proc` to `server` or `agent-api`:
+  read as root, `/proc` alone reaches every file on the machine.
 - If Caddy is not the container named `caddy`, set `TRUSTED_PROXIES` to its name or address, or the sign-in
   limit counts every visitor as the proxy's address.
 - Install `deploy/rtnp-allowlist.timer` so the public RTNP port (`8998/udp`) accepts only current WireGuard

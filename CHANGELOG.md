@@ -12,6 +12,11 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **The API no longer mounts the host:** the server container ran as root with the whole host filesystem and
+  `/proc` mounted read-only, so any file-read bug or code execution in the API would have exposed every secret on
+  the machine (SSH keys, other projects' `.env`, every Docker volume). A new `hoststat` container with no network
+  and one capability copies only what Server Health shows into the `hostinfo` volume. `server` and `agent-api`
+  now drop all capabilities but three needed for their own state files, run read-only, and can't gain privileges.
 - **Images build from the lockfiles:** the server image installed the newest release of every dependency instead of
   what `uv.lock` pins, so production could run code CI never tested. It now installs from `uv.lock` with hash checks;
   the dashboard uses `npm ci` and a pinned `serve` (`dashboard/serve/`); LibreSpeed checks the release file's SHA-256;

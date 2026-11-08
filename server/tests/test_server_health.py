@@ -566,11 +566,15 @@ def test_fault_simulation_viewer_refused_missing_key_and_mocked_success(client, 
     )
 
     _user(db, "admin", UserRole.admin)
-    login(client)
+    headers = login(client)
     db.execute(delete(GeminiSetting))
     db.commit()
+    # A request without the CSRF token (another site making the admin's browser post) is refused.
+    forged = client.post("/api/v1/server-health/fault-simulation", json={"prompt": "Wi-Fi apps fail"})
+    assert forged.status_code == 403
     missing = client.post(
         "/api/v1/server-health/fault-simulation",
+        headers=headers,
         json={"prompt": "Wi-Fi apps fail but web is fine"},
     )
     assert missing.status_code == 400

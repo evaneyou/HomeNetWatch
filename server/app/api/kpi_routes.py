@@ -77,7 +77,7 @@ def get_daily(
 def determine_root_cause(
     body: RootCauseIn,
     db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(require_admin)],
+    _admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> dict[str, Any]:
     """On-demand Gemini root cause analysis. Admin only; guests use the KPI UI demo."""
     try:

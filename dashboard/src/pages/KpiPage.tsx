@@ -635,7 +635,7 @@ export default function KpiPage() {
         period,
         day: day ?? undefined,
         monitor_id: monitorId || undefined,
-      }) as Promise<RootCauseReport>,
+      }, me.data?.csrf_token ?? "") as Promise<RootCauseReport>,
   });
   const rcaReport = admin ? rcaMutation.data : demoRca;
   const rcaPending = admin ? rcaMutation.isPending : demoPending;

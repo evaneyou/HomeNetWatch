@@ -106,3 +106,12 @@ def test_the_agent_port_serves_only_enrollment():
     assert agent.get("/docs").status_code == 404
     # The enrollment endpoints are still there (a malformed key is refused, not missing).
     assert agent.post("/api/v1/agents/nonce", json={"identity_public_key": "x"}).status_code in (400, 422)
+
+
+def test_the_api_docs_are_off_unless_turned_on(monkeypatch):
+    plain = TestClient(create_app(), base_url="https://testserver")
+    assert plain.get("/docs").status_code == 404
+    assert plain.get("/openapi.json").status_code == 404
+    monkeypatch.setattr(get_settings(), "api_docs", True)
+    documented = TestClient(create_app(), base_url="https://testserver")
+    assert documented.get("/openapi.json").status_code == 200

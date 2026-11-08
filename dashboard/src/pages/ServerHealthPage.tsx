@@ -858,7 +858,7 @@ function FaultSimulationPanel() {
   const [demoPending, setDemoPending] = useState(false);
   const demoTimer = useRef<number | null>(null);
   const mutation = useMutation({
-    mutationFn: (text: string) => api.faultSimulation(text.trim()) as Promise<FaultSimulationReport>,
+    mutationFn: (text: string) => api.faultSimulation(text.trim(), me.data?.csrf_token ?? "") as Promise<FaultSimulationReport>,
   });
 
   useEffect(

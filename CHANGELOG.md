@@ -12,6 +12,11 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **Security events are audited:** every non-guest sign-in (with its address), failed sign-in, sign-in block, and
+  change to the Telegram, Gemini, web service, stability and internet service settings now writes an
+  `audit_events` row. Failures are written only until the address or account is blocked, and the block once, so a
+  flood can't fill the table. With Telegram alerts set up, an admin sign-in from an address not seen before sends
+  a message.
 - **Traces go to the address the server checked:** for a trace typed into the dashboard, the server checked that
   the name resolved to public addresses, then the agent resolved it again, so a name that changed its answer (DNS
   rebinding) could have pointed the trace into the home network. The agent now gets the public IPv4 address the

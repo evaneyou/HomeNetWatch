@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import gemini_rca, kpi, telegram
+from app import audit, gemini_rca, kpi, telegram
 from app.auth import get_current_user, require_admin, require_admin_csrf
 from app.db import get_db
 from app.models import GeminiSetting, User
@@ -105,7 +105,7 @@ def get_gemini_settings(
 def save_gemini_settings(
     body: GeminiSettingIn,
     db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(require_admin_csrf)],
+    admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> dict[str, Any]:
     row = gemini_rca.get_settings_row(db)
     model = _chosen_model(body.model)
@@ -123,6 +123,7 @@ def save_gemini_settings(
         row.last_error = ""
     row.model = model
     row.updated_at = datetime.now(timezone.utc)
+    audit.record(db, admin.username, "gemini_settings", f"model {model}" + (", new API key" if key else ""))
     db.commit()
     return _gemini_out(row)
 
@@ -130,12 +131,13 @@ def save_gemini_settings(
 @router.delete("/settings/gemini")
 def clear_gemini_settings(
     db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(require_admin_csrf)],
+    admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> dict[str, Any]:
     row = gemini_rca.get_settings_row(db)
     row.api_key_enc = ""
     row.key_hint = ""
     row.last_error = ""
     row.updated_at = datetime.now(timezone.utc)
+    audit.record(db, admin.username, "gemini_key_removed")
     db.commit()
     return _gemini_out(row)

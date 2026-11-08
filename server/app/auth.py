@@ -85,8 +85,30 @@ def _serializer(settings: Settings) -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(settings.secret_key, salt="hns-session")
 
 
-def create_session_token(user_id: UUID, settings: Settings) -> str:
-    return _serializer(settings).dumps({"uid": str(user_id)})
+def create_session_token(user: User, settings: Settings) -> str:
+    return _serializer(settings).dumps({"uid": str(user.id), "sv": user.session_version})
+
+
+def session_user(token: Optional[str], db: Session, settings: Settings) -> Optional[User]:
+    """The active user a session cookie belongs to, or None when it is missing, expired, forged or revoked."""
+    if not token:
+        return None
+    try:
+        data = _serializer(settings).loads(token, max_age=settings.session_max_age)
+        user_id = UUID(data["uid"])
+        # Cookies issued before session versions existed carry none; they count as the first version.
+        version = int(data.get("sv", 0))
+    except (BadSignature, SignatureExpired, KeyError, ValueError, TypeError):
+        return None
+    user = db.get(User, user_id)
+    if user is None or not user.is_active or user.session_version != version:
+        return None
+    return user
+
+
+def revoke_sessions(user: User) -> None:
+    """Sign the account out everywhere: every cookie issued so far stops working."""
+    user.session_version = (user.session_version or 0) + 1
 
 
 def set_session_cookie(
@@ -118,21 +140,15 @@ def get_current_user(
 ) -> User:
     if not hns_session:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    try:
-        data = _serializer(settings).loads(hns_session, max_age=settings.session_max_age)
-        user_id = UUID(data["uid"])
-    except (BadSignature, SignatureExpired, KeyError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session") from exc
-
-    user = db.get(User, user_id)
-    if user is None or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    user = session_user(hns_session, db, settings)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
     if user.role == UserRole.guest:
         try:
             _serializer(settings).loads(hns_session, max_age=settings.guest_idle_seconds)
         except SignatureExpired as exc:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session") from exc
-        fresh = create_session_token(user.id, settings)
+        fresh = create_session_token(user, settings)
         set_session_cookie(response, fresh, settings, max_age=settings.guest_idle_seconds)
     return user
 

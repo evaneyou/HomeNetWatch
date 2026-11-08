@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.auth import hash_password
+from app.auth import hash_password, revoke_sessions, verify_password
 from app.config import get_settings
 from app.db import SessionLocal, engine
 from app.models import (
@@ -47,6 +47,13 @@ IDS = {
     "viewer": uuid.UUID("dddddddd-dddd-dddd-dddd-ddddddddddd2"),
     "guest": uuid.UUID("dddddddd-dddd-dddd-dddd-ddddddddddd3"),
 }
+
+
+def _same_password(password: str, password_hash: str) -> bool:
+    try:
+        return verify_password(password, password_hash)
+    except ValueError:
+        return False
 
 
 def _stable_uuid(key: str) -> uuid.UUID:
@@ -317,7 +324,10 @@ def ensure_users(db: Session) -> None:
         existing = db.scalar(select(User).where(User.username == username)) or db.get(User, uid)
         if existing:
             existing.username = username
-            existing.password_hash = hash_password(password)
+            if not _same_password(password, existing.password_hash):
+                # A new password ends the sessions signed in with the old one.
+                existing.password_hash = hash_password(password)
+                revoke_sessions(existing)
             existing.role = role
             existing.is_active = True
         else:

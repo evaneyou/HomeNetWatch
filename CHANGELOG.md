@@ -12,6 +12,11 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **Sessions can be ended:** a session cookie held only the user id, so a copied admin cookie stayed valid for seven
+  days, even after signing out or a new password. Each account now has a session version that every cookie carries.
+  Signing out ends all of that account's sessions on every device (the shared guest account excepted), a new
+  password from the seed does the same, and `python -m app.sessions revoke <username>` (or `--all`) does it from the
+  server. Migration `0053_session_version`; existing cookies keep working until one of those happens.
 - **Gemini actions need the CSRF token:** Fault Simulation (`POST /server-health/fault-simulation`) and Root Cause
   (`POST /kpi/root-cause`) spend Gemini quota and store results, but skipped the CSRF check every other admin action
   has. Another site under the same domain could have made a signed-in admin's browser run them.

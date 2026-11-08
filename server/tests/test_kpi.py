@@ -254,7 +254,7 @@ def test_periods_have_the_right_buckets_and_a_previous_period(db):
     kpi.backfill(db, now=NOW)
     db.commit()
     shapes = {name: kpi.report(db, name, now=NOW, monitor_id=monitor.id) for name in ("day", "week", "month", "year")}
-    assert [len(shapes[name]["series"]) for name in ("day", "week", "month", "year")] == [24, 7, 30, 12]
+    assert [len(shapes[name]["series"]) for name in ("day", "week", "month", "year")] == [18, 7, 30, 12]
     assert [shapes[name]["bucket"] for name in ("day", "week", "month", "year")] == ["hour", "day", "day", "month"]
     week = shapes["week"]
     assert week["summary"]["internet"]["samples"] == 20
@@ -349,12 +349,12 @@ def test_a_chosen_day_is_a_calendar_day_by_hour(db):
     db.commit()
     chosen = date(2026, 10, 13)
     report = kpi.report(db, "day", now=NOW, monitor_id=monitor.id, day=chosen)
-    assert report["day"] == chosen and report["bucket"] == "hour" and len(report["series"]) == 24
-    assert report["series"][0]["t"] == datetime(2026, 10, 13, tzinfo=timezone.utc)
+    assert report["day"] == chosen and report["bucket"] == "hour" and len(report["series"]) == 18
+    assert report["series"][0]["t"] == datetime(2026, 10, 13, 6, 0, tzinfo=kpi.EASTERN).astimezone(timezone.utc)
     assert report["summary"]["internet"]["availability"] == pytest.approx(60.0)
     assert report["summary"]["internet"]["incidents"] == 1
-    assert report["series"][12]["internet"] == pytest.approx(60.0), "the hour with the checks"
-    assert report["series"][11]["internet"] is None
+    assert report["series"][2]["internet"] == pytest.approx(60.0), "the hour with the checks (08:00 ET)"
+    assert report["series"][1]["internet"] is None
 
     week = kpi.report(db, "week", now=NOW, monitor_id=monitor.id, day=chosen)
     assert week["series"][-1]["t"] == datetime(2026, 10, 13, tzinfo=timezone.utc) and len(week["series"]) == 7
@@ -774,5 +774,83 @@ def test_gemini_settings_and_on_demand_root_cause_analysis(client: TestClient, d
     assert "upload bandwidth collapse" in report["root_cause"]
     assert report["confidence"] == "high"
     assert len(report["timeline"]) == 1
+
+
+def test_only_valid_working_hours_6am_to_12am_eastern_are_counted_and_old_dates_corrected(db):
+    """Metrics are calculated only from 6:00 AM to 12:00 AM ET, 7 days a week; overnight 12 AM – 6 AM ET is excluded."""
+    monitor = _pi(db)
+    wired = _link(db, monitor, NetworkKind.wired)
+    voice = _run(db, monitor, "voip-g711a", ("wired",))
+    video = _run(db, monitor, "video-conference", ("wired",))
+
+    # Saturday Oct 17, 2026 (weekend — 7 days a week applies):
+    # 02:00 AM ET (06:00 UTC in EDT): heavy failures during overnight off-hours
+    off_hour = datetime(2026, 10, 17, 2, 0, tzinfo=kpi.EASTERN).astimezone(timezone.utc)
+    for minute in range(10):
+        _ping(db, wired, minute, ResultStatus.fail, loss=100.0, when=off_hour)
+        _sample(db, voice, minute, "fail", loss=15.0, when=off_hour)
+        _sample(db, video, minute, "fail", loss=25.0, when=off_hour)
+
+    # 06:00 AM ET (10:00 UTC in EDT) and 11:00 PM ET (23:00 ET = Oct 18 03:00 UTC): healthy valid hours on the same Eastern day
+    valid_morning = datetime(2026, 10, 17, 6, 0, tzinfo=kpi.EASTERN).astimezone(timezone.utc)
+    valid_late = datetime(2026, 10, 17, 23, 0, tzinfo=kpi.EASTERN).astimezone(timezone.utc)
+    for when in (valid_morning, valid_late):
+        for minute in range(10):
+            _ping(db, wired, minute, ResultStatus.ok, loss=0.0, when=when)
+            _sample(db, voice, minute, "pass", loss=0.0, when=when)
+            _sample(db, video, minute, "pass", loss=0.0, when=when)
+
+    # Also seed a legacy off-hour KpiHourly row on an older date (Oct 10, 2026 at 03:00 ET) to verify backfill cleans it up
+    old_off_hour = datetime(2026, 10, 10, 3, 0, tzinfo=kpi.EASTERN).astimezone(timezone.utc)
+    old_valid_hour = datetime(2026, 10, 10, 9, 0, tzinfo=kpi.EASTERN).astimezone(timezone.utc)
+    db.add(
+        KpiHourly(
+            bucket_start=old_off_hour,
+            monitor_id=monitor.id,
+            link="wired",
+            kind="video",
+            n=100,
+            failed=50,
+        )
+    )
+    db.add(
+        KpiHourly(
+            bucket_start=old_valid_hour,
+            monitor_id=monitor.id,
+            link="wired",
+            kind="video",
+            n=100,
+            failed=0,
+        )
+    )
+    db.commit()
+
+    end_of_sat = datetime(2026, 10, 17, 23, 30, tzinfo=kpi.EASTERN).astimezone(timezone.utc)
+    kpi.backfill(db, now=end_of_sat)
+    db.commit()
+
+    # Legacy 03:00 ET row was purged and Oct 10 daily record reflects 100% availability
+    assert db.scalar(select(KpiHourly).where(KpiHourly.bucket_start == old_off_hour)) is None
+    oct10 = db.scalar(select(KpiDaily).where(KpiDaily.monitor_id == monitor.id, KpiDaily.day == date(2026, 10, 10), KpiDaily.kind == "video"))
+    assert oct10 is not None and (oct10.n, oct10.failed) == (100, 0)
+
+    # Saturday Oct 17 includes both 06:00 ET and 23:00 ET (20 samples total), and excludes 02:00 ET failures
+    rep = kpi.report(db, "day", now=end_of_sat, monitor_id=monitor.id, day=date(2026, 10, 17))
+    assert rep["valid_hours"] == "6:00 AM – 12:00 AM EST, 7 days a week"
+    assert rep["summary"]["internet"]["samples"] == 20
+    assert rep["summary"]["internet"]["failed"] == 0
+    assert rep["summary"]["internet"]["availability"] == pytest.approx(100.0)
+    assert rep["summary"]["voice"]["availability"] == pytest.approx(100.0)
+    assert rep["summary"]["video"]["availability"] == pytest.approx(100.0)
+    assert rep["incidents"] == []
+    assert rep["gaps"] == []
+
+    history = kpi.daily_history(db, date(2026, 10, 17), date(2026, 10, 17), monitor.id)
+    assert len(history) == 1
+    assert history[0]["internet"] == pytest.approx(100.0)
+    assert history[0]["voice"] == pytest.approx(100.0)
+    assert history[0]["video"] == pytest.approx(100.0)
+    assert history[0]["score"] == pytest.approx(100.0)
+
 
 

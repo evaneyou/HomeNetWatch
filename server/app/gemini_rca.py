@@ -255,6 +255,8 @@ def build_event_context(
     first_app_fail_at: Optional[str] = None
     last_verdict: dict[tuple[str, str], str] = {}
     for sample, run, mon in syn_rows:
+        if not kpi.is_valid_hour(sample.recorded_at):
+            continue
         link_label = "Wi-Fi" if sample.link == "wireless" else "Wired"
         app_name = (run.options or {}).get("preset") or run.profile_slug
         key = (f"{mon.name}:{app_name}", link_label)
@@ -300,6 +302,8 @@ def build_event_context(
     probe_rows = db.execute(probe_q).all()
     probe_events: list[dict[str, Any]] = []
     for res, test, net, mon in probe_rows[:80]:
+        if not kpi.is_valid_hour(res.started_at):
+            continue
         m = res.metrics or {}
         probe_events.append(
             {

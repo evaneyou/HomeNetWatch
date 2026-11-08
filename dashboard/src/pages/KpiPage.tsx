@@ -133,7 +133,7 @@ function parseApiError(err: unknown): string {
 }
 
 const PERIODS: { key: Period; label: string; text: string }[] = [
-  { key: "day", label: "Day", text: "the last 24 hours, by hour" },
+  { key: "day", label: "Day", text: "valid working hours, by hour" },
   { key: "week", label: "Week", text: "the last 7 days, by day" },
   { key: "month", label: "Month", text: "the last 30 days, by day" },
   { key: "year", label: "Year", text: "the last 12 months, by month" },
@@ -298,7 +298,12 @@ type DailyRow = {
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function isoToday(): string {
-  return new Date().toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: EASTERN,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 function shiftDay(iso: string, days: number): string {
@@ -433,7 +438,7 @@ function DailyHistory({ selected, onPick, targets, since, monitorId }: { monitor
     <section className="kpi-panel kpi-history">
       <header>
         <h3>Daily KPI history</h3>
-        <span>One square per day, coloured by a health score: internet 60%, voice 20%, video 10%, packet drop 10%. Hover for the numbers, click to open the day.</span>
+        <span>One square per day (valid hours 6:00 AM – 12:00 AM EST, 7 days a week), coloured by a health score: internet 60%, voice 20%, video 10%, packet drop 10%. Hover for the numbers, click to open the day.</span>
       </header>
       <div className="kpi-filter">
         <label>
@@ -764,7 +769,7 @@ export default function KpiPage() {
   const range = report.bucket === "month" || first === last ? first : `${first} – ${last}`;
   const periodText = day
     ? period === "day"
-      ? "24 hours, by hour"
+      ? "by hour"
       : `${PERIODS.find((item) => item.key === period)?.text.replace("the last", "the")} ending ${stamp(day, "day", true)}`
     : (PERIODS.find((item) => item.key === period)?.text ?? "");
   const latest = isoToday();
@@ -776,7 +781,7 @@ export default function KpiPage() {
           <p className="kpi-eyebrow">Home network · Service report</p>
           <h1>Network health report</h1>
           <p className="kpi-range">
-            {range}, {rangeYear} · {periodText} · times in ET
+            {range}, {rangeYear} · {periodText} · Valid hours: 6:00 AM – 12:00 AM EST, 7 days a week
           </p>
         </div>
         {monitors.length > 0 ? (
@@ -954,10 +959,10 @@ export default function KpiPage() {
           <b>{headline}</b>
           <span>
             {measured.length === 0
-              ? "The report fills in as measurements arrive."
+              ? "The report fills in as measurements arrive (valid working hours: 6:00 AM – 12:00 AM EST, 7 days a week)."
               : report.diagnosis
-                ? `${report.diagnosis.summary} Targets: internet ${targets.internet}%, voice, video and web ${targets.voice}%, packet drop ≤ ${targets.loss_pct}%.`
-                : `Targets: internet ${targets.internet}%, voice, video and web ${targets.voice}%, packet drop at or under ${targets.loss_pct}%.`}
+                ? `${report.diagnosis.summary} Valid hours: 6:00 AM – 12:00 AM EST, 7 days a week. Targets: internet ${targets.internet}%, voice, video and web ${targets.voice}%, packet drop ≤ ${targets.loss_pct}%.`
+                : `Valid hours: 6:00 AM – 12:00 AM EST, 7 days a week. Targets: internet ${targets.internet}%, voice, video and web ${targets.voice}%, packet drop at or under ${targets.loss_pct}%.`}
           </span>
         </div>
         <ul>
@@ -1251,12 +1256,12 @@ export default function KpiPage() {
 
       <footer className="kpi-foot">
         <p>
-          <b>How these are measured.</b> Internet availability is the share of one-minute checks to the HomeNetWatch server, on each link, that
+          <b>How these are measured.</b> Metrics are calculated only during valid working hours from 6:00 AM to 12:00 AM EST, 7 days a week (overnight hours from 12:00 AM to 6:00 AM EST are excluded). Internet availability is the share of one-minute checks to the HomeNetWatch server, on each link, that
           succeeded. Voice and video availability is the share of their quality checks (every few seconds) that stayed within their limits. Packet
           drop is the average loss those checks reported. Time offline is counted from failed internet checks. A reporting gap is time with no results at all, because the Pi or the server was down; it is shown
           separately and is not counted as internet downtime. A period with no measurements shows a gap, never 100%. Each day in the history gets a health score from 0 to 100 (internet 60%, voice 20%, video 10%, packet drop 10%): green is 95 or more, amber 80 to 94, red below 80. Figures are cut off, not rounded up, at two decimals. Each day is stored as a daily record, and weeks, months and years are added up from those records.
         </p>
-        <p>{report.data_since ? `Measurements since ${new Date(report.data_since).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}. ` : ""}Home network, report generated {new Date(report.generated_at).toLocaleString("en-US", { timeZone: EASTERN })} ET.</p>
+        <p>{report.data_since ? `Measurements since ${new Date(report.data_since).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}. ` : ""}Valid working hours: 6:00 AM – 12:00 AM EST, 7 days a week · report generated {new Date(report.generated_at).toLocaleString("en-US", { timeZone: EASTERN })} ET.</p>
       </footer>
     </div>
   );

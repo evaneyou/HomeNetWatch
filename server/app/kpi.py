@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import Date, DateTime, case, cast, delete, func, literal, select
 from sqlalchemy.orm import Session, aliased
@@ -29,6 +30,11 @@ from app.models import KpiDaily, KpiHourly, Monitor, Network, NetworkKind, Resul
 from app.synthetic import SOFTWARE, is_blackout
 
 log = logging.getLogger(__name__)
+
+EASTERN = ZoneInfo("America/New_York")
+VALID_START_HOUR = 6
+VALID_END_HOUR = 24
+VALID_HOURS_LABEL = "6:00 AM – 12:00 AM EST, 7 days a week"
 
 TARGETS = {"internet": 99.95, "voice": 99.9, "video": 99.9, "web": 99.9, "loss_pct": 0.1}
 KINDS = ("internet", "voice", "video", "web", "apps", "speed")
@@ -106,6 +112,35 @@ def _utc(value: datetime) -> datetime:
 
 def hour_of(value: datetime) -> datetime:
     return _utc(value).replace(minute=0, second=0, microsecond=0)
+
+
+def eastern_today(now: Optional[datetime] = None) -> date:
+    return _utc(now or datetime.now(timezone.utc)).astimezone(EASTERN).date()
+
+
+def is_valid_hour(value: datetime) -> bool:
+    """Whether `value` falls within valid working hours: 6:00 AM to 12:00 AM ET, 7 days a week."""
+    local = _utc(value).astimezone(EASTERN)
+    return VALID_START_HOUR <= local.hour < VALID_END_HOUR
+
+
+def _valid_window_start(value: datetime) -> datetime:
+    """6:00 AM ET on the Eastern calendar day of `value`, in UTC."""
+    local = _utc(value).astimezone(EASTERN)
+    return local.replace(hour=VALID_START_HOUR, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+
+def _et_day_bounds(first: date, last: date) -> tuple[datetime, datetime]:
+    """UTC timestamps covering the Eastern calendar days [first, last]."""
+    start = datetime(first.year, first.month, first.day, tzinfo=EASTERN).astimezone(timezone.utc)
+    after = last + timedelta(days=1)
+    end = datetime(after.year, after.month, after.day, tzinfo=EASTERN).astimezone(timezone.utc)
+    return start, end
+
+
+def _valid_hour_sql(column: Any) -> Any:
+    """SQL predicate: timestamp falls within 6:00 AM – 12:00 AM ET (hours 6..23)."""
+    return func.extract("hour", func.timezone("America/New_York", column)) >= VALID_START_HOUR
 
 
 def _link(value: str) -> str:
@@ -259,9 +294,9 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
                 .order_by(TestResult.started_at.desc())
                 .limit(1)
             ).first()
-            # Seed prior state only from failures that counted as internet down (not tunnel-only).
+            # Seed prior state only from failures that counted as internet down (not tunnel-only) during valid hours.
             prior_down = False
-            if last is not None and last[0].value == "fail":
+            if last is not None and is_valid_hour(last[1]) and last[0].value == "fail":
                 mon_id, lnk = path_tests[test_id]
                 if _nearby(public_web_ok.get((mon_id, lnk), []), last[1]):
                     prior_down = False
@@ -283,14 +318,22 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
             ).all()
         )
         for test_id, started, status, metrics in path_rows:
+            if not is_valid_hour(started):
+                previous_at[test_id] = started
+                previous_failed[test_id] = False
+                continue
             monitor_id, link = path_tests[test_id]
             acc = out[(hour_of(started), monitor_id, link, "internet")]
             acc.n += 1
             before = previous_at.get(test_id)
-            if before is not None and started - before > OUTAGE_GAP:
-                # No result for a while: the Pi was off, or the server was not there to take them.
-                acc.gaps += 1
-                acc.gap_min += (started - before).total_seconds() / 60 - 1
+            if before is not None:
+                day_start = _valid_window_start(started)
+                if before < day_start:
+                    before = day_start
+                if started - before > OUTAGE_GAP:
+                    # No result for a while: the Pi was off, or the server was not there to take them.
+                    acc.gaps += 1
+                    acc.gap_min += (started - before).total_seconds() / 60 - 1
             previous_at[test_id] = started
             raw_fail = status.value == "fail"
             tunnel_only = raw_fail and _nearby(public_web_ok.get((monitor_id, link), []), started)
@@ -314,7 +357,7 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
         .where(Test.kind == TestKind.librespeed, TestResult.started_at >= start, TestResult.started_at < end, ~TestResult.external_id.startswith("rollup-"))
     ).all()
     for started, status, metrics, monitor_id, kind in speed_rows:
-        if status.value == "fail":
+        if not is_valid_hour(started) or status.value == "fail":
             continue
         acc = out[(hour_of(started), monitor_id, _link(kind.value), "speed")]
         acc.n += 1
@@ -350,6 +393,8 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
         link = _link(kind.value)
         if status.value == "ok":
             healthy_link_times[(monitor_id, link)].append(started)
+        if not is_valid_hour(started):
+            continue
         acc = out[(hour_of(started), monitor_id, link, "web")]
         data = metrics or {}
         if slug in WEB_HTTP_SLUGS:
@@ -382,6 +427,8 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
         healthy[(monitor_id, sample.link)].append((sample.recorded_at, slug))
     window = timedelta(minutes=3)
     for sample, slug, monitor_id in rows:
+        if not is_valid_hour(sample.recorded_at):
+            continue
         # A total blackout while another check on the link is fine is a monitor problem, not the service.
         if sample.verdict == SOFTWARE or _software_blackout(sample, slug, monitor_id, healthy, healthy_link_times, window):
             continue
@@ -445,15 +492,18 @@ def _store(db: Session, start: datetime, end: datetime, counts: dict[Key, Acc]) 
 
 
 def rebuild_days(db: Session, first: date, last: date) -> int:
-    """Write the daily record for each UTC day from `first` to `last`, added up from the hourly rows."""
-    start = datetime(first.year, first.month, first.day, tzinfo=timezone.utc)
-    end = datetime(last.year, last.month, last.day, tzinfo=timezone.utc) + timedelta(days=1)
+    """Write the daily record for each Eastern day from `first` to `last`, added up from the valid hourly rows."""
+    start, end = _et_day_bounds(first, last)
     db.execute(delete(KpiDaily).where(KpiDaily.day >= first, KpiDaily.day <= last))
-    day = cast(func.timezone("UTC", KpiHourly.bucket_start), Date)
+    day = cast(func.timezone("America/New_York", KpiHourly.bucket_start), Date)
     sums = [func.sum(getattr(KpiHourly, name)).label(name) for name in _SUM_FIELDS]
     rows = db.execute(
         select(day.label("day"), KpiHourly.monitor_id, KpiHourly.link, KpiHourly.kind, *sums, func.max(KpiHourly.loss_max).label("loss_max"))
-        .where(KpiHourly.bucket_start >= start, KpiHourly.bucket_start < end)
+        .where(
+            KpiHourly.bucket_start >= start,
+            KpiHourly.bucket_start < end,
+            _valid_hour_sql(KpiHourly.bucket_start),
+        )
         .group_by(day, KpiHourly.monitor_id, KpiHourly.link, KpiHourly.kind)
     ).mappings().all()
     for row in rows:
@@ -475,25 +525,41 @@ def refresh(db: Session, now: Optional[datetime] = None) -> int:
     now = now or datetime.now(timezone.utc)
     start = hour_of(now) - timedelta(hours=3)
     rows = rebuild(db, start, hour_of(now) + timedelta(hours=1))
-    rebuild_days(db, start.date(), _utc(now).date())
+    rebuild_days(db, _utc(start).astimezone(EASTERN).date(), eastern_today(now))
     return rows
 
 
 def backfill(db: Session, now: Optional[datetime] = None) -> int:
     """Fill in every hour that has raw data but no KPI row yet, a day at a time, then every daily record."""
     now = now or datetime.now(timezone.utc)
+    removed = (
+        db.execute(
+            delete(KpiHourly).where(~_valid_hour_sql(KpiHourly.bucket_start))
+        ).rowcount
+        or 0
+    )
     total = _backfill_hours(db, now)
     first_hour = db.scalar(select(func.min(KpiHourly.bucket_start)))
     if first_hour is not None:
-        rebuild_days(db, _utc(first_hour).date(), _utc(now).date())
+        rebuild_days(db, _utc(first_hour).astimezone(EASTERN).date(), eastern_today(now))
+        db.commit()
+    elif removed:
+        db.execute(delete(KpiDaily))
         db.commit()
     return total
 
 
 def _backfill_hours(db: Session, now: datetime) -> int:
     first_raw = [
-        db.scalar(select(func.min(TestResult.started_at)).join(Test, TestResult.test_id == Test.id).where(Test.slug == "icmp-path")),
-        db.scalar(select(func.min(SyntheticSample.recorded_at))),
+        db.scalar(
+            select(func.min(TestResult.started_at))
+            .join(Test, TestResult.test_id == Test.id)
+            .where(Test.slug == "icmp-path", _valid_hour_sql(TestResult.started_at))
+        ),
+        db.scalar(
+            select(func.min(SyntheticSample.recorded_at))
+            .where(_valid_hour_sql(SyntheticSample.recorded_at))
+        ),
     ]
     first_raw = [value for value in first_raw if value is not None]
     if not first_raw:
@@ -571,14 +637,17 @@ def _add(value: datetime, unit: str, count: int) -> datetime:
 
 
 def window(period: str, now: datetime, anchor: Optional[date] = None) -> tuple[datetime, datetime, str]:
-    """The buckets a report covers. Without a day it ends now. With a day it ends on that day (UTC)."""
+    """The buckets a report covers. Without a day it ends now. With a day it ends on that Eastern day."""
     unit, count = PERIODS[period]
-    if anchor is None:
-        last = _floor(now, unit)
-        return _add(last, unit, -(count - 1)), _add(last, unit, 1), unit
-    midnight = datetime(anchor.year, anchor.month, anchor.day, tzinfo=timezone.utc)
     if period == "day":
-        return midnight, midnight + timedelta(days=1), "hour"
+        if anchor is None:
+            last = _floor(now, unit)
+            return _add(last, unit, -(count - 1)), _add(last, unit, 1), unit
+        start_et = datetime(anchor.year, anchor.month, anchor.day, VALID_START_HOUR, 0, tzinfo=EASTERN)
+        end_et = datetime(anchor.year, anchor.month, anchor.day, tzinfo=EASTERN) + timedelta(days=1)
+        return start_et.astimezone(timezone.utc), end_et.astimezone(timezone.utc), "hour"
+    ref_date = anchor if anchor is not None else eastern_today(now)
+    midnight = datetime(ref_date.year, ref_date.month, ref_date.day, tzinfo=timezone.utc)
     last = _floor(midnight, unit)
     return _add(last, unit, -(count - 1)), _add(last, unit, 1), unit
 
@@ -628,7 +697,11 @@ def _aggregate(db: Session, start: datetime, end: datetime, monitor_id: Optional
     if daily:
         query = query.where(table.day >= start.date(), table.day < end.date())
     else:
-        query = query.where(table.bucket_start >= start, table.bucket_start < end)
+        query = query.where(
+            table.bucket_start >= start,
+            table.bucket_start < end,
+            _valid_hour_sql(table.bucket_start),
+        )
     if monitor_id is not None:
         query = query.where(table.monitor_id == monitor_id)
     rows = []
@@ -727,7 +800,7 @@ def _diagnose_kpi(
     )
 
 def incidents(db: Session, start: datetime, end: datetime, monitor_id: Optional[UUID], limit: int = 10) -> list[dict[str, Any]]:
-    """Internet outages in the period: runs of failed path pings that were not tunnel-only, newest first."""
+    """Internet outages in the period during valid hours (6 AM – 12 AM ET): runs of failed path pings that were not tunnel-only, newest first."""
     query = (
         select(TestResult.started_at, Network.kind, Test.monitor_id)
         .join(Test, TestResult.test_id == Test.id)
@@ -737,6 +810,7 @@ def incidents(db: Session, start: datetime, end: datetime, monitor_id: Optional[
             TestResult.status == ResultStatus.fail,
             TestResult.started_at >= start,
             TestResult.started_at < end,
+            _valid_hour_sql(TestResult.started_at),
             _not_tunnel_only(),  # a fail while public web still answered is the tunnel, not the internet
         )
         .order_by(Network.kind, TestResult.started_at)
@@ -767,7 +841,7 @@ def incidents(db: Session, start: datetime, end: datetime, monitor_id: Optional[
 
 
 def gap_log(db: Session, start: datetime, end: datetime, monitor_id: Optional[UUID], limit: int = 10) -> list[dict[str, Any]]:
-    """Stretches with no ping result on a link, newest first. Gaps on both links at once are one entry.
+    """Stretches with no ping result on a link during valid hours (6 AM – 12 AM ET), newest first. Gaps on both links at once are one entry.
 
     Reads the detailed records, so it covers the last 31 days of the period at most.
     """
@@ -787,6 +861,13 @@ def gap_log(db: Session, start: datetime, end: datetime, monitor_id: Optional[UU
     ).all()
     merged: list[dict[str, Any]] = []
     for before, at, kind in found:
+        if not is_valid_hour(at):
+            continue
+        day_start = _valid_window_start(at)
+        if before < day_start:
+            before = day_start
+        if at - before <= OUTAGE_GAP:
+            continue
         link = _link(kind.value)
         if merged and before <= merged[-1]["end"]:
             merged[-1]["end"] = max(merged[-1]["end"], at)
@@ -806,29 +887,39 @@ def gap_log(db: Session, start: datetime, end: datetime, monitor_id: Optional[UU
 
 
 def ongoing_gap(db: Session, now: datetime, monitor_id: Optional[UUID]) -> Optional[dict[str, Any]]:
-    """No result for several minutes right now. It is added to the report before the next result closes it."""
+    """No result for several minutes right now (during valid hours). It is added to the report before the next result closes it."""
+    if not is_valid_hour(now):
+        return None
     query = select(func.max(TestResult.started_at)).join(Test, TestResult.test_id == Test.id).where(Test.slug == "icmp-path", ~TestResult.external_id.startswith("rollup-"))
     if monitor_id is not None:
         query = query.where(Test.monitor_id == monitor_id)
     last = db.scalar(query)
-    if last is None or now - last <= OUTAGE_GAP:
+    if last is None:
         return None
-    return {"start": last, "minutes": max(1, round((now - last).total_seconds() / 60 - 1)), "links": "both", "ongoing": True}
+    effective_last = max(_utc(last), _valid_window_start(now))
+    if _utc(now) - effective_last <= OUTAGE_GAP:
+        return None
+    return {"start": effective_last, "minutes": max(1, round((_utc(now) - effective_last).total_seconds() / 60 - 1)), "links": "both", "ongoing": True}
 
 
 def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id: Optional[UUID] = None, day: Optional[date] = None) -> dict[str, Any]:
     if period not in PERIODS:
         raise ValueError("period must be day, week, month or year")
-    now = now or datetime.now(timezone.utc)
-    today = _utc(now).date()
+    now = _utc(now or datetime.now(timezone.utc))
+    today = eastern_today(now)
     if day is not None and day > today:
         day = today
     start, end, unit = window(period, now, day)
-    previous_start = start - (end - start)
     daily = period != "day"
+    if daily:
+        previous_start = start - (end - start)
+        previous_end = start
+    else:
+        previous_start = start - timedelta(days=1)
+        previous_end = end - timedelta(days=1)
 
     current = _aggregate(db, start, end, monitor_id, None, daily)
-    previous = _aggregate(db, previous_start, start, monitor_id, None, daily)
+    previous = _aggregate(db, previous_start, previous_end, monitor_id, None, daily)
     buckets = _aggregate(db, start, end, monitor_id, unit, daily)
 
     by_bucket: dict[datetime, list[dict[str, Any]]] = defaultdict(list)
@@ -837,6 +928,9 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
     series = []
     cursor = start
     while cursor < end:
+        if unit == "hour" and not is_valid_hour(cursor):
+            cursor = _add(cursor, unit, 1)
+            continue
         rows = by_bucket.get(cursor, [])
         internet = _summary(rows, "internet")
         wired = _summary([r for r in rows if r["link"] == "wired"], "internet")
@@ -885,8 +979,13 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
     before = {kind: _service_summary(previous, kind) for kind in ("internet", "voice", "video", "web", "apps", "speed")}
     internet = summary["internet"]
     internet["mttr_minutes"] = round(internet["outage_minutes"] / internet["incidents"], 1) if internet["incidents"] else None
-    gaps = gap_log(db, start, min(end, now), monitor_id)
-    live_gap = ongoing_gap(db, now, monitor_id) if start <= now < end else None
+    if daily:
+        raw_start, raw_window_end = _et_day_bounds(start.date(), end.date() - timedelta(days=1))
+    else:
+        raw_start, raw_window_end = start, end
+    raw_end = min(raw_window_end, now)
+    gaps = gap_log(db, raw_start, raw_end, monitor_id)
+    live_gap = ongoing_gap(db, now, monitor_id) if raw_start <= now < raw_window_end else None
     if live_gap is not None:
         internet["gap_minutes"] = round(internet["gap_minutes"] + live_gap["minutes"], 1)
         internet["gaps"] += 1
@@ -919,6 +1018,7 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
         "to": min(end, now),
         "generated_at": now,
         "data_since": data_since,
+        "valid_hours": VALID_HOURS_LABEL,
         "targets": TARGETS,
         "summary": summary,
         "previous": before,
@@ -926,7 +1026,7 @@ def report(db: Session, period: str, now: Optional[datetime] = None, monitor_id:
         "links": links,
         "diagnosis": diagnosis,
         "series": series,
-        "incidents": incidents(db, start, min(end, now), monitor_id),
+        "incidents": incidents(db, raw_start, raw_end, monitor_id),
         "gaps": gaps,
     }
 

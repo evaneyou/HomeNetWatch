@@ -84,6 +84,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **KPI valid working hours (6:00 AM – 12:00 AM EST, 7 days a week):** KPI availability, packet drop, time offline, outages, reporting gaps and daily health scores now count only measurements taken during valid working hours from 6:00 AM to 12:00 AM Eastern Time (`America/New_York`), 7 days a week; overnight hours (12:00 AM – 6:00 AM ET) are excluded. Migration `0055_kpi_valid_hours` and the KPI backfill purge historical off-hour rows from `kpi_hourly` and recompute `kpi_daily` by Eastern date so all past dates reflect the working-hours window. The KPI Dashboard header, verdict banner, Daily KPI History and footer explicitly state the valid hours.
 - **Guest view: hidden values are `#` and blurred:** identifying values in a guest's view (home and LAN addresses,
   the city, device and wireless names) are still replaced letter by letter with `#` on the server, so the real value
   never reaches the browser, and the dashboard now also blurs them so a guest can see that something is hidden. The

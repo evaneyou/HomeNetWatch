@@ -94,7 +94,7 @@ Enrollment / config ETag matrix and webhooks are deferred.
 3. **Test detail** — range picker; stage waterfall; pass/fail strip; RTT/loss charts
 4. **Path View** — traceroute grouped into networks, latency by hop, BGP view from the agent's own provider when collectors see one, trace any host (admin)
 5. **Speed Test** and **Network Test** — live LibreSpeed test and multi-session stress runs
-6. **KPI Dashboard** — availability and quality reports, daily history, CSV, Determine Root Cause
+6. **KPI Dashboard** — availability and quality reports (calculated over valid working hours: 6:00 AM – 12:00 AM Eastern Time, 7 days a week), daily history, CSV, Determine Root Cause
 7. **Airwaves** — networks, clients, channels, Security (WIDS alerts, trust, LAN scans)
 8. **Issues** and **Server Health**
 9. **Settings** — onboarding, per-agent settings, internet service, Real-Time Application Health, web services, Telegram, Gemini, guest visits

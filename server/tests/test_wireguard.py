@@ -67,8 +67,11 @@ def test_receiver_keys_are_left_readable_by_its_group_only(tmp_path, monkeypatch
     from app import wireguard_tunnel
 
     monkeypatch.setattr(get_settings(), "rtnp_state_dir", str(tmp_path))
+    # In production the API is a member of the receiver's group (65532); here, use a group the test runs in.
+    monkeypatch.setattr(wireguard_tunnel, "RTNP_GID", os.getgid())
     wireguard_tunnel._publish_srtp_key(b"k" * wireguard_tunnel.SRTP_KEY_LEN)
     wireguard_tunnel._publish_srtp_key(b"j" * wireguard_tunnel.SRTP_KEY_LEN)
     assert os.stat(tmp_path / "keys").st_mode & 0o777 == 0o750
     assert os.stat(tmp_path / "keys" / "shared").st_mode & 0o777 == 0o440
+    assert os.stat(tmp_path / "keys" / "shared").st_gid == os.getgid()
     assert (tmp_path / "keys" / "shared").read_bytes() == b"j" * wireguard_tunnel.SRTP_KEY_LEN

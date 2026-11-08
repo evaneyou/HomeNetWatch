@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app import audit
 from app.auth import get_current_user, require_admin_csrf
 from app.db import get_db
 from app.internet_tests import (
@@ -57,12 +58,13 @@ def get_web_services(
 def put_web_services(
     body: WebServiceSettingsIn,
     db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(require_admin_csrf)],
+    admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> list[WebServiceSettingOut]:
     try:
         rows = save_web_services(db, [item.model_dump() for item in body.services])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit.record(db, admin.username, "web_services_settings")
     db.commit()
     return [_web_service_out(row) for row in rows]
 
@@ -97,12 +99,13 @@ def get_web_stability(
 def put_web_stability(
     body: WebStabilityIn,
     db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(require_admin_csrf)],
+    admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> WebStabilityOut:
     try:
         row = save_web_stability(db, body.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit.record(db, admin.username, "web_stability_settings")
     db.commit()
     return _web_stability_out(row)
 
@@ -134,8 +137,9 @@ def get_internet_service(
 def put_internet_service(
     body: InternetServiceSettingIn,
     db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(require_admin_csrf)],
+    admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> InternetServiceSettingOut:
     row = save_internet_service(db, body.model_dump())
+    audit.record(db, admin.username, "internet_service_settings")
     db.commit()
     return _internet_service_out(row)

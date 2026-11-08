@@ -40,6 +40,10 @@ expose any part of this stack beyond your own machine:
   read as root, `/proc` alone reaches every file on the machine.
 - If a session cookie may have been copied, run `docker compose exec server python -m app.sessions revoke <username>`
   (or `--all`). Signing out or setting a new password does the same for that account.
+- Sign-ins (with the address), failed sign-ins, sign-in blocks and changes to the alert, Gemini and test settings
+  are kept in `audit_events` for the log retention period. Read them with
+  `docker compose exec db psql -U hns -d hns -c "select created_at, username, action, detail from audit_events order by created_at desc limit 50"`.
+  With Telegram alerts set up, an admin sign-in from an address not seen before also sends a message.
 - If Caddy is not the container named `caddy`, set `TRUSTED_PROXIES` to its name or address, or the sign-in
   limit counts every visitor as the proxy's address.
 - Install `deploy/rtnp-allowlist.timer` so the public RTNP port (`8998/udp`) accepts only current WireGuard

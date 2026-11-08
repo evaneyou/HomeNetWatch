@@ -48,7 +48,26 @@ def _answer(ip: str):
 
 def test_a_name_that_resolves_inside_is_refused():
     assert resolved_public_target("192.168.1.1") is None
-    assert resolved_public_target("8.8.8.8") == "8.8.8.8"
+    assert resolved_public_target("8.8.8.8") == ("8.8.8.8", "8.8.8.8")
+
+
+def test_a_name_is_resolved_once_to_its_public_ipv4_address(monkeypatch):
+    def answers(host, *args, **kwargs):
+        return [
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:220:1::1", 0, 0, 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+        ]
+
+    monkeypatch.setattr("app.path_view.socket.getaddrinfo", answers)
+    assert resolved_public_target("example.com") == ("example.com", "93.184.216.34")
+
+
+def test_a_name_with_only_ipv6_addresses_is_refused(monkeypatch):
+    def answers(host, *args, **kwargs):
+        return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:220:1::1", 0, 0, 0))]
+
+    monkeypatch.setattr("app.path_view.socket.getaddrinfo", answers)
+    assert resolved_public_target("v6only.example.com") is None
 
 
 def test_trace_on_demand_round_trip(client: TestClient, db, monkeypatch):
@@ -76,7 +95,8 @@ def test_trace_on_demand_round_trip(client: TestClient, db, monkeypatch):
     assert waiting.json()["state"] == "pending"
 
     handed = client.get("/api/v1/monitors/command", headers=headers).json()["traces"]
-    assert handed == [{"id": trace_id, "target": "example.com", "link": "wireless"}]
+    # The agent gets the address the server checked, so a name can't answer differently the second time.
+    assert handed == [{"id": trace_id, "target": "93.184.216.34", "link": "wireless"}]
     assert client.get("/api/v1/monitors/command", headers=headers).json()["traces"] == []
 
     hops = [

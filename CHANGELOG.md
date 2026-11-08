@@ -12,6 +12,14 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **Traces go to the address the server checked:** for a trace typed into the dashboard, the server checked that
+  the name resolved to public addresses, then the agent resolved it again, so a name that changed its answer (DNS
+  rebinding) could have pointed the trace into the home network. The agent now gets the public IPv4 address the
+  server resolved (migration `0054_trace_address`); the name is shown in the dashboard only. A name with no public
+  IPv4 address is refused.
+- **CI actions pinned to commits:** every GitHub Action is pinned by full commit SHA (Dependabot keeps them current)
+  and `cargo-ndk` by version. The Android signing key moves to an `android-signing` environment that only `main`
+  builds use, so a hijacked tag or a branch build can't sign an update for the TV.
 - **Request size limits:** sign-in usernames are capped at 64 characters and passwords at 256, and Caddy refuses API
   request bodies over 1 MB. Before, an anonymous request could hand the server megabytes to parse and hash.
 - **Old-style agent keys need the device name:** a key from before enrollment is stored as a bcrypt hash. An unknown

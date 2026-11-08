@@ -436,9 +436,10 @@ def request_trace(
     monitor = db.get(Monitor, monitor_id)
     if monitor is None:
         raise HTTPException(status_code=404, detail="Remote agent not found")
-    target = resolved_public_target(body.target)
-    if target is None:
-        raise HTTPException(status_code=422, detail="Enter a public host name or IP address")
+    resolved = resolved_public_target(body.target)
+    if resolved is None:
+        raise HTTPException(status_code=422, detail="Enter a public host name or IPv4 address")
+    target, address = resolved
     now = datetime.now(timezone.utc)
     busy = db.scalar(
         select(func.count())
@@ -457,7 +458,7 @@ def request_trace(
     if (recent or 0) >= 30:
         raise HTTPException(status_code=429, detail="Too many traces this hour")
     db.execute(delete(AdhocTrace).where(AdhocTrace.monitor_id == monitor.id, AdhocTrace.requested_at < now - timedelta(days=7)))
-    row = AdhocTrace(monitor_id=monitor.id, link=body.link, target=target, requested_by=admin.username)
+    row = AdhocTrace(monitor_id=monitor.id, link=body.link, target=target, address=address, requested_by=admin.username)
     db.add(row)
     db.add(AuditEvent(username=admin.username, action="trace", monitor_id=monitor.id, detail=f"{body.link} {target}"))
     db.commit()

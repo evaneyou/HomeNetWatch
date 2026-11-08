@@ -97,6 +97,17 @@ def write_storage(host_root: Path, out: Path, now: Optional[datetime] = None) ->
     os.replace(temporary, out / "storage.json")
 
 
+def write_backups(source: Path, out: Path) -> None:
+    """The names and sizes of backup.sh's copies, for Server Health. Never their contents."""
+    try:
+        entries = {entry.name: entry.stat().st_size for entry in source.iterdir() if entry.is_file()}
+    except OSError:
+        return
+    temporary = out / f".backups.{os.getpid()}.json"
+    temporary.write_text(json.dumps({"entries": entries}), encoding="utf-8")
+    os.replace(temporary, out / "backups.json")
+
+
 def _storage_loop(host_root: Path, out: Path) -> None:
     from app.server_health import STORAGE_EVERY
 
@@ -113,6 +124,7 @@ def main() -> int:
     host_proc = Path(os.environ.get("HNS_SOURCE_PROC", "/host/proc"))
     host_root = Path(os.environ.get("HNS_SOURCE_ROOT", "/host"))
     out = Path(os.environ.get("HNS_HOSTINFO_DIR", "/var/lib/hns-hostinfo"))
+    backups = os.environ.get("HNS_BACKUP_SOURCE", "").strip()
     out.mkdir(parents=True, exist_ok=True)
     threading.Thread(target=_storage_loop, args=(host_root, out), daemon=True).start()
     last_root = 0.0
@@ -122,6 +134,8 @@ def main() -> int:
                 mirror_root(host_root, out)
                 last_root = time.monotonic()
             mirror_proc(host_proc, out)
+            if backups:
+                write_backups(Path(backups), out)
         except Exception:
             log.exception("host snapshot failed")
         time.sleep(PROC_EVERY_SECONDS)

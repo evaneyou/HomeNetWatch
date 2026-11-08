@@ -9,6 +9,8 @@ fi
 if [ ! -f server.pub ]; then
   wg pubkey < server.key > server.pub
 fi
+# The API (uid 10001) reads the public key and the handshake times; the private key and wg0.conf stay root-only.
+chmod 644 server.pub
 touch peers.conf
 
 build_conf() {
@@ -36,7 +38,7 @@ start_interface() {
 }
 
 write_handshakes() {
-  wg show wg0 latest-handshakes > handshakes.tmp 2>/dev/null && mv handshakes.tmp handshakes
+  wg show wg0 latest-handshakes > handshakes.tmp 2>/dev/null && chmod 644 handshakes.tmp && mv handshakes.tmp handshakes
 }
 
 build_conf

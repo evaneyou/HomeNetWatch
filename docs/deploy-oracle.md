@@ -176,9 +176,12 @@ trust. Without them every Pi has to be re-enrolled.
 ```bash
 age -d -i backup.key backups/db-<stamp>.sql.gz.age | gunzip | docker compose exec -T db psql -U hns -d hns
 age -d -i backup.key backups/tls-<stamp>.tar.gz.age | docker compose exec -T agent-api tar -C /var/lib/hns-tls -xz
-age -d -i backup.key backups/wireguard-<stamp>.tar.gz.age | docker compose exec server tar -C /var/lib/hns-wireguard -xz
+age -d -i backup.key backups/wireguard-<stamp>.tar.gz.age | docker compose exec -T wireguard tar -C /etc/wireguard -xz
+docker compose run --rm state-init
 docker compose restart
 ```
+
+`state-init` gives the restored files back to the API's user (uid 10001) before the restart.
 
 ## 9. Keep the instance from being reclaimed
 

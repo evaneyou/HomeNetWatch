@@ -143,16 +143,37 @@ def backup_directory() -> Optional[Path]:
     return Path(configured)
 
 
+_NO_BACKUPS: dict[str, Any] = {"available": False, "fresh": False, "newest": None, "kinds": []}
+
+
+def current_backups(now: Optional[datetime] = None) -> dict[str, Any]:
+    """The backup list from hoststat's copy (production), or from HNS_BACKUP_DIR when that is set (development)."""
+    info = hostinfo_dir()
+    snapshot = info / "backups.json" if info is not None else None
+    if snapshot is not None and snapshot.is_file():
+        try:
+            entries = json.loads(snapshot.read_text(encoding="utf-8"))["entries"]
+            return summarize_backups({str(name): int(size) for name, size in entries.items()}, now)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return dict(_NO_BACKUPS)
+    return list_backups(backup_directory(), now)
+
+
 def list_backups(root: Optional[Path], now: Optional[datetime] = None) -> dict[str, Any]:
-    """Times and sizes of the backup copies. The files themselves stay on disk."""
-    now = now or datetime.now(timezone.utc)
-    empty: dict[str, Any] = {"available": False, "fresh": False, "newest": None, "kinds": []}
+    """Times and sizes of the backup copies in a folder. The files themselves stay on disk."""
     if root is None or not root.is_dir():
-        return empty
+        return dict(_NO_BACKUPS)
     try:
-        names = [entry.name for entry in root.iterdir() if entry.is_file()]
+        entries = {entry.name: entry.stat().st_size for entry in root.iterdir() if entry.is_file()}
     except OSError:
-        return empty
+        return dict(_NO_BACKUPS)
+    return summarize_backups(entries, now)
+
+
+def summarize_backups(entries: dict[str, int], now: Optional[datetime] = None) -> dict[str, Any]:
+    """Group backup file names and sizes by kind, newest first, and say whether every kind is recent."""
+    now = now or datetime.now(timezone.utc)
+    names = list(entries)
     kinds = []
     newest: Optional[datetime] = None
     fresh = True
@@ -165,7 +186,7 @@ def list_backups(root: Optional[Path], now: Optional[datetime] = None) -> dict[s
             stamp, encrypted = found
             try:
                 taken = datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
-                size = (root / name).stat().st_size
+                size = entries[name]
             except (OSError, ValueError):
                 continue
             copies.append({"taken_at": taken, "bytes": size, "encrypted": encrypted})
@@ -1658,7 +1679,7 @@ def report(db: Session, range_name: str, now: Optional[datetime] = None) -> dict
             "projection": disk_projection(daily_rows, now),
             "breakdown": {"checked_at": measured.checked_at, **measured.payload} if measured is not None else None,
         },
-        "backups": list_backups(backup_directory(), now),
+        "backups": current_backups(now),
         "traffic": machine_traffic(db, now),
     }
 

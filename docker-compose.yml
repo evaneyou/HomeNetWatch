@@ -4,18 +4,14 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
-# The API containers: no Linux capabilities beyond managing the state files they own (the receiver's key is
-# handed to its user), no privilege gain, and a read-only filesystem apart from their volumes and /tmp.
+# The API containers run as the image's hns user (uid 10001), not root, with no Linux capabilities, no privilege
+# gain, and a read-only filesystem apart from their volumes and /tmp. state-init hands them their state first.
 x-api-hardening: &api-hardening
   read_only: true
   tmpfs:
     - /tmp
   cap_drop:
     - ALL
-  cap_add:
-    - CHOWN
-    - DAC_OVERRIDE
-    - FOWNER
   security_opt:
     - no-new-privileges:true
 
@@ -37,6 +33,42 @@ services:
       timeout: 5s
       retries: 10
 
+  # Runs once before the API containers on every start: gives the state volumes to the hns user (uid 10001).
+  # Older installs wrote them as root. WireGuard's private key stays root-only (the API never reads it), and the
+  # RTNP receiver (uid 65532) reads its keys through its group.
+  state-init:
+    build:
+      context: ./server
+    logging: *default-logging
+    user: "0:0"
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - wgstate:/state/wireguard
+      - rtnpstate:/state/rtnp
+      - servertls:/state/tls
+    command:
+      - sh
+      - -c
+      - >-
+        set -e;
+        chown -R 10001:10001 /state/wireguard /state/tls;
+        chmod 700 /state/wireguard;
+        for f in wg0.conf server.key; do if [ -e /state/wireguard/$$f ]; then chown 0:0 /state/wireguard/$$f; chmod 600 /state/wireguard/$$f; fi; done;
+        for f in server.pub handshakes; do if [ -e /state/wireguard/$$f ]; then chmod 644 /state/wireguard/$$f; fi; done;
+        chown -R 10001:65532 /state/rtnp;
+        find /state/rtnp -type d -exec chmod 750 {} +;
+        find /state/rtnp -type f -exec chmod 440 {} +
+    restart: "no"
+
   server:
     build:
       context: ./server
@@ -50,14 +82,16 @@ services:
       RTNP_STATE_DIR: /var/lib/hns-rtnp
       TLS_DIR: /var/lib/hns-tls
       RUN_BACKGROUND_TASKS: "1"
-      HNS_BACKUP_DIR: /var/lib/hns-backups
-      # Server Health reads the host through hoststat's copies, never the host itself.
+      # Server Health reads the host (and the backup list) through hoststat's copies, never the host itself.
       HNS_HOSTINFO_DIR: /var/lib/hns-hostinfo
       HNS_HOST_PROC: /var/lib/hns-hostinfo/proc
       HNS_HOST_ROOT: /var/lib/hns-hostinfo/root
     ports:
       - "8847:8847"
     <<: *api-hardening
+    # Member of the RTNP receiver's group, so it can hand the receiver its keys without root.
+    group_add:
+      - "65532"
     volumes:
       - wgstate:/var/lib/hns-wireguard
       - rtnpstate:/var/lib/hns-rtnp
@@ -66,11 +100,11 @@ services:
       - ./geoip:/geoip:ro
       # No host mounts: hoststat copies the few files Server Health needs into this volume.
       - hostinfo:/var/lib/hns-hostinfo:ro
-      # backup.sh writes encrypted copies in ./backups. The server only reads names, times, and sizes.
-      - ./backups:/var/lib/hns-backups:ro
     depends_on:
       db:
         condition: service_healthy
+      state-init:
+        condition: service_completed_successfully
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8847"
@@ -97,7 +131,10 @@ services:
       - wgstate:/var/lib/hns-wireguard
       - servertls:/var/lib/hns-tls
     depends_on:
-      - server
+      server:
+        condition: service_started
+      state-init:
+        condition: service_completed_successfully
     restart: unless-stopped
     # One command on one line. Written as a folded block it split before the --ssl flags, and the port served plain
     # HTTP while the agents expect TLS with a pinned key.
@@ -113,6 +150,8 @@ services:
       context: ./server
     logging: *default-logging
     command: ["python", "-m", "app.host_snapshot"]
+    # Root, with only DAC_READ_SEARCH: it reads host files the hns user can't.
+    user: "0:0"
     network_mode: none
     read_only: true
     cap_drop:
@@ -127,10 +166,13 @@ services:
       - /tmp
     environment:
       HNS_HOSTINFO_DIR: /var/lib/hns-hostinfo
+      HNS_BACKUP_SOURCE: /var/lib/hns-backups
     volumes:
       - /proc:/host/proc:ro
       - /:/host:ro
       - hostinfo:/var/lib/hns-hostinfo
+      # backup.sh writes encrypted copies here; only their names and sizes are copied out.
+      - ./backups:/var/lib/hns-backups:ro
     restart: unless-stopped
 
   librespeed:

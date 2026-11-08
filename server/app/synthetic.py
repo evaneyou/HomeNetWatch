@@ -7,7 +7,6 @@ WireGuard addresses 10.7.0.1 or 10.7.1.1.
 from __future__ import annotations
 
 import ipaddress
-import os
 import secrets
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -360,17 +359,12 @@ def ensure_key(db: Session) -> str:
         db.flush()
     directory = get_settings().rtnp_state_dir.strip()
     if directory:
-        os.makedirs(directory, mode=0o700, exist_ok=True)
-        path = os.path.join(directory, "key")
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-        handle = os.open(path, flags, 0o600)
-        try:
-            os.write(handle, (row.key + "\n").encode("ascii"))
-        finally:
-            os.close(handle)
-        from app.wireguard_tunnel import _give_to_receiver
+        from app.wireguard_tunnel import _give_to_receiver, _write_bytes
 
-        _give_to_receiver(Path(path))
+        # Written next to the old file and moved over it: the old copy is read-only for its owner (0440).
+        path = Path(directory) / "key"
+        _write_bytes(path, (row.key + "\n").encode("ascii"))
+        _give_to_receiver(path)
     return row.key
 
 

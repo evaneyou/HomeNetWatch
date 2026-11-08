@@ -54,7 +54,8 @@ docker compose exec -T db pg_dump -U "$user" -d "$name" --no-owner | gzip | encr
 
 # WireGuard keys and peers, and the agent API's TLS key and backup pin.
 echo "Archiving WireGuard and TLS state..."
-docker compose exec -T server tar -C /var/lib/hns-wireguard -cz . | encrypt_to "$dir/wireguard-$stamp.tar.gz.age"
+# Through the hub: the API runs as a non-root user and can't read the hub's private key.
+docker compose exec -T wireguard tar -C /etc/wireguard -cz . | encrypt_to "$dir/wireguard-$stamp.tar.gz.age"
 docker compose exec -T agent-api tar -C /var/lib/hns-tls -cz . | encrypt_to "$dir/tls-$stamp.tar.gz.age"
 
 # Drop everything but the newest $keep of each kind.

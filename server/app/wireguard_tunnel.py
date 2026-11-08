@@ -7,6 +7,7 @@ The hub writes server.pub and a handshakes file from `wg show wg0 latest-handsha
 from __future__ import annotations
 
 import base64
+import logging
 import os
 import secrets
 import uuid
@@ -276,8 +277,12 @@ def _require_state_dir() -> Path:
     return directory
 
 
+log = logging.getLogger(__name__)
+
 SRTP_KEY_LEN = 30
-RTNP_UID = 65532
+# The RTNP receiver runs as 65532:65532. The API is a member of that group (group_add in docker-compose.yml), so it
+# gives the receiver its keys by group, without root or CHOWN.
+RTNP_GID = 65532
 
 
 SHARED_SRTP = "shared"
@@ -350,10 +355,10 @@ def _publish_srtp_key(key: bytes) -> None:
 
 def _give_to_receiver(path: Path) -> None:
     try:
-        os.chown(path, RTNP_UID, RTNP_UID)
-        os.chmod(path, 0o500 if path.is_dir() else 0o400)
-    except OSError:
-        pass
+        os.chown(path, -1, RTNP_GID)
+        os.chmod(path, 0o750 if path.is_dir() else 0o440)
+    except OSError as exc:
+        log.warning("could not hand %s to the RTNP receiver: %s", path.name, exc)
 
 
 def _write_bytes(target: Path, data: bytes) -> None:

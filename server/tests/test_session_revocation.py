@@ -6,9 +6,8 @@ from fastapi.testclient import TestClient
 from itsdangerous import URLSafeTimedSerializer
 from sqlalchemy import select
 
-from app import sessions
+from app import keys, sessions
 from app.auth import hash_password
-from app.config import get_settings
 from app.models import User, UserRole
 from app.seed import _same_password
 from tests.conftest import login
@@ -62,7 +61,7 @@ def test_one_guest_signing_out_leaves_other_visitors_signed_in(client: TestClien
 def test_a_cookie_from_before_session_versions_still_works_until_revoked(client: TestClient, db):
     user = _account(db, "revoke-legacy", UserRole.viewer)
     db.refresh(user)
-    old = URLSafeTimedSerializer(get_settings().secret_key, salt="hns-session").dumps({"uid": str(user.id)})
+    old = URLSafeTimedSerializer(keys.key(keys.SESSION), salt="hns-session").dumps({"uid": str(user.id)})
     client.cookies.set("hns_session", old)
     expected = 200 if user.session_version == 0 else 401
     assert client.get("/api/v1/auth/me").status_code == expected

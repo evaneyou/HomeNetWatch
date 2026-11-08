@@ -12,6 +12,12 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **A separate key for each purpose:** `SECRET_KEY` itself signed sessions, made CSRF tokens, protected installer
+  codes and encrypted the stored Telegram and Gemini secrets. Each purpose now uses its own key derived from it
+  with HKDF (`server/app/keys.py`). The new `SECRET_KEY_PREVIOUS` makes rotation safe: while it holds the old
+  value, old sessions, CSRF tokens and installer codes stay valid, and the stored secrets are re-encrypted under
+  the new key at startup. Before, rotating the key lost those secrets. Deploying this signs everyone out once;
+  stored secrets carry over.
 - **Security events are audited:** every non-guest sign-in (with its address), failed sign-in, sign-in block, and
   change to the Telegram, Gemini, web service, stability and internet service settings now writes an
   `audit_events` row. Failures are written only until the address or account is blocked, and the block once, so a

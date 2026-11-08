@@ -57,6 +57,16 @@ async def _lifespan(_app: FastAPI):
     except Exception:
         log.exception("wireguard peer list was not written")
 
+    try:
+        from app import telegram
+
+        with SessionLocal() as db:
+            if telegram.rotate_stored(db):
+                db.commit()
+                log.info("stored secrets re-encrypted under the current key")
+    except Exception:
+        log.exception("stored secrets were not re-encrypted")
+
     async def _loop() -> None:
         while True:
             try:

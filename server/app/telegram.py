@@ -14,9 +14,9 @@ import re
 from typing import Any, Optional
 
 import httpx
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
-from app.config import get_settings
+from app import keys
 
 # httpx logs "POST https://api.telegram.org/bot<token>/..." at INFO. That would write the token to the logs.
 for _name in ("httpx", "httpcore"):
@@ -34,9 +34,15 @@ def valid_token(token: str) -> bool:
     return bool(_TOKEN.fullmatch(token.strip()))
 
 
-def _fernet() -> Fernet:
-    key = base64.urlsafe_b64encode(hashlib.sha256(get_settings().secret_key.encode()).digest())
-    return Fernet(key)
+def _fernet() -> MultiFernet:
+    """Encrypts with the current stored-secrets key; decrypts with any key the value may have been stored under."""
+    current = [Fernet(base64.urlsafe_b64encode(secret)) for secret in keys.keys(keys.STORED_SECRETS)]
+    # Before per-purpose keys, the Fernet key was SHA-256 of SECRET_KEY itself. Kept for reading only, so values
+    # stored then still open until rotate_stored() re-encrypts them.
+    legacy = [
+        Fernet(base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())) for secret in keys.secrets_in_use()
+    ]
+    return MultiFernet(current + legacy)
 
 
 def encrypt(token: str) -> str:
@@ -44,13 +50,47 @@ def encrypt(token: str) -> str:
 
 
 def decrypt(stored: str) -> str:
-    """The token, or an empty string if nothing is stored or the secret key has changed."""
+    """The token, or an empty string if nothing is stored or no key in use can open it."""
     if not stored:
         return ""
     try:
         return _fernet().decrypt(stored.encode()).decode()
     except (InvalidToken, ValueError):
         return ""
+
+
+def _rotated(stored: str) -> str:
+    """The value re-encrypted under the current key, or unchanged if it is already, or can't be read."""
+    if not stored:
+        return stored
+    current = Fernet(base64.urlsafe_b64encode(keys.key(keys.STORED_SECRETS)))
+    try:
+        current.decrypt(stored.encode())
+        return stored
+    except (InvalidToken, ValueError):
+        pass
+    try:
+        return _fernet().rotate(stored.encode()).decode()
+    except (InvalidToken, ValueError):
+        return stored
+
+
+def rotate_stored(db) -> int:
+    """Re-encrypt the stored bot token and Gemini key under the current key. Run at startup. Returns the count."""
+    from app.models import GeminiSetting, TelegramSetting
+
+    changed = 0
+    for row in db.query(TelegramSetting).all():
+        fresh = _rotated(row.bot_token_enc)
+        if fresh != row.bot_token_enc:
+            row.bot_token_enc = fresh
+            changed += 1
+    for row in db.query(GeminiSetting).all():
+        fresh = _rotated(row.api_key_enc)
+        if fresh != row.api_key_enc:
+            row.api_key_enc = fresh
+            changed += 1
+    return changed
 
 
 def _client() -> httpx.Client:

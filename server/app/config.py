@@ -11,6 +11,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://hns:hns-dev-password@127.0.0.1:55432/hns"
     secret_key: str = DEFAULT_SECRET_KEY
+    # While rotating SECRET_KEY, the old value: what it signed and encrypted is still accepted (see app/keys.py).
+    secret_key_previous: str = ""
     cors_origins: str = "http://127.0.0.1:3847,http://localhost:3847"
     cookie_secure: bool = False
     cookie_samesite: str = "lax"

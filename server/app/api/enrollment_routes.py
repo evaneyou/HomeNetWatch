@@ -34,6 +34,7 @@ from app.enrollment import (
     clean_lan_ip,
     decode_key,
     installer_code_hash,
+    installer_code_hashes,
     limiter,
     new_token,
     nonces,
@@ -169,12 +170,12 @@ def agent_check_in(body: CheckInIn, request: Request, db: Annotated[Session, Dep
 
     waiting = HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_WAITING_FOR_CODE)
     try:
-        code_hash = installer_code_hash(normalize_installer_code(body.installer_code))
+        code_hashes = installer_code_hashes(normalize_installer_code(body.installer_code))
     except ValueError as exc:
         raise waiting from exc
     code = db.scalar(
         select(InstallerCode).where(
-            InstallerCode.code_hash == code_hash,
+            InstallerCode.code_hash.in_(code_hashes),
             InstallerCode.monitor_id.is_(None),
             InstallerCode.expires_at > now,
         )

@@ -17,7 +17,7 @@ from datetime import timedelta
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from app.config import get_settings
+from app import keys
 
 CODE_LENGTH = 12
 CODE_TTL = timedelta(hours=24)
@@ -45,8 +45,16 @@ def normalize_installer_code(raw: str) -> str:
 
 
 def installer_code_hash(code: str) -> str:
-    secret = get_settings().secret_key.encode()
-    return hmac.new(secret, f"installer:{code}".encode(), hashlib.sha256).hexdigest()
+    """How a new installer code is stored."""
+    return installer_code_hashes(code)[0]
+
+
+def installer_code_hashes(code: str) -> list[str]:
+    """Every stored form a code may have: under SECRET_KEY, and under SECRET_KEY_PREVIOUS while rotating."""
+    return [
+        hmac.new(secret, f"installer:{code}".encode(), hashlib.sha256).hexdigest()
+        for secret in keys.keys(keys.INSTALLER_CODE)
+    ]
 
 
 def new_token() -> tuple[str, str]:

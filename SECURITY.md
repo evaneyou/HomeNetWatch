@@ -25,7 +25,8 @@ and reporters are credited in the release notes unless they ask not to be.
 The defaults in `.env.example` and `docker-compose.yml` are for local development. Before you
 expose any part of this stack beyond your own machine:
 
-- Set a long random `SECRET_KEY`.
+- Set a long random `SECRET_KEY`. If it may have leaked, rotate it with `SECRET_KEY_PREVIOUS`
+  ([`docs/deploy.md`](./docs/deploy.md#rotating-secret_key)).
 - Change `BOOTSTRAP_ADMIN_PASSWORD` and `BOOTSTRAP_VIEWER_PASSWORD`, then re-run the seed. The guest
   account (`BOOTSTRAP_GUEST_PASSWORD`) is a read-only public demo; set a private password if you do not want one.
 - Change `POSTGRES_PASSWORD` and do not publish the Postgres port (`55432`).

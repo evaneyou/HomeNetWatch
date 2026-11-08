@@ -140,7 +140,7 @@ def test_issued_token_and_optional_name_must_match(client: TestClient, db):
 
 def _legacy_monitor(db) -> tuple[Monitor, str]:
     """A remote agent from before enrollment: its key is stored as a bcrypt hash."""
-    key = new_token()
+    key, _ = new_token()
     monitor = Monitor(
         group_id=db.info["group_id"],
         slug=f"legacy-{uuid.uuid4().hex[:8]}",

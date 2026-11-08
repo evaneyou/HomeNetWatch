@@ -232,14 +232,14 @@ export const api = {
   serverHealth: (range: string) => request(`/api/v1/server-health?range=${encodeURIComponent(range)}`),
   serverHealthPackage: (source: string, name: string) =>
     request(`/api/v1/server-health/software?source=${encodeURIComponent(source)}&name=${encodeURIComponent(name)}`),
-  faultSimulation: (prompt: string) =>
-    request("/api/v1/server-health/fault-simulation", { method: "POST", body: JSON.stringify({ prompt }) }),
+  faultSimulation: (prompt: string, csrf: string) =>
+    request("/api/v1/server-health/fault-simulation", { method: "POST", headers: csrfHeaders(csrf), body: JSON.stringify({ prompt }) }),
   kpi: (period: string, day?: string, monitorId?: string) =>
     request(`/api/v1/kpi?period=${encodeURIComponent(period)}${day ? `&day=${encodeURIComponent(day)}` : ""}${monitorId ? `&monitor_id=${encodeURIComponent(monitorId)}` : ""}`),
   kpiDaily: (first: string, last: string, monitorId?: string) =>
     request(`/api/v1/kpi/daily?from=${encodeURIComponent(first)}&to=${encodeURIComponent(last)}&limit=1000${monitorId ? `&monitor_id=${encodeURIComponent(monitorId)}` : ""}`),
-  kpiRootCause: (body: { period: string; day?: string; monitor_id?: string }) =>
-    request("/api/v1/kpi/root-cause", { method: "POST", body: JSON.stringify(body) }),
+  kpiRootCause: (body: { period: string; day?: string; monitor_id?: string }, csrf: string) =>
+    request("/api/v1/kpi/root-cause", { method: "POST", headers: csrfHeaders(csrf), body: JSON.stringify(body) }),
   geminiSettings: () => request("/api/v1/settings/gemini"),
   geminiSave: (body: { api_key?: string; model?: string }, csrf: string) =>
     request("/api/v1/settings/gemini", { method: "PUT", headers: csrfHeaders(csrf), body: JSON.stringify(body) }),

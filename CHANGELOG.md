@@ -12,6 +12,12 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **The API runs as a non-root user:** `server` and `agent-api` ran as root (with CHOWN, DAC_OVERRIDE and FOWNER),
+  so a bug in the API could read or change any file in its volumes, including the WireGuard hub's private key. They
+  now run as `hns` (uid 10001) with no capabilities. A one-shot `state-init` service gives the WireGuard, RTNP and
+  TLS volumes to that user before they start, keeping the hub's private key and `wg0.conf` root-only. The RTNP
+  receiver gets its keys through its group, `hoststat` copies the backup list so the API no longer mounts
+  `./backups`, and `scripts/backup.sh` and the restore steps read the WireGuard state through the hub.
 - **A separate key for each purpose:** `SECRET_KEY` itself signed sessions, made CSRF tokens, protected installer
   codes and encrypted the stored Telegram and Gemini secrets. Each purpose now uses its own key derived from it
   with HKDF (`server/app/keys.py`). The new `SECRET_KEY_PREVIOUS` makes rotation safe: while it holds the old

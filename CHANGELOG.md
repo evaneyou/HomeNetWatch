@@ -110,6 +110,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **Caddyfile changes reach Caddy:** `deploy/Caddyfile` is mounted into the container as a single file, and
+  `git pull` replaces the file, so the running container kept the old copy and neither a deploy nor `caddy reload`
+  applied a change. `scripts/deploy.sh` now compares the two copies after every deploy and, when they differ,
+  validates the new file in a throwaway container and recreates caddy. An invalid file leaves caddy as it was.
 - **Maps no longer cover open menus:** a dropdown opened above a map (for example State/Province in a remote agent's Location) shows in full instead of being hidden behind the map.
 - **Daily KPI history rows by month:** the KPI history heatmap now renders one row per calendar month (up to 12 months
   at a time) with up to 31 day columns (`1`–`31`), instead of 7 weekday rows across week columns.

@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -28,6 +28,7 @@ from app.auth import (
 )
 from app.config import Settings, get_settings
 from app.db import get_db
+from app import audit
 from app import guest_visits as guest_visits_module
 from app.models import AuditEvent, User, UserRole
 from app.schemas import GuestSummaryOut, GuestVisitOut, LoginRequest, UserOut
@@ -84,6 +85,7 @@ def login(
     body: LoginRequest,
     request: Request,
     response: Response,
+    background: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UserOut:
@@ -97,16 +99,23 @@ def login(
     def blocked() -> bool:
         return login_failures.blocked(address) or (account is not None and account_failures.blocked(account))
 
-    if blocked() or user is None or not password_ok:
+    was_blocked = blocked()
+    if was_blocked or user is None or not password_ok:
         if user is None or not password_ok:
             login_failures.record(address)
             if account is not None:
                 account_failures.record(account)
+            if not was_blocked:
+                audit.record(db, body.username, "login_failed", address)
         if blocked():
+            if not was_blocked:
+                audit.record(db, body.username, "login_blocked", address)
+            db.commit()
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many sign-in attempts. Wait a few minutes and try again.",
             )
+        db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     login_failures.forget(address)
     if account is not None:
@@ -118,6 +127,11 @@ def login(
         db.commit()
         set_session_cookie(response, token, settings, max_age=settings.guest_idle_seconds)
     else:
+        unfamiliar = audit.new_address(db, user.username, address)
+        audit.record(db, user.username, "login", address)
+        db.commit()
+        if unfamiliar and user.role == UserRole.admin:
+            background.add_task(audit.alert_new_address, user.username, address)
         set_session_cookie(response, token, settings)
     return _user_out(user, token, settings)
 

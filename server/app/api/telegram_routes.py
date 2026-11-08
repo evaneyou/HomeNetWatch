@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from app import alerts, telegram
+from app import alerts, audit, telegram
 from app.auth import require_admin, require_admin_csrf
 from app.db import get_db
 from app.models import AlertEvent, TelegramSetting, User
@@ -69,7 +69,7 @@ def read(db: Annotated[Session, Depends(get_db)], _admin: Annotated[User, Depend
 def save(
     body: TelegramIn,
     db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(require_admin_csrf)],
+    admin: Annotated[User, Depends(require_admin_csrf)],
 ) -> dict[str, Any]:
     row = alerts.get_settings_row(db)
     chat = body.chat_id.strip()
@@ -97,6 +97,10 @@ def save(
     row.updated_at = datetime.now(timezone.utc)
     if token:
         row.last_error = ""
+    changes = ["alerts on" if body.enabled else "alerts off", "chat set" if chat else "no chat"]
+    if token:
+        changes.append("new bot token")
+    audit.record(db, admin.username, "telegram_settings", ", ".join(changes))
     db.commit()
     return _out(row)
 
@@ -139,7 +143,7 @@ def detect_chats(
 
 
 @router.delete("")
-def disconnect(db: Annotated[Session, Depends(get_db)], _admin: Annotated[User, Depends(require_admin_csrf)]) -> dict[str, Any]:
+def disconnect(db: Annotated[Session, Depends(get_db)], admin: Annotated[User, Depends(require_admin_csrf)]) -> dict[str, Any]:
     row = alerts.get_settings_row(db)
     row.enabled = False
     row.bot_token_enc = ""
@@ -148,6 +152,7 @@ def disconnect(db: Annotated[Session, Depends(get_db)], _admin: Annotated[User, 
     row.chat_id = ""
     row.last_error = ""
     row.updated_at = datetime.now(timezone.utc)
+    audit.record(db, admin.username, "telegram_disconnected")
     db.commit()
     return _out(row)
 

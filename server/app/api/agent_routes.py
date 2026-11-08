@@ -61,7 +61,8 @@ def _take_trace_requests(db: Session, monitor: Monitor) -> list[dict[str, str]]:
             row.finished_at = now
         elif row.state == "pending":
             row.state = "running"
-            out.append({"id": str(row.id), "target": row.target, "link": row.link})
+            # The address this server resolved and checked, never the name: see resolved_public_target.
+            out.append({"id": str(row.id), "target": row.address or row.target, "link": row.link})
     if rows:
         db.commit()
     return out

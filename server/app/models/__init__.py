@@ -816,6 +816,8 @@ class AdhocTrace(Base):
     monitor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("monitors.id", ondelete="CASCADE"), nullable=False, index=True)
     link: Mapped[str] = mapped_column(String(16), nullable=False)
     target: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The public address the server resolved the target to; the agent traces this, not the name.
+    address: Mapped[Optional[str]] = mapped_column(String(45))
     # pending: waiting for the agent. running: handed to the agent. done or failed: finished.
     state: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     requested_by: Mapped[str] = mapped_column(String(64), nullable=False, default="")

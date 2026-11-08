@@ -49,11 +49,13 @@ def clean_trace_target(raw: str) -> str | None:
     return str(address)
 
 
-def resolved_public_target(raw: str) -> str | None:
-    """The typed target, after this server has resolved a name.
+def resolved_public_target(raw: str) -> tuple[str, str] | None:
+    """The typed target and the address the agent should trace, after this server has resolved a name.
 
-    The agent would otherwise resolve the name itself, and a public-looking name
-    can still point at an address inside the house.
+    A public-looking name can still point at an address inside the house, and it can change its answer between
+    two lookups (DNS rebinding). So the agent is never given the name: it gets the public IPv4 address checked
+    here, and the name is kept only to show in the dashboard. The agent traces over IPv4, so a name with no
+    public IPv4 address is refused.
     """
     target = clean_trace_target(raw)
     if target is None:
@@ -61,31 +63,36 @@ def resolved_public_target(raw: str) -> str | None:
     try:
         ipaddress.ip_address(target)
     except ValueError:
-        if not _name_points_at_public_addresses(target):
+        addresses = _public_addresses(target)
+        ipv4 = [address for address in addresses or [] if address.version == 4]
+        if not ipv4:
             return None
-    return target
+        return target, str(ipv4[0])
+    return target, target
 
 
-def _name_points_at_public_addresses(hostname: str) -> bool:
+def _public_addresses(hostname: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address] | None:
+    """Every address the name resolves to, or None if it doesn't resolve or any answer is not public."""
     previous = socket.getdefaulttimeout()
     socket.setdefaulttimeout(3)
     try:
         try:
             answers = socket.getaddrinfo(hostname, None)
         except socket.gaierror:
-            return False
+            return None
     finally:
         socket.setdefaulttimeout(previous)
-    seen = False
+    found: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
     for info in answers:
         try:
             address = ipaddress.ip_address(info[4][0])
         except ValueError:
-            return False
-        seen = True
+            return None
         if not address.is_global or address.is_multicast:
-            return False
-    return seen
+            return None
+        if address not in found:
+            found.append(address)
+    return found or None
 
 
 _SILENT_HOSTS = {"", "?", "???", "*", "***"}

@@ -12,6 +12,14 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **Traces go to the address the server checked:** for a trace typed into the dashboard, the server checked that
+  the name resolved to public addresses, then the agent resolved it again, so a name that changed its answer (DNS
+  rebinding) could have pointed the trace into the home network. The agent now gets the public IPv4 address the
+  server resolved (migration `0054_trace_address`); the name is shown in the dashboard only. A name with no public
+  IPv4 address is refused.
+- **CI actions pinned to commits:** every GitHub Action is pinned by full commit SHA (Dependabot keeps them current)
+  and `cargo-ndk` by version. The Android signing key moves to an `android-signing` environment that only `main`
+  builds use, so a hijacked tag or a branch build can't sign an update for the TV.
 - **Sessions can be ended:** a session cookie held only the user id, so a copied admin cookie stayed valid for seven
   days, even after signing out or a new password. Each account now has a session version that every cookie carries.
   Signing out ends all of that account's sessions on every device (the shared guest account excepted), a new

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
 
@@ -172,14 +173,20 @@ def create_app(agent_api_only: bool | None = None) -> FastAPI:
         # Feeds the "server is returning errors" alert. A crash that never becomes a response counts too.
         from app import alerts
 
-        def _persist_error(status_code: int, exc_text: str = "") -> None:
+        def _persist_error(status_code: int, exc: BaseException | None = None) -> None:
+            # The stored log is readable in the dashboard, so it keeps only the error type and a request id.
+            # The exception text (paths, SQL, addresses) goes to the container log under the same id.
             try:
                 from app.db import SessionLocal
                 from app.models import SystemLog
 
                 msg = f"{request.method} {request.url.path} -> {status_code}"
-                if exc_text:
-                    msg = f"{msg} ({exc_text[:300]})"
+                detail = {"method": request.method, "path": request.url.path, "status_code": status_code}
+                if exc is not None:
+                    request_id = uuid.uuid4().hex[:12]
+                    log.error("request %s failed: %s: %s", request_id, type(exc).__name__, exc)
+                    msg = f"{msg} ({type(exc).__name__}, request {request_id})"
+                    detail.update(error=type(exc).__name__, request_id=request_id)
                 with SessionLocal() as db:
                     db.add(
                         SystemLog(
@@ -187,7 +194,7 @@ def create_app(agent_api_only: bool | None = None) -> FastAPI:
                             subsystem="http",
                             severity="critical",
                             message=msg,
-                            detail={"method": request.method, "path": request.url.path, "status_code": status_code},
+                            detail=detail,
                         )
                     )
                     db.commit()
@@ -198,7 +205,7 @@ def create_app(agent_api_only: bool | None = None) -> FastAPI:
             response = await call_next(request)
         except Exception as exc:
             alerts.note_server_error()
-            await asyncio.to_thread(_persist_error, 500, str(exc))
+            await asyncio.to_thread(_persist_error, 500, exc)
             raise
         if response.status_code >= 500:
             alerts.note_server_error()

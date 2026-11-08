@@ -42,9 +42,11 @@ def _resolve_monitor_identity(
         if presented and issued.name != presented:
             raise mismatch
         return issued
-    legacy = select(Monitor).where(Monitor.token_hash.is_not(None))
-    if presented:
-        legacy = legacy.where(Monitor.name == presented)
+    # Keys issued before enrollment are stored as bcrypt hashes, which can only be checked one by one. Only the
+    # device named in the request is checked, so an unknown key can't make the server run bcrypt for every agent.
+    if not presented:
+        raise mismatch
+    legacy = select(Monitor).where(Monitor.token_hash.is_not(None), Monitor.name == presented)
     for monitor in db.scalars(legacy).all():
         if is_token_hash(monitor.token_hash):
             continue

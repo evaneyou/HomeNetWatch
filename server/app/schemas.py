@@ -10,8 +10,10 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    # Bounded so an anonymous request can't hand the server megabytes to parse and hash. Usernames are at most
+    # 64 characters in the database; bcrypt reads only the first 72 bytes of a password anyway.
+    username: str = Field(max_length=64)
+    password: str = Field(max_length=256)
 
 
 class MonitorLocationIn(BaseModel):

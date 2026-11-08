@@ -20,6 +20,15 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 - **CI actions pinned to commits:** every GitHub Action is pinned by full commit SHA (Dependabot keeps them current)
   and `cargo-ndk` by version. The Android signing key moves to an `android-signing` environment that only `main`
   builds use, so a hijacked tag or a branch build can't sign an update for the TV.
+- **Request size limits:** sign-in usernames are capped at 64 characters and passwords at 256, and Caddy refuses API
+  request bodies over 1 MB. Before, an anonymous request could hand the server megabytes to parse and hash.
+- **Old-style agent keys need the device name:** a key from before enrollment is stored as a bcrypt hash. An unknown
+  key without an `X-Monitor-Name` header made the server run bcrypt against every such agent; now only the named
+  device's hash is checked, and a key without a name is refused.
+- **Crash details stay out of the stored log:** a failed request is logged in `system_logs` (readable in the
+  dashboard) with the error type and a request id only. The exception text goes to the container log under that id.
+- **Pi agent 0.8.12:** a trace or ping target must start with a letter or digit, and `--` is passed before it, so a
+  target can never be read as a `ping` or `mtr` option.
 - **Sessions can be ended:** a session cookie held only the user id, so a copied admin cookie stayed valid for seven
   days, even after signing out or a new password. Each account now has a session version that every cookie carries.
   Signing out ends all of that account's sessions on every device (the shared guest account excepted), a new

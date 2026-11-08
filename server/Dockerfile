@@ -21,6 +21,13 @@ COPY tests ./tests
 
 RUN uv pip install --system --no-deps .
 
+# The API runs as this user, not root (uid 10001 matches no account on the host). The shared state volumes are
+# handed to it by the state-init service in docker-compose.yml. hoststat and state-init override the user.
+RUN groupadd --system --gid 10001 hns \
+    && useradd --system --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin hns
+ENV HOME=/tmp
+USER 10001:10001
+
 EXPOSE 8847
 
 CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8847"]

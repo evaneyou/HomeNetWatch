@@ -6,8 +6,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.host_snapshot import mirror_proc, mirror_root, write_storage
-from app.server_health import list_processes, read_machine, read_storage_snapshot
+from app.host_snapshot import mirror_proc, mirror_root, write_backups, write_storage
+from app.server_health import current_backups, list_processes, read_machine, read_storage_snapshot
 
 
 def _fake_proc(root: Path) -> Path:
@@ -96,3 +96,30 @@ def test_write_storage_leaves_json(tmp_path):
     write_storage(host, out)
     data = json.loads((out / "storage.json").read_text())
     assert "groups" in data["payload"] and data["measured_at"]
+
+
+def test_the_backup_list_reaches_the_api_through_hoststat(tmp_path, monkeypatch):
+    # The API no longer mounts the backups folder: hoststat copies only names and sizes, never the files.
+    source = tmp_path / "backups"
+    source.mkdir()
+    (source / "db-20261020T155300Z.sql.gz.age").write_bytes(b"secret-database")
+    (source / "wireguard-20261020T155300Z.tar.gz.age").write_bytes(b"keys")
+    out = tmp_path / "hostinfo"
+    out.mkdir()
+    write_backups(source, out)
+    stored = (out / "backups.json").read_text(encoding="utf-8")
+    assert "secret-database" not in stored
+    monkeypatch.setenv("HNS_HOSTINFO_DIR", str(out))
+    monkeypatch.delenv("HNS_BACKUP_DIR", raising=False)
+    found = current_backups(datetime(2026, 10, 20, 16, 0, tzinfo=timezone.utc))
+    assert found["available"] is True
+    database, wireguard, _tls = found["kinds"]
+    assert database["copies"][0]["bytes"] == len(b"secret-database")
+    assert wireguard["count"] == 1
+
+
+def test_a_missing_backup_folder_leaves_the_last_list(tmp_path):
+    out = tmp_path / "hostinfo"
+    out.mkdir()
+    write_backups(tmp_path / "missing", out)
+    assert not (out / "backups.json").exists()

@@ -39,6 +39,10 @@ expose any part of this stack beyond your own machine:
   container (no network, read-only), which copies only counters, process names, the OS package list and disk
   use into the `hostinfo` volume. Don't add host mounts such as `/` or `/proc` to `server` or `agent-api`:
   read as root, `/proc` alone reaches every file on the machine.
+- `server` and `agent-api` run as the image's `hns` user (uid 10001, no host account), with no Linux
+  capabilities. The one-shot `state-init` service hands them the WireGuard, RTNP and TLS volumes on every start;
+  the WireGuard private key and `wg0.conf` stay root-only, readable by the hub alone. Don't add `user: root` or
+  capabilities back to the API services.
 - If a session cookie may have been copied, run `docker compose exec server python -m app.sessions revoke <username>`
   (or `--all`). Signing out or setting a new password does the same for that account.
 - Sign-ins (with the address), failed sign-ins, sign-in blocks and changes to the alert, Gemini and test settings

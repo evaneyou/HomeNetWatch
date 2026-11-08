@@ -3,6 +3,10 @@ import time
 import uuid
 from types import SimpleNamespace
 
+import pytest
+
+from app.config import get_settings
+
 from app.wireguard_tunnel import (
     latest_handshakes,
     new_preshared_key,
@@ -55,3 +59,16 @@ def test_handshake_file_skips_peers_that_never_connected(state_dir):
     seen = latest_handshakes()
     assert set(seen) == {"AAA="}
     assert int(seen["AAA="].timestamp()) == now
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes")
+def test_receiver_keys_are_left_readable_by_its_group_only(tmp_path, monkeypatch):
+    # The API is not root: it hands the receiver its keys by group (0440, directory 0750), never by chown.
+    from app import wireguard_tunnel
+
+    monkeypatch.setattr(get_settings(), "rtnp_state_dir", str(tmp_path))
+    wireguard_tunnel._publish_srtp_key(b"k" * wireguard_tunnel.SRTP_KEY_LEN)
+    wireguard_tunnel._publish_srtp_key(b"j" * wireguard_tunnel.SRTP_KEY_LEN)
+    assert os.stat(tmp_path / "keys").st_mode & 0o777 == 0o750
+    assert os.stat(tmp_path / "keys" / "shared").st_mode & 0o777 == 0o440
+    assert (tmp_path / "keys" / "shared").read_bytes() == b"j" * wireguard_tunnel.SRTP_KEY_LEN

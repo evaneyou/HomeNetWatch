@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi.testclient import TestClient
 
 import pytest
@@ -115,3 +117,31 @@ def test_the_api_docs_are_off_unless_turned_on(monkeypatch):
     monkeypatch.setattr(get_settings(), "api_docs", True)
     documented = TestClient(create_app(), base_url="https://testserver")
     assert documented.get("/openapi.json").status_code == 200
+
+
+def test_oversized_sign_in_fields_are_refused_before_hashing(client: TestClient):
+    long_name = client.post("/api/v1/auth/login", json={"username": "a" * 65, "password": "x"})
+    long_password = client.post("/api/v1/auth/login", json={"username": "admin", "password": "x" * 257})
+    assert long_name.status_code == 422
+    assert long_password.status_code == 422
+
+
+def test_a_crash_is_logged_without_its_message(db):
+    from sqlalchemy import select
+
+    from app.models import SystemLog
+
+    crashing = create_app()
+    path = f"/api/v1/test-crash-{uuid.uuid4().hex[:8]}"
+
+    def boom():
+        raise RuntimeError("postgresql://user:secret@db/hns failed")
+
+    crashing.add_api_route(path, boom)
+    response = TestClient(crashing, base_url="https://testserver", raise_server_exceptions=False).get(path)
+    assert response.status_code == 500
+    row = db.scalars(select(SystemLog).where(SystemLog.message.like(f"GET {path}%"))).one()
+    assert "secret" not in row.message
+    assert "RuntimeError, request " in row.message
+    assert row.detail["error"] == "RuntimeError"
+    assert len(row.detail["request_id"]) == 12

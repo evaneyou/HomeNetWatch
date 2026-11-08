@@ -27,7 +27,8 @@ PROBE_GAP_SECONDS = "0.2"
 _IFACE_TTL = 60.0
 _DNS_TTL = 60.0
 
-_HOST = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
+# A letter or digit first: a target such as "--report-wide" would otherwise be read as an option by ping or mtr.
+_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$")
 _SSL = ssl.create_default_context()
 _cache_lock = threading.Lock()
 # Scans on the link adapter and the test batch take this in turn.
@@ -520,7 +521,7 @@ def check_ping(test: dict) -> dict:
         iface = _probe_interface(test)
         if iface:
             command.extend(["-I", iface])
-        command.append(host)
+        command.extend(["--", host])
         completed = subprocess.run(
             command,
             check=False,
@@ -598,7 +599,7 @@ def check_mtr(test: dict) -> dict:
             # A bound source is an IPv4 address, so trace over IPv4: a host name may resolve to IPv6, which mtr refuses.
             bind = ["-4", "-a", source] if source else []
             completed = subprocess.run(
-                ["mtr", "--json", "-c", "5", "-n", "-m", "15", *bind, *mode, host],
+                ["mtr", "--json", "-c", "5", "-n", "-m", "15", *bind, *mode, "--", host],
                 check=False,
                 capture_output=True,
                 text=True,

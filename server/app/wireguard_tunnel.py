@@ -354,11 +354,12 @@ def _publish_srtp_key(key: bytes) -> None:
 
 
 def _give_to_receiver(path: Path) -> None:
+    # The mode first: owner and group read, nobody else, even if the group can't be set below.
+    os.chmod(path, 0o750 if path.is_dir() else 0o440)
     try:
         os.chown(path, -1, RTNP_GID)
-        os.chmod(path, 0o750 if path.is_dir() else 0o440)
     except OSError as exc:
-        log.warning("could not hand %s to the RTNP receiver: %s", path.name, exc)
+        log.warning("could not give %s to the RTNP receiver's group: %s", path.name, exc)
 
 
 def _write_bytes(target: Path, data: bytes) -> None:

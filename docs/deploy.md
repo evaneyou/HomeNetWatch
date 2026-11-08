@@ -206,6 +206,21 @@ docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile
 Never edit `deploy/Caddyfile` or `docker-compose.prod.yml` on the server for these: a later `git pull` either
 refuses to run or, after a stash, silently drops the edit.
 
+## Rotating SECRET_KEY
+
+`SECRET_KEY` is the root of every server-side key: the server derives a separate key from it for sessions, CSRF
+tokens, installer codes and the stored Telegram and Gemini secrets (`server/app/keys.py`). If it may have leaked,
+rotate it without losing those secrets:
+
+1. In `.env`, set `SECRET_KEY_PREVIOUS` to the current value and `SECRET_KEY` to a new one (`openssl rand -hex 32`).
+2. `./scripts/deploy.sh server`. Existing sign-ins keep working, and the stored secrets are re-encrypted under the
+   new key at startup (the server log says "stored secrets re-encrypted").
+3. After seven days (the session lifetime), or straight away if you want every session ended now, remove
+   `SECRET_KEY_PREVIOUS` and deploy again.
+
+Changing `SECRET_KEY` without step 1 signs everyone out and loses the stored Telegram token and Gemini key; enter
+them again in Settings.
+
 ## Guest visit locations
 
 Settings, Guest visits shows where each guest sign-in came from. The lookup reads a local copy of the free

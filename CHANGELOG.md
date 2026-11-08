@@ -12,6 +12,12 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **A separate key for each purpose:** `SECRET_KEY` itself signed sessions, made CSRF tokens, protected installer
+  codes and encrypted the stored Telegram and Gemini secrets. Each purpose now uses its own key derived from it
+  with HKDF (`server/app/keys.py`). The new `SECRET_KEY_PREVIOUS` makes rotation safe: while it holds the old
+  value, old sessions, CSRF tokens and installer codes stay valid, and the stored secrets are re-encrypted under
+  the new key at startup. Before, rotating the key lost those secrets. Deploying this signs everyone out once;
+  stored secrets carry over.
 - **Traces go to the address the server checked:** for a trace typed into the dashboard, the server checked that
   the name resolved to public addresses, then the agent resolved it again, so a name that changed its answer (DNS
   rebinding) could have pointed the trace into the home network. The agent now gets the public IPv4 address the

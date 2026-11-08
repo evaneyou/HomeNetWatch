@@ -13,6 +13,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
+from app import keys
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import User, UserRole
@@ -82,7 +83,8 @@ account_failures = _FailureWindow(ACCOUNT_FAILURE_LIMIT, 15 * 60)
 
 
 def _serializer(settings: Settings) -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(settings.secret_key, salt="hns-session")
+    # itsdangerous signs with the last key in the list and accepts any of them.
+    return URLSafeTimedSerializer(list(reversed(keys.keys(keys.SESSION, settings))), salt="hns-session")
 
 
 def create_session_token(user: User, settings: Settings) -> str:
@@ -166,8 +168,12 @@ def require_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
     return user
 
 
+def _csrf(session_token: str, secret: bytes) -> str:
+    return hmac.new(secret, f"csrf:{session_token}".encode(), hashlib.sha256).hexdigest()
+
+
 def csrf_token_for(session_token: str, settings: Settings) -> str:
-    return hmac.new(settings.secret_key.encode(), f"csrf:{session_token}".encode(), hashlib.sha256).hexdigest()
+    return _csrf(session_token, keys.key(keys.CSRF, settings))
 
 
 def require_admin_csrf(
@@ -176,7 +182,7 @@ def require_admin_csrf(
     hns_session: Annotated[Optional[str], Cookie(alias="hns_session")] = None,
     x_csrf_token: Annotated[Optional[str], Header()] = None,
 ) -> User:
-    expected = csrf_token_for(hns_session or "", settings)
-    if not x_csrf_token or not hmac.compare_digest(x_csrf_token, expected):
+    accepted = [_csrf(hns_session or "", secret) for secret in keys.keys(keys.CSRF, settings)]
+    if not x_csrf_token or not any(hmac.compare_digest(x_csrf_token, expected) for expected in accepted):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing or invalid CSRF token")
     return user

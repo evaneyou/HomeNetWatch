@@ -27,7 +27,7 @@ from app.api.enrollment_routes import CHECK_IN_PATH, NONCE_PATH, POLL_PATH  # no
 from app.auth import account_failures, hash_password, login_failures  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.db import get_db  # noqa: E402
-from app.enrollment import limiter, nonces, signed_message  # noqa: E402
+from app.enrollment import limiter, nonces, signed_message, token_hash  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import (  # noqa: E402
     Group,
@@ -64,7 +64,7 @@ def db(engine) -> Generator[Session, None, None]:
         group_id=group.id,
         slug=f"pi-test-{suffix}",
         name="Pi Test",
-        token_hash=hash_password(_monitor_token(f"pi-test-{suffix}")),
+        token_hash=token_hash(_monitor_token(f"pi-test-{suffix}")),
         status=MonitorStatus.online,
     )
     network = Network(

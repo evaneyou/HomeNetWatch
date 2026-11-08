@@ -7,6 +7,7 @@ from urllib.parse import quote
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, text
 
+from app.auth import hash_password
 from app.enrollment import new_token
 from app.internet_tests import public_trace_host
 from app.main import app
@@ -137,11 +138,32 @@ def test_issued_token_and_optional_name_must_match(client: TestClient, db):
     assert gone.status_code == 401
 
 
-def test_legacy_key_still_works(client: TestClient, monitor_token: str):
-    posted = client.post(
-        "/api/v1/monitors/health", headers=_device_headers("Pi Test", monitor_token), json=_health_body()
+def _legacy_monitor(db) -> tuple[Monitor, str]:
+    """A remote agent from before enrollment: its key is stored as a bcrypt hash."""
+    key = new_token()
+    monitor = Monitor(
+        group_id=db.info["group_id"],
+        slug=f"legacy-{uuid.uuid4().hex[:8]}",
+        name=f"Legacy {uuid.uuid4().hex[:6]}",
+        token_hash=hash_password(key),
+        status=MonitorStatus.online,
     )
+    db.add(monitor)
+    db.commit()
+    return monitor, key
+
+
+def test_legacy_key_still_works(client: TestClient, db):
+    monitor, key = _legacy_monitor(db)
+    posted = client.post("/api/v1/monitors/health", headers=_device_headers(monitor.name, key), json=_health_body())
     assert posted.status_code == 200, posted.text
+
+
+def test_legacy_key_needs_the_device_name(client: TestClient, db):
+    # Without a name the server would have to try the key against every old-style hash, which costs bcrypt time.
+    _monitor, key = _legacy_monitor(db)
+    posted = client.post("/api/v1/monitors/health", headers=_token_headers(key), json=_health_body())
+    assert posted.status_code == 401
 
 
 def test_health_assigns_transfer_and_web_services(client: TestClient, db):

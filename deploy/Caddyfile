@@ -39,8 +39,13 @@
 	}
 
 	# API requests go to FastAPI. Everything else is the dashboard.
+	# Requests through here come from browsers and the public internet (agents use the tunnel), and none
+	# carries more than a few kilobytes, so anything over 1 MB is refused before it reaches FastAPI.
 	@api path /api/*
 	handle @api {
+		request_body {
+			max_size 1MB
+		}
 		reverse_proxy server:8847
 	}
 

@@ -11,6 +11,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.auth import hash_password, revoke_sessions, verify_password
+from app.enrollment import token_hash
 from app.config import get_settings
 from app.db import SessionLocal, engine
 from app.models import (
@@ -356,7 +357,7 @@ def seed(db: Session) -> None:
             group_id=group.id,
             slug="pi-living-room",
             name="Pi Living Room",
-            token_hash=hash_password(_monitor_token("pi-living-room")),
+            token_hash=token_hash(_monitor_token("pi-living-room")),
             status=MonitorStatus.online,
             last_seen_at=datetime.now(timezone.utc),
             latitude=40.7580,
@@ -368,7 +369,7 @@ def seed(db: Session) -> None:
             group_id=group.id,
             slug="pi-office",
             name="Pi Office",
-            token_hash=hash_password(_monitor_token("pi-office")),
+            token_hash=token_hash(_monitor_token("pi-office")),
             status=MonitorStatus.online,
             last_seen_at=datetime.now(timezone.utc) - timedelta(minutes=2),
             latitude=40.7484,

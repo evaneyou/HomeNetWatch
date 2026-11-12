@@ -18,6 +18,7 @@ import { chartWindow, formatChartTick, zoomedDomain } from "../chartTime";
 import { TimeAxis } from "./TimeAxis";
 import { useChartZoom } from "../useChartZoom";
 import LimitShareChart, { type LimitMetric } from "./LimitShareChart";
+import HealthTicks from "./HealthTicks";
 import RealtimeHealth from "./RealtimeHealth";
 import {
   APPS,
@@ -35,8 +36,8 @@ import {
   isCheck,
   probeKinds,
   speed,
+  statusColor,
   statusStrip,
-  stripGradient,
   useSeries,
   worstHopLoss,
 } from "./pathSeries";
@@ -248,6 +249,7 @@ export function InternetDetail({
                   }
                   strip={cloudflareStrip}
                   empty={false}
+                  range={range}
                   onOpen={() => openCheck("librespeed")}
                 />
               ) : null}
@@ -256,6 +258,7 @@ export function InternetDetail({
                 detail={`${fmt(speed(latestLibre).down)} Mbps down · ${fmt(speed(latestLibre).up)} Mbps up · ping ${fmt(latestLibre?.rtt_ms)} ms · jitter ${fmt(latestLibre?.jitter_ms)} ms`}
                 strip={transferStrip}
                 empty={transferChart.length === 0}
+                range={range}
                 onOpen={openConnection}
               />
             </div>
@@ -433,12 +436,14 @@ export function HealthBar({
   detail,
   strip,
   empty,
+  range,
   onOpen,
 }: {
   title: string;
   detail: string;
   strip: string[];
   empty: boolean;
+  range?: ChartRange;
   onOpen?: () => void;
 }) {
   return (
@@ -456,7 +461,7 @@ export function HealthBar({
         )}
         <span className="mono">{detail}</span>
       </div>
-      <span className="isp-strip health-bar" title={title} style={{ background: stripGradient(strip) }} />
+      <HealthTicks colors={strip.map(statusColor)} range={range} title={title} />
       {empty ? <div className="muted">No samples in this range.</div> : null}
     </div>
   );

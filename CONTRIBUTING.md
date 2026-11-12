@@ -56,6 +56,10 @@ cd android && ./gradlew testDebugUnitTest assembleDebug
 
 Add or update tests for any behavior you change. Server tests live in `server/tests/`.
 
+CI also audits the locked dependencies (`pip-audit`, `npm audit`) and scans the whole history for committed secrets
+with gitleaks (`.github/workflows/security.yml`). To catch a secret before it is committed, install the optional
+hooks once: `pipx install pre-commit && pre-commit install`.
+
 ## Pull requests
 
 1. Fork the repository and branch from `main`. Use a short name such as `fix/ingest-duplicate-id`.

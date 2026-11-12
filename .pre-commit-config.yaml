@@ -1,0 +1,15 @@
+# Optional local checks. Install once with: pipx install pre-commit && pre-commit install
+# CI runs the same secret scan (.github/workflows/security.yml).
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+  - repo: local
+    hooks:
+      - id: forbid-secret-files
+        name: Block .env, key and keystore files
+        entry: These files must not be committed (see the ground rules in CLAUDE.md)
+        language: fail
+        files: '(^|/)\.env($|\.)|\.(pem|key|keystore|jks|p12)$|(^|/)wg[^/]*\.conf$|(^|/)adbkey$'
+        exclude: '(^|/)\.env\.example$'

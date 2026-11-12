@@ -12,6 +12,12 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **Dependency and secret scans in CI:** a new Security scans workflow audits the server's locked Python packages
+  and the dashboard's shipped npm packages for known advisories, and scans the whole git history for committed
+  secrets with gitleaks. It runs on every pull request, on `main` and weekly. An optional `.pre-commit-config.yaml`
+  runs the secret scan and blocks `.env`, key and keystore files before a commit.
+- **Dashboard file server: patched `compression`:** `serve` 14.2.7 bundles `compression` 1.8.1, which can leak memory
+  when a response is closed early (GHSA-vc2v-76pw-4v95). It is overridden to 1.8.2.
 - **Old-style agent keys are upgraded on use:** an agent set up before enrollment has its key stored as a bcrypt
   hash, so every request from it cost a bcrypt check. The first time such a key is verified, the server now stores
   it as SHA-256 like an enrollment key (only when the key is at least 32 characters; a shorter one stays behind

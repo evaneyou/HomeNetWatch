@@ -110,7 +110,7 @@ class Monitor(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     # "pi" runs the full set of checks. "android" (a TV or phone) runs only the speed test and synthetic traffic.
     platform: Mapped[str] = mapped_column(String(16), nullable=False, default="pi", server_default="pi")
-    # "sha256:<hex>" for tokens issued by enrollment, bcrypt for older keys.
+    # "sha256:<hex>" of the agent's key.
     # Empty until the remote agent's first poll after approval.
     token_hash: Mapped[Optional[str]] = mapped_column(String(255))
     identity_public_key: Mapped[Optional[str]] = mapped_column(String(64), unique=True)

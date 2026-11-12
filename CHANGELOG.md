@@ -12,6 +12,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Security
 
+- **Old-style agent keys are no longer accepted:** every agent key is now stored as SHA-256, so the bcrypt lookup
+  for keys from before enrollment is removed. An agent still on such a key must be enrolled again.
 - **Dependency and secret scans in CI:** a new Security scans workflow audits the server's locked Python packages
   and the dashboard's shipped npm packages for known advisories, and scans the whole git history for committed
   secrets with gitleaks. It runs on every pull request, on `main` and weekly. An optional `.pre-commit-config.yaml`

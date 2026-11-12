@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select, text
 
 from app.auth import hash_password
-from app.enrollment import is_token_hash, new_token, token_hash
+from app.enrollment import new_token
 from app.internet_tests import public_trace_host
 from app.main import app
 from app.models import Monitor, MonitorHealth, MonitorStatus, ResultStatus, Test, TestResult
@@ -138,8 +138,8 @@ def test_issued_token_and_optional_name_must_match(client: TestClient, db):
     assert gone.status_code == 401
 
 
-def _legacy_monitor(db) -> tuple[Monitor, str]:
-    """A remote agent from before enrollment: its key is stored as a bcrypt hash."""
+def test_old_style_bcrypt_key_is_refused(client: TestClient, db):
+    # Keys from before enrollment were stored as bcrypt hashes. That lookup is gone: only SHA-256 keys are accepted.
     key, _ = new_token()
     monitor = Monitor(
         group_id=db.info["group_id"],
@@ -150,44 +150,7 @@ def _legacy_monitor(db) -> tuple[Monitor, str]:
     )
     db.add(monitor)
     db.commit()
-    return monitor, key
-
-
-def test_legacy_key_still_works(client: TestClient, db):
-    monitor, key = _legacy_monitor(db)
     posted = client.post("/api/v1/monitors/health", headers=_device_headers(monitor.name, key), json=_health_body())
-    assert posted.status_code == 200, posted.text
-
-
-def test_legacy_key_is_stored_as_sha256_after_first_use(client: TestClient, db):
-    monitor, key = _legacy_monitor(db)
-    assert not is_token_hash(monitor.token_hash)
-    headers = _device_headers(monitor.name, key)
-    assert client.post("/api/v1/monitors/health", headers=headers, json=_health_body()).status_code == 200
-    db.refresh(monitor)
-    assert monitor.token_hash == token_hash(key)
-    # The same key keeps working, and a wrong one is still refused.
-    assert client.post("/api/v1/monitors/health", headers=headers, json=_health_body()).status_code == 200
-    wrong = _device_headers(monitor.name, key + "x")
-    assert client.post("/api/v1/monitors/health", headers=wrong, json=_health_body()).status_code == 401
-
-
-def test_short_legacy_key_stays_behind_bcrypt(client: TestClient, db):
-    monitor, _key = _legacy_monitor(db)
-    short = "short-device-key"
-    monitor.token_hash = hash_password(short)
-    db.commit()
-    stored = monitor.token_hash
-    posted = client.post("/api/v1/monitors/health", headers=_device_headers(monitor.name, short), json=_health_body())
-    assert posted.status_code == 200, posted.text
-    db.refresh(monitor)
-    assert monitor.token_hash == stored
-
-
-def test_legacy_key_needs_the_device_name(client: TestClient, db):
-    # Without a name the server would have to try the key against every old-style hash, which costs bcrypt time.
-    _monitor, key = _legacy_monitor(db)
-    posted = client.post("/api/v1/monitors/health", headers=_token_headers(key), json=_health_body())
     assert posted.status_code == 401
 
 

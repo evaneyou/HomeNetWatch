@@ -12,15 +12,12 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import verify_password
-from app.enrollment import CONNECTED_WITHIN, is_token_hash, token_hash
+from app.enrollment import CONNECTED_WITHIN, token_hash
 from app.models import Group, Monitor, MonitorHealth
 from app.schemas import MonitorAdminOut
 
 # How long a requested trace stays with the agent before it is given up on.
 TRACE_WAIT = timedelta(seconds=90)
-# An old-style agent key at least this long is random enough to store as SHA-256 (enrollment keys are 43 characters).
-LEGACY_UPGRADE_MIN_LENGTH = 32
 
 
 def _resolve_monitor_identity(
@@ -44,32 +41,8 @@ def _resolve_monitor_identity(
         if presented and issued.name != presented:
             raise mismatch
         return issued
-    # Keys issued before enrollment are stored as bcrypt hashes, which can only be checked one by one. Only the
-    # device named in the request is checked, so an unknown key can't make the server run bcrypt for every agent.
-    if not presented:
-        raise mismatch
-    legacy = select(Monitor).where(Monitor.token_hash.is_not(None), Monitor.name == presented)
-    for monitor in db.scalars(legacy).all():
-        if is_token_hash(monitor.token_hash):
-            continue
-        try:
-            if verify_password(key, monitor.token_hash):
-                _upgrade_legacy_key(db, monitor, key)
-                return monitor
-        except ValueError:
-            continue
     raise mismatch
 
-
-def _upgrade_legacy_key(db: Session, monitor: Monitor, key: str) -> None:
-    """Store a verified old-style key the way enrollment stores keys, so later requests skip bcrypt.
-
-    Only a long random key is moved: a short one stays behind bcrypt, which is slow to guess from a stolen database.
-    """
-    if len(key) < LEGACY_UPGRADE_MIN_LENGTH:
-        return
-    monitor.token_hash = token_hash(key)
-    db.commit()
 
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:64]

@@ -66,10 +66,6 @@ def token_hash(token: str) -> str:
     return _TOKEN_PREFIX + hashlib.sha256(token.encode()).hexdigest()
 
 
-def is_token_hash(value: str | None) -> bool:
-    return bool(value) and value.startswith(_TOKEN_PREFIX)
-
-
 def decode_key(value: str) -> bytes:
     try:
         raw = base64.b64decode(value, validate=True)

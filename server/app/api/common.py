@@ -19,6 +19,8 @@ from app.schemas import MonitorAdminOut
 
 # How long a requested trace stays with the agent before it is given up on.
 TRACE_WAIT = timedelta(seconds=90)
+# An old-style agent key at least this long is random enough to store as SHA-256 (enrollment keys are 43 characters).
+LEGACY_UPGRADE_MIN_LENGTH = 32
 
 
 def _resolve_monitor_identity(
@@ -52,10 +54,22 @@ def _resolve_monitor_identity(
             continue
         try:
             if verify_password(key, monitor.token_hash):
+                _upgrade_legacy_key(db, monitor, key)
                 return monitor
         except ValueError:
             continue
     raise mismatch
+
+
+def _upgrade_legacy_key(db: Session, monitor: Monitor, key: str) -> None:
+    """Store a verified old-style key the way enrollment stores keys, so later requests skip bcrypt.
+
+    Only a long random key is moved: a short one stays behind bcrypt, which is slow to guess from a stolen database.
+    """
+    if len(key) < LEGACY_UPGRADE_MIN_LENGTH:
+        return
+    monitor.token_hash = token_hash(key)
+    db.commit()
 
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:64]

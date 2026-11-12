@@ -18,6 +18,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
   runs the secret scan and blocks `.env`, key and keystore files before a commit.
 - **Dashboard file server: patched `compression`:** `serve` 14.2.7 bundles `compression` 1.8.1, which can leak memory
   when a response is closed early (GHSA-vc2v-76pw-4v95). It is overridden to 1.8.2.
+- **Old-style agent keys are upgraded on use:** an agent set up before enrollment has its key stored as a bcrypt
+  hash, so every request from it cost a bcrypt check. The first time such a key is verified, the server now stores
+  it as SHA-256 like an enrollment key (only when the key is at least 32 characters; a shorter one stays behind
+  bcrypt).
 - **The API runs as a non-root user:** `server` and `agent-api` ran as root (with CHOWN, DAC_OVERRIDE and FOWNER),
   so a bug in the API could read or change any file in its volumes, including the WireGuard hub's private key. They
   now run as `hns` (uid 10001) with no capabilities. A one-shot `state-init` service gives the WireGuard, RTNP and

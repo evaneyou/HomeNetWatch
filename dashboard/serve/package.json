@@ -4,5 +4,8 @@
   "description": "The static file server for the dashboard image, pinned by its own lockfile.",
   "dependencies": {
     "serve": "14.2.7"
+  },
+  "overrides": {
+    "compression": "1.8.2"
   }
 }

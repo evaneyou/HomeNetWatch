@@ -11,11 +11,11 @@ from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-AGENT_VERSION = "0.8.12"
+AGENT_VERSION = "0.8.13"
 # Latency checks wait on the network, so a few of them run at once.
 # Bandwidth Test stays alone: running it beside others would slow them all down.
 PROBE_WORKERS = 6
-HEAVY_KINDS = {"librespeed"}
+HEAVY_KINDS = {"librespeed", "cloudflare"}
 CONFIG_PATH = Path(os.environ.get("MONITOR_CONFIG", "/etc/monitor/config.json"))
 PORT = int(os.environ.get("MONITOR_PORT", "80"))
 ENROLL_PORT = 8848

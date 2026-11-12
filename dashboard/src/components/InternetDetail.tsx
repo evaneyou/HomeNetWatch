@@ -41,6 +41,9 @@ import {
   worstHopLoss,
 } from "./pathSeries";
 
+/** The Cloudflare Speed Test: about hourly, on the wired link of a Raspberry Pi agent, outside the tunnel. */
+const CLOUDFLARE_SLUG = "cloudflare-speed";
+
 export function InternetDetail({
   tests,
   detail,
@@ -71,7 +74,7 @@ export function InternetDetail({
   const app = APPS.find((item) => item.key === detail);
   const slugs =
     detail === "isp"
-      ? [...ISP_SLUGS, "librespeed"]
+      ? [...ISP_SLUGS, "librespeed", CLOUDFLARE_SLUG]
       : probeKinds(detail).map((kind) => `${kind}-${detail}`);
   const watched = slugs.flatMap((slug) => {
     const test = bySlug.get(slug);
@@ -147,6 +150,17 @@ export function InternetDetail({
           jitter: point.jitter_ms,
           status: point.status,
         };
+      }),
+    [points],
+  );
+
+  // The Cloudflare Speed Test exists only on the wired link of a Raspberry Pi agent.
+  const hasCloudflare = bySlug.has(CLOUDFLARE_SLUG);
+  const cloudflareChart = useMemo(
+    () =>
+      (points.get(CLOUDFLARE_SLUG) ?? []).map((point) => {
+        const sample = speed(point);
+        return { t: point.t, ts: new Date(point.t).getTime(), down: sample.down, up: sample.up };
       }),
     [points],
   );
@@ -255,6 +269,25 @@ export function InternetDetail({
               ]}
               unit=" Mbps"
             />
+            {hasCloudflare ? (
+              <>
+                <PathChart
+                  title="Download and upload to Cloudflare"
+                  data={cloudflareChart}
+                  span={span}
+                  series={[
+                    { key: "down", label: "Download" },
+                    { key: "up", label: "Upload" },
+                  ]}
+                  unit=" Mbps"
+                />
+                <p className="muted field-hint">
+                  The chart above is the Bandwidth Test to the HomeNetWatch server, through the tunnel. This one is the
+                  Cloudflare Speed Test: the wired link against speed.cloudflare.com, outside the tunnel, about once an
+                  hour. Pick a range of 6 hours or more to see several readings.
+                </p>
+              </>
+            ) : null}
             <PathChart title="Ping" data={transferChart} span={span} dataKey="ping" label="Ping" unit=" ms" />
             <PathChart title="Jitter" data={transferChart} span={span} dataKey="jitter" label="Jitter" unit=" ms" />
             <ConnectionLimitChart points={transferChart} range={range} domain={span} variancePct={settingsQ.data?.librespeed_variance_pct ?? 25} />

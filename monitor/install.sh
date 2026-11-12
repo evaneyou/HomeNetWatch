@@ -19,7 +19,7 @@ if ! id monitor >/dev/null 2>&1; then
   useradd --system --home /opt/monitor --shell /usr/sbin/nologin monitor
 fi
 install -d -m 755 /opt/monitor
-install -m 644 agent.py agent_state.py enrollment.py health.py radio.py scheduler.py checks.py kismet_view.py rf_spool.py synthetic.py speedtest.py lan_scan.py tunnel_watch.py /opt/monitor/
+install -m 644 agent.py agent_state.py enrollment.py health.py radio.py scheduler.py checks.py kismet_view.py rf_spool.py synthetic.py speedtest.py cloudflare_speed.py lan_scan.py tunnel_watch.py /opt/monitor/
 if [ -f restore_tunnel.sh ]; then
   install -m 755 restore_tunnel.sh /opt/monitor/restore_tunnel.sh
 fi

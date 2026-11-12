@@ -708,6 +708,9 @@ class InternetServiceSetting(Base):
     librespeed_variance_pct: Mapped[int] = mapped_column(Integer, nullable=False, default=25)
     librespeed_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     librespeed_interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=900)
+    # The Cloudflare Speed Test: the Pi's wired link against speed.cloudflare.com, outside the tunnel.
+    cloudflare_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    cloudflare_interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=3600, server_default=text("3600"))
 
 
 class WebStabilitySetting(Base):

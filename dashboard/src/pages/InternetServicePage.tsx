@@ -16,19 +16,23 @@ const EMPTY: InternetServiceSetting = {
   librespeed_enabled: true,
   librespeed_interval_seconds: 900,
   librespeed_variance_pct: 25,
+  cloudflare_enabled: true,
+  cloudflare_interval_seconds: 3600,
 };
 
-type EnabledField = "http_enabled" | "icmp_enabled" | "mtr_enabled" | "librespeed_enabled";
+type EnabledField = "http_enabled" | "icmp_enabled" | "mtr_enabled" | "librespeed_enabled" | "cloudflare_enabled";
 type VarianceField =
   | "http_variance_pct"
   | "icmp_variance_pct"
   | "mtr_variance_pct"
   | "librespeed_variance_pct"
 ;
-type IntervalField = "interval_seconds" | "librespeed_interval_seconds";
+type IntervalField = "interval_seconds" | "librespeed_interval_seconds" | "cloudflare_interval_seconds";
 
 // At 100% no drop in speed turns the Bandwidth Test amber, which silences its alerts.
 const BANDWIDTH_VARIANCE_MAX = 100;
+// Cloudflare's speed test is a free public service, so the server accepts nothing faster than every 30 minutes.
+const CLOUDFLARE_INTERVAL_MIN = 1800;
 
 const SIGNATURE_FIELDS = [
   "interval_seconds",
@@ -41,6 +45,8 @@ const SIGNATURE_FIELDS = [
   "librespeed_enabled",
   "librespeed_interval_seconds",
   "librespeed_variance_pct",
+  "cloudflare_enabled",
+  "cloudflare_interval_seconds",
 ] as const;
 
 function signatureOf(row: InternetServiceSetting): string {
@@ -193,7 +199,9 @@ export default function InternetServicePage() {
         error status or packet loss. Red means an active check got no response. HTTP, ICMP, and MTR share one poll
         interval. MTR runs at least every 2 minutes. Bandwidth Test runs at least every 5 minutes, and turns
         amber when download or upload falls more than its percent below the recent normal; set it to 100% to turn
-        speed-drop alerts off.
+        speed-drop alerts off. Cloudflare Speed Test measures the wired link of a Raspberry Pi agent against
+        speed.cloudflare.com, outside the tunnel, so this server's own bandwidth does not limit the reading. It runs
+        at most every 30 minutes and raises no alerts.
       </p>
       <div className="panel table-scroll">
         <table className="table web-service-table">
@@ -309,6 +317,32 @@ export default function InternetServicePage() {
               onNumber={setNumber}
               onToggle={setToggle}
             />
+            <tr>
+              <td>Cloudflare Speed Test</td>
+              <td>
+                <input
+                  aria-label="Cloudflare Speed Test interval"
+                  type="number"
+                  min={CLOUDFLARE_INTERVAL_MIN}
+                  max={86400}
+                  step={300}
+                  value={row.cloudflare_interval_seconds}
+                  disabled={locked}
+                  onChange={(event) => setNumber("cloudflare_interval_seconds", event.target.value)}
+                />
+                <span className="muted"> s</span>
+              </td>
+              <td className="check">
+                <input
+                  aria-label="Cloudflare Speed Test"
+                  type="checkbox"
+                  checked={row.cloudflare_enabled}
+                  disabled={locked}
+                  onChange={(event) => setToggle("cloudflare_enabled", event.target.checked)}
+                />
+              </td>
+              <td className="muted">No alerts. Wired link only.</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -323,6 +357,10 @@ export default function InternetServicePage() {
               run(() => {
                 if (row.librespeed_variance_pct < 0 || row.librespeed_variance_pct > BANDWIDTH_VARIANCE_MAX) {
                   setError(`Bandwidth Test variance must be between 0 and ${BANDWIDTH_VARIANCE_MAX}%.`);
+                  return;
+                }
+                if (row.cloudflare_interval_seconds < CLOUDFLARE_INTERVAL_MIN || row.cloudflare_interval_seconds > 86400) {
+                  setError(`Cloudflare Speed Test interval must be between ${CLOUDFLARE_INTERVAL_MIN} and 86400 seconds.`);
                   return;
                 }
                 setError(null);
@@ -344,7 +382,7 @@ export default function InternetServicePage() {
           onConfirm={() => save.mutate()}
           onCancel={() => setConfirming(false)}
         >
-          Save path checks, Bandwidth Test, and variance? Agents pick up the schedule on the next health report.
+          Save path checks, Bandwidth Test, Cloudflare Speed Test, and variance? Agents pick up the schedule on the next health report.
         </ConfirmDialog>
       ) : null}
     </div>

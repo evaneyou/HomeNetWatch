@@ -102,6 +102,7 @@ journalctl -u monitor -f
 | Outbound, in the tunnel | `10.7.0.1` / `10.7.1.1` port `8847` | Health reports, config and results |
 | Outbound, in the tunnel | `10.7.0.1` / `10.7.1.1` port `8999` (TCP) and `8080` | RTNP control channel, LibreSpeed |
 | Outbound, outside the tunnel | Server public IP `8998/udp` | Real-time flow packets (measures the real ISP path) |
+| Outbound, outside the tunnel | `speed.cloudflare.com` `443` (wired link) | Cloudflare Speed Test, about once an hour |
 | Inbound (LAN only) | Pi `80` | Setup page |
 
 Setup accepts HTTPS, or HTTP to a private LAN address.
@@ -120,6 +121,7 @@ Setup accepts HTTPS, or HTTP to a private LAN address.
 | `scheduler.py` | Due tests, on-demand traces, and synthetic traffic |
 | `checks.py` | HTTP, ping, MTR, and Bandwidth Test checks |
 | `speedtest.py` | Live Speed Test (speaks the LibreSpeed protocol and streams samples) |
+| `cloudflare_speed.py` | Cloudflare Speed Test: download, upload and latency against `speed.cloudflare.com` on the wired link |
 | `install.sh` | First install: packages, systemd unit, and tunnels when configs are present |
 | `update.sh` | Replaces the agent code and restarts `monitor` |
 | `repair-kismet-memory.sh` | Caps Kismet memory and enables the daily restart on an existing Pi |

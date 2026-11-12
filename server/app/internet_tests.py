@@ -28,6 +28,15 @@ from app.wireguard_tunnel import TUNNEL_SERVER_IP, WIRELESS_SERVER_IP, endpoint
 # Web services probe each service's own hostname.
 SERVER_HTTP = f"http://{TUNNEL_SERVER_IP}:8847/api/v1/healthz"
 HEAVY_INTERVAL_SECONDS = 900
+# The Cloudflare Speed Test measures the home line against Cloudflare, not this server, so the
+# server's own bandwidth does not limit the reading. Wired link of a Pi only. It uses a free
+# public service, so it runs at most every 30 minutes.
+CLOUDFLARE_SLUG = "cloudflare-speed"
+CLOUDFLARE_NAME = "Cloudflare Speed Test"
+CLOUDFLARE_HOST = "speed.cloudflare.com"
+CLOUDFLARE_KIND = "cloudflare"
+CLOUDFLARE_INTERVAL_SECONDS = 3600
+CLOUDFLARE_MIN_INTERVAL_SECONDS = 1800
 # Bandwidth Test variance: 100% means no drop in speed turns it amber, which is how the owner
 # silences speed alerts. A test with no answer in either direction is still red.
 MAX_TRANSFER_VARIANCE_PCT = 100
@@ -66,6 +75,7 @@ RETIRED_WEB_SLUGS = (
 INTERNET_SLUGS = frozenset(
     {
         "librespeed",
+        CLOUDFLARE_SLUG,
         *(slug for slug, _, _, _, _ in PATH_TESTS),
         *(f"http-{key}" for key, _, _, _ in WEB_SERVICES),
         *(f"icmp-{key}" for key, _, _, _ in WEB_SERVICES),
@@ -208,6 +218,19 @@ def _sync_link_tests(db: Session, monitor: Monitor, network: Network, server_ip:
         max(path.librespeed_interval_seconds, 300),
         path.librespeed_enabled,
     )
+    if network.slug == "wired":
+        _ensure_test(
+            monitor,
+            network,
+            existing_rows,
+            rows,
+            CLOUDFLARE_SLUG,
+            CLOUDFLARE_NAME,
+            TestKind.librespeed,
+            CLOUDFLARE_HOST,
+            max(path.cloudflare_interval_seconds, CLOUDFLARE_MIN_INTERVAL_SECONDS),
+            path.cloudflare_enabled,
+        )
     for slug, name, kind, _target, _interval in PATH_TESTS:
         if kind == TestKind.http:
             target = server_http
@@ -279,7 +302,8 @@ def scheduled_tests(db: Session, monitor: Monitor) -> list[dict]:
         item = {
             "slug": test.slug,
             "name": test.name,
-            "kind": test.kind.value,
+            # An agent too old to know the Cloudflare test skips a kind it has not heard of.
+            "kind": CLOUDFLARE_KIND if test.slug == CLOUDFLARE_SLUG else test.kind.value,
             "target": test.target,
             "network_slug": test.network.slug,
             "interval_seconds": test.interval_seconds,
@@ -340,6 +364,21 @@ def path_variance(setting: InternetServiceSetting, slug: str) -> tuple[int, int 
     if slug == "librespeed":
         return min(max(setting.librespeed_variance_pct, 0), MAX_TRANSFER_VARIANCE_PCT), None
     return None
+
+
+def classify_cloudflare(metrics: dict) -> tuple[ResultStatus, str]:
+    """Green when both directions answered. There is no variance: this test raises no alerts."""
+    down = _number(metrics.get("down_mbps"))
+    up = _number(metrics.get("up_mbps"))
+    down_ok = down is not None and down > 0
+    up_ok = up is not None and up > 0
+    if down_ok and up_ok and down is not None and up is not None:
+        return ResultStatus.ok, f"Download {_mbps(down)} and upload {_mbps(up)} to Cloudflare."
+    if down_ok and down is not None:
+        return ResultStatus.degraded, f"Download answered at {_mbps(down)}. Upload did not."
+    if up_ok and up is not None:
+        return ResultStatus.degraded, f"Upload answered at {_mbps(up)}. Download did not."
+    return ResultStatus.fail, "Neither download nor upload answered."
 
 
 def classify_transfer(db: Session, test: Test, metrics: dict, variance_pct: int) -> tuple[ResultStatus, str]:
@@ -817,6 +856,8 @@ def load_internet_service(db: Session) -> InternetServiceSetting:
         librespeed_variance_pct=25,
         librespeed_enabled=True,
         librespeed_interval_seconds=HEAVY_INTERVAL_SECONDS,
+        cloudflare_enabled=True,
+        cloudflare_interval_seconds=CLOUDFLARE_INTERVAL_SECONDS,
     )
     db.add(row)
     db.flush()
@@ -836,6 +877,11 @@ def save_internet_service(db: Session, update: dict) -> InternetServiceSetting:
     row.librespeed_variance_pct = min(max(int(update["librespeed_variance_pct"]), 0), MAX_TRANSFER_VARIANCE_PCT)
     row.librespeed_enabled = bool(update["librespeed_enabled"])
     row.librespeed_interval_seconds = max(int(update["librespeed_interval_seconds"]), 300)
+    # A dashboard from before this setting leaves the two fields out; keep what is saved.
+    if update.get("cloudflare_enabled") is not None:
+        row.cloudflare_enabled = bool(update["cloudflare_enabled"])
+    if update.get("cloudflare_interval_seconds") is not None:
+        row.cloudflare_interval_seconds = max(int(update["cloudflare_interval_seconds"]), CLOUDFLARE_MIN_INTERVAL_SECONDS)
     db.flush()
     for monitor in db.scalars(select(Monitor)):
         ensure_internet_tests(db, monitor)

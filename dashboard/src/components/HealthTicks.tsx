@@ -1,7 +1,10 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import { RANGE_HOURS, type ChartRange } from "./pathSeries";
 
 /** How many ticks a health row shows, whatever the range and however many samples it holds. */
 const TICKS = 48;
+/** The space between two ticks, in CSS pixels. */
+const GAP = 2;
 
 // The worse colour wins when one tick covers several samples, so a short failure is never hidden.
 const WORST_FIRST = ["var(--fail)", "var(--degraded)", "var(--ok)", "var(--unknown)", "var(--line)"];
@@ -25,6 +28,26 @@ export function tickColors(colors: string[], ticks = TICKS): string[] {
   });
 }
 
+/**
+ * Tick widths and the gap, in CSS pixels, that fill `width` exactly with every edge on a whole screen pixel.
+ *
+ * Sharing the width evenly gives each tick a fraction of a pixel, and the browser then rounds each gap up or
+ * down on its own, so the gaps look uneven. Here the gap is always the same whole number of screen pixels and
+ * the pixels left over go one each to the first ticks: a tick one pixel wider is not noticeable, an uneven gap is.
+ */
+export function tickLayout(width: number, ratio: number, ticks = TICKS): { widths: number[]; gap: number } | null {
+  const scale = ratio > 0 ? ratio : 1;
+  const gap = Math.max(1, Math.round(GAP * scale));
+  const room = Math.floor(width * scale) - gap * (ticks - 1);
+  const base = Math.floor(room / ticks);
+  if (base < 1) return null;
+  const extra = room - base * ticks;
+  return {
+    widths: Array.from({ length: ticks }, (_, index) => (base + (index < extra ? 1 : 0)) / scale),
+    gap: gap / scale,
+  };
+}
+
 function ago(hours: number): string {
   if (hours < 1) return `${Math.round(hours * 60)} min ago`;
   if (hours < 24) return hours === 1 ? "1 hour ago" : `${Number(hours.toFixed(1))} hours ago`;
@@ -38,11 +61,32 @@ function ago(hours: number): string {
  */
 export default function HealthTicks({ colors, range, title }: { colors: string[]; range?: ChartRange; title: string }) {
   const hours = range ? RANGE_HOURS[range] : null;
+  const row = useRef<HTMLSpanElement>(null);
+  const [layout, setLayout] = useState<{ widths: number[]; gap: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const element = row.current;
+    if (!element) return;
+    const measure = () => setLayout(tickLayout(element.getBoundingClientRect().width, window.devicePixelRatio || 1));
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <>
-      <span className="health-ticks" title={title} role="img" aria-label={`${title}: status over time`}>
+      <span
+        className="health-ticks"
+        ref={row}
+        title={title}
+        role="img"
+        aria-label={`${title}: status over time`}
+        style={layout ? { gap: `${layout.gap}px` } : undefined}
+      >
         {tickColors(colors).map((color, index) => (
-          <i key={index} style={{ background: color }} />
+          <i key={index} style={layout ? { background: color, flex: `0 0 ${layout.widths[index]}px` } : { background: color }} />
         ))}
       </span>
       {hours ? (

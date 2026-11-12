@@ -99,7 +99,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 - **Health rows are a row of ticks with a time axis:** the solid status bar on the Internet Connection and Real-Time
   Application Health rows is now 48 separate ticks running from the start of the selected range to now, with the
   start, midpoint and "now" labelled underneath. A row where everything passed no longer looks like a plain green
-  line. When one tick covers several samples it takes the worst status, so a short failure still shows.
+  line. When one tick covers several samples it takes the worst status, so a short failure still shows. The gap between
+  ticks is the same whole number of screen pixels everywhere; spare pixels widen the first ticks by one pixel each.
 
 - **KPI valid working hours (6:00 AM – 12:00 AM EST, 7 days a week):** KPI availability, packet drop, time offline, outages, reporting gaps and daily health scores now count only measurements taken during valid working hours from 6:00 AM to 12:00 AM Eastern Time (`America/New_York`), 7 days a week; overnight hours (12:00 AM – 6:00 AM ET) are excluded. Migration `0055_kpi_valid_hours` and the KPI backfill purge historical off-hour rows from `kpi_hourly` and recompute `kpi_daily` by Eastern date so all past dates reflect the working-hours window. The KPI Dashboard header, verdict banner, Daily KPI History and footer explicitly state the valid hours.
 - **Landing page redesign:** `site/` has a new look and message (enterprise infrastructure principles applied to a

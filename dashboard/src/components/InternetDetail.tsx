@@ -240,7 +240,7 @@ export function InternetDetail({
             <div className="health-stack">
               {hasCloudflare ? (
                 <HealthBar
-                  title="Internet Connection"
+                  title="Internet Connection to Cloudflare"
                   detail={
                     latestCloudflare
                       ? `${fmt(speed(latestCloudflare).down)} Mbps down · ${fmt(speed(latestCloudflare).up)} Mbps up · ping ${fmt(latestCloudflare.rtt_ms)} ms · jitter ${fmt(latestCloudflare.jitter_ms)} ms · at ${cloudflareAt}`
@@ -291,7 +291,7 @@ export function InternetDetail({
             {hasCloudflare ? (
               <>
                 <PathChart
-                  title="Download and upload"
+                  title="Download and upload to Cloudflare"
                   data={cloudflareChart}
                   span={span}
                   series={[

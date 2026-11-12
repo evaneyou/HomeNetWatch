@@ -830,6 +830,7 @@ def test_only_valid_working_hours_6am_to_12am_eastern_are_counted_and_old_dates_
     # Backfill only fills hours before the earliest KPI row (Oct 10 here); the regular refresh computes recent hours.
     start_of_sat = datetime(2026, 10, 17, 0, 0, tzinfo=kpi.EASTERN).astimezone(timezone.utc)
     kpi.rebuild(db, start_of_sat, end_of_sat + timedelta(hours=1))
+    kpi.rebuild_days(db, date(2026, 10, 17), date(2026, 10, 17))
     db.commit()
 
     # Legacy 03:00 ET row was purged and Oct 10 daily record reflects 100% availability
@@ -846,7 +847,10 @@ def test_only_valid_working_hours_6am_to_12am_eastern_are_counted_and_old_dates_
     assert rep["summary"]["voice"]["availability"] == pytest.approx(100.0)
     assert rep["summary"]["video"]["availability"] == pytest.approx(100.0)
     assert rep["incidents"] == []
-    assert rep["gaps"] == []
+    # The 06:09 – 23:00 ET silence is a real gap in valid hours; nothing from the overnight 12 AM – 6 AM counts.
+    assert rep["gaps"]
+    for gap in rep["gaps"]:
+        assert gap["start"] >= valid_morning and kpi.is_valid_hour(gap["start"])
 
     history = kpi.daily_history(db, date(2026, 10, 17), date(2026, 10, 17), monitor.id)
     assert len(history) == 1

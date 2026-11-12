@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import threading
@@ -93,6 +94,47 @@ def poll_restart(config: dict) -> None:
 
         threading.Thread(target=upload_lan_scan, args=(config, post_json), daemon=True, name="lan-scan").start()
 
+# A test that runs at most every half hour keeps the time of its last run on disk. The agent replaces its
+# own process when the server asks for a restart, and without this every such test would run again at
+# once: the Cloudflare Speed Test uses a free public service, which refuses runs that come too often.
+PERSIST_MIN_INTERVAL = 1800
+SCHEDULE_PATH = state.CONFIG_PATH.with_name("schedule.json")
+
+def _saved_runs() -> dict[str, float]:
+    try:
+        data = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(key): float(value) for key, value in data.items() if isinstance(value, (int, float))}
+
+def _save_run(key: str, at: float) -> None:
+    runs = _saved_runs()
+    runs[key] = at
+    temp = SCHEDULE_PATH.with_name(SCHEDULE_PATH.name + ".tmp")
+    try:
+        temp.write_text(json.dumps(runs), encoding="utf-8")
+        os.replace(temp, SCHEDULE_PATH)
+    except OSError:
+        pass
+
+def _restore_runs(assigned: list[dict], now: float) -> None:
+    """Give a slow test with no schedule in memory the time left from its last run on disk. Call with the lock held."""
+    waiting = [test for test in assigned if _test_key(test) not in state._next_run and _interval_seconds(test) >= PERSIST_MIN_INTERVAL]
+    if not waiting:
+        return
+    runs = _saved_runs()
+    wall = time.time()
+    for test in waiting:
+        last = runs.get(_test_key(test))
+        if last is None:
+            continue
+        left = last + _interval_seconds(test) - wall
+        # A clock that moved back would give a wait longer than the interval; run now in that case.
+        if 0 < left <= _interval_seconds(test):
+            state._next_run[_test_key(test)] = now + left
+
 def remember_tests(tests: object) -> None:
     if not isinstance(tests, list):
         return
@@ -127,12 +169,15 @@ def due_tests(now: float) -> list[dict]:
         for key in list(state._next_run):
             if key not in live:
                 state._next_run.pop(key, None)
+        _restore_runs(assigned, now)
         ready = [test for test in assigned if now >= state._next_run.get(_test_key(test), 0)]
     return ready
 
 def _mark_ran(test: dict) -> None:
     with state._lock:
         state._next_run[_test_key(test)] = time.monotonic() + _interval_seconds(test)
+    if _interval_seconds(test) >= PERSIST_MIN_INTERVAL:
+        _save_run(_test_key(test), time.time())
 
 def _run_one(test: dict) -> dict | None:
     result = None

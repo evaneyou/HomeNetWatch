@@ -7,6 +7,9 @@
 # reach its control port on 10.7.0.1:8999. So whenever wireguard is recreated,
 # rtnp is recreated after it.
 #
+# rtnp is recreated only then. Recreating it cuts the control connection of every running measurement flow, and
+# the server then asks each agent to restart, so a deploy that left wireguard alone must leave rtnp alone too.
+#
 # caddy mounts deploy/Caddyfile as a single file. `git pull` (and most editors) replace that file instead of
 # rewriting it, and the running container keeps reading the old copy, so neither `up` nor `caddy reload` picks
 # up the change. So after every deploy the two copies are compared; when they differ, the new file is checked
@@ -18,9 +21,16 @@ if [ "$#" -gt 0 ] && printf '%s\n' "$@" | grep -qx server && ! printf '%s\n' "$@
   set -- "$@" agent-api
 fi
 
+wireguard_id() {
+  docker compose ps -q wireguard 2>/dev/null | head -n 1
+}
+
+wireguard_before=$(wireguard_id || true)
+
 docker compose up --build -d "$@"
 
-if [ "$#" -eq 0 ] || printf '%s\n' "$@" | grep -qx wireguard; then
+wireguard_after=$(wireguard_id || true)
+if [ -n "$wireguard_after" ] && [ "$wireguard_before" != "$wireguard_after" ]; then
   echo "wireguard was recreated: recreating rtnp so it rejoins the tunnel"
   docker compose up -d --force-recreate rtnp
 fi

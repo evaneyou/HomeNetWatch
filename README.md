@@ -256,7 +256,7 @@ tests go to your own server over the WireGuard tunnel.
 
 The project follows [Semantic Versioning](https://semver.org/) and is pre-1.0, so minor releases may
 include breaking changes. The version is in [`VERSION`](./VERSION) and history is in
-[`CHANGELOG.md`](./CHANGELOG.md). The Pi agent (`0.8.15`, `AGENT_VERSION` in `monitor/agent_state.py`) and
+[`CHANGELOG.md`](./CHANGELOG.md). The Pi agent (`0.8.16`, `AGENT_VERSION` in `monitor/agent_state.py`) and
 the Android TV agent (`0.5.0`, `versionName` in `android/app/build.gradle.kts`) carry their own versions,
 reported to the server.
 

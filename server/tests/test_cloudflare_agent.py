@@ -29,6 +29,8 @@ def _load(name: str):
 class FakeCloudflare(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     refuse = 0
+    refuse_from = 0
+    retry_after = ""
     l4 = ""
     seen: list[str] = []
 
@@ -39,6 +41,8 @@ class FakeCloudflare(BaseHTTPRequestHandler):
         if not type(self).refuse:
             return False
         self.send_response(type(self).refuse)
+        if type(self).retry_after:
+            self.send_header("Retry-After", type(self).retry_after)
         self.send_header("Content-Length", "0")
         self.end_headers()
         return True
@@ -49,9 +53,9 @@ class FakeCloudflare(BaseHTTPRequestHandler):
         if url.path != "/__down":
             self.send_error(404)
             return
-        if self._refused():
-            return
         left = int(parse_qs(url.query).get("bytes", ["0"])[0])
+        if left >= type(self).refuse_from and self._refused():
+            return
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(left))
@@ -90,15 +94,18 @@ class FakeCloudflare(BaseHTTPRequestHandler):
 @pytest.fixture
 def lab(monkeypatch):
     FakeCloudflare.refuse = 0
+    FakeCloudflare.refuse_from = 0
+    FakeCloudflare.retry_after = ""
     FakeCloudflare.l4 = ""
     FakeCloudflare.seen = []
     server = ThreadingHTTPServer(("127.0.0.1", 0), FakeCloudflare)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     module = _load("cloudflare_speed")
-    # Small bodies, so each stream finishes several requests inside a short test.
-    monkeypatch.setattr(module, "DOWN_BYTES", 2_000_000)
-    monkeypatch.setattr(module, "UP_BYTES", 1_000_000)
+    # Small transfers and no pause, so a whole run takes a moment.
+    monkeypatch.setattr(module, "DOWN_PLAN", ((100_000, 1), (400_000, 2), (2_000_000, 3)))
+    monkeypatch.setattr(module, "UP_PLAN", ((100_000, 1), (1_000_000, 3)))
+    monkeypatch.setattr(module, "PAUSE_SECONDS", 0.0)
     port = server.server_address[1]
 
     def connect(timeout: float) -> http.client.HTTPConnection:
@@ -126,20 +133,41 @@ def test_ping_uses_the_round_trip_cloudflare_measured(lab):
     assert jitter == pytest.approx(4.099)
 
 
-def test_each_direction_reports_a_speed(lab):
+def test_a_run_makes_a_few_transfers_one_at_a_time(lab):
     module, connect = lab
-    down = module.run_phase(connect, "download", seconds=1.2, warm_up=0.3)
-    up = module.run_phase(connect, "upload", seconds=1.2, warm_up=0.3)
+    down = module.run_plan(connect, module.DOWN_PLAN, module.download_once)
+    up = module.run_plan(connect, module.UP_PLAN, module.upload_once)
     assert down is not None and down > 0
     assert up is not None and up > 0
-    # Cloudflare refuses one large download, so a stream asks for the same small size again and again.
-    assert FakeCloudflare.seen.count("/__down?bytes=2000000") > module.DOWN_STREAMS
-    assert FakeCloudflare.seen.count("/__up") > module.UP_STREAMS
+    # Exactly the planned transfers, small ones first: nothing is repeated to fill a time window.
+    downloads = [path for path in FakeCloudflare.seen if path.startswith("/__down")]
+    assert downloads == ["/__down?bytes=100000"] + ["/__down?bytes=400000"] * 2 + ["/__down?bytes=2000000"] * 3
+    assert FakeCloudflare.seen.count("/__up") == 4
+
+
+def test_the_reading_is_the_typical_speed_of_the_largest_transfers(lab):
+    module, connect = lab
+    speeds = {100: [900.0], 400: [50.0, 60.0], 2000: [300.0, 100.0, 200.0]}
+    plan = ((100, 1), (400, 2), (2000, 3))
+    assert module.run_plan(connect, plan, lambda _connect, size: speeds[size].pop(0)) == 200.0
+    # When the largest size never completes, the next one down is used.
+    speeds = {100: [900.0], 400: [50.0, 60.0], 2000: [None, None, None]}
+    assert module.run_plan(connect, plan, lambda _connect, size: speeds[size].pop(0)) == 55.0
+    assert module.run_plan(connect, plan, lambda _connect, _size: None) is None
+
+
+def test_transfers_are_spaced_out(lab, monkeypatch):
+    module, connect = lab
+    monkeypatch.setattr(module, "PAUSE_SECONDS", 0.5)
+    naps: list[float] = []
+    monkeypatch.setattr(module.time, "sleep", naps.append)
+    module.run_plan(connect, ((100, 1), (200, 2)), lambda _connect, _size: 1.0)
+    assert naps == [0.5, 0.5]
 
 
 def test_a_whole_test_reports_latency_and_both_directions(lab):
     module, connect = lab
-    report = module.measure(connect, seconds=1.0)
+    report = module.measure(connect)
     assert report is not None
     assert report["down_mbps"] > 0 and report["up_mbps"] > 0
     assert report["ping_ms"] >= 0 and report["jitter_ms"] >= 0
@@ -149,30 +177,46 @@ def test_a_rate_limit_is_a_refusal_not_a_slow_line(lab):
     module, connect = lab
     FakeCloudflare.refuse = 429
     with pytest.raises(module.Refused) as raised:
-        module.measure(connect, seconds=1.0)
+        module.measure(connect)
     assert "429" in str(raised.value)
     with pytest.raises(module.Refused):
-        module.run_phase(connect, "download", seconds=1.0, warm_up=0.2)
+        module.download_once(connect, 100_000)
     with pytest.raises(module.Refused):
-        module.run_phase(connect, "upload", seconds=1.0, warm_up=0.2)
+        module.upload_once(connect, 100_000)
 
 
-def test_an_unreachable_server_gives_no_report(lab):
+def test_a_refusal_carries_the_wait_cloudflare_asked_for(lab):
+    module, connect = lab
+    # Cloudflare limits large downloads only: latency and the small transfers still work.
+    FakeCloudflare.refuse = 429
+    FakeCloudflare.refuse_from = 2_000_000
+    FakeCloudflare.retry_after = "1154"
+    with pytest.raises(module.Refused) as raised:
+        module.measure(connect)
+    assert raised.value.retry_after == 1154
+    FakeCloudflare.retry_after = ""
+    with pytest.raises(module.Refused) as raised:
+        module.download_once(connect, 2_000_000)
+    assert raised.value.retry_after is None
+
+
+def test_a_transfer_that_breaks_off_gives_no_speed(lab):
     module, _connect = lab
 
     def nowhere(_timeout: float) -> http.client.HTTPConnection:
         raise ConnectionRefusedError("no route")
 
-    assert module.measure(nowhere, seconds=0.5) is None
+    assert module.download_once(nowhere, 100_000) is None
+    assert module.upload_once(nowhere, 100_000) is None
+    assert module.measure(nowhere) is None
 
 
 def test_the_agent_runs_the_test_only_when_the_server_names_it(lab, monkeypatch):
     module, connect = lab
     checks = _load("checks")
-    monkeypatch.setattr(checks.cloudflare_speed, "DOWN_BYTES", 2_000_000)
-    monkeypatch.setattr(checks.cloudflare_speed, "UP_BYTES", 1_000_000)
-    monkeypatch.setattr(checks.cloudflare_speed, "SECONDS", 1.0)
-    monkeypatch.setattr(checks.cloudflare_speed, "WARM_UP_SECONDS", 0.2)
+    monkeypatch.setattr(checks.cloudflare_speed, "DOWN_PLAN", ((100_000, 1), (2_000_000, 2)))
+    monkeypatch.setattr(checks.cloudflare_speed, "UP_PLAN", ((100_000, 1), (1_000_000, 2)))
+    monkeypatch.setattr(checks.cloudflare_speed, "PAUSE_SECONDS", 0.0)
     bound: list[tuple] = []
 
     def connector(iface, host):

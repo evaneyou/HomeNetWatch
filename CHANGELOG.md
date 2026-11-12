@@ -25,6 +25,13 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
   Bandwidth Test to the server sits below it as **Internet Connection to Dashboard**. The charts follow the same order
   and names. Wi-Fi and Android agents are unchanged.
 
+### Changed
+
+- **Health rows are a row of ticks with a time axis:** the solid status bar on the Internet Connection and Real-Time
+  Application Health rows is now 48 separate ticks running from the start of the selected range to now, with the
+  start, midpoint and "now" labelled underneath. A row where everything passed no longer looks like a plain green
+  line. When one tick covers several samples it takes the worst status, so a short failure still shows.
+
 ### Security
 
 - **Old-style agent keys are no longer accepted:** every agent key is now stored as SHA-256, so the bcrypt lookup

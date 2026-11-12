@@ -403,6 +403,7 @@ function SpeedSummary({
           detail={`${fmt(speed(latest).down)} Mbps down · ${fmt(speed(latest).up)} Mbps up · ping ${fmt(latest?.rtt_ms)} ms · jitter ${fmt(latest?.jitter_ms)} ms`}
           strip={strip}
           empty={series.length === 0}
+          range={range}
           onOpen={onOpen}
         />
       )}

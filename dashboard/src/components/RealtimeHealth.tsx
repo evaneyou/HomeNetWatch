@@ -5,6 +5,7 @@ import { api } from "../api";
 import { CHART_COLORS } from "../chartTheme";
 import { chartWindow, formatChartTick, zoomedDomain } from "../chartTime";
 import { useChartZoom } from "../useChartZoom";
+import HealthTicks from "./HealthTicks";
 import LimitShareChart from "./LimitShareChart";
 import { TimeAxis } from "./InternetDetail";
 
@@ -137,31 +138,18 @@ export default function RealtimeHealth({
               {item.latest.verdict === "software" ? " · software" : ""}
             </span>
           </div>
-          <span
-            className="isp-strip health-bar"
-            title={item.name}
-            style={{ background: strip(item.points) }}
-          />
+          <HealthTicks colors={stripColors(item.points)} range={range} title={item.name} />
         </div>
       ))}
     </div>
   );
 }
 
-function strip(points: Point[]): string {
-  if (points.length === 0) return "var(--line)";
-  const statuses = points.map((point) => statusOf(point.verdict));
-  const stops: string[] = [];
-  let index = 0;
-  while (index < statuses.length) {
-    const status = statuses[index];
-    let end = index + 1;
-    while (end < statuses.length && statuses[end] === status) end += 1;
-    const color = status === "ok" ? "var(--ok)" : status === "fail" ? "var(--fail)" : status === "software" ? "var(--degraded)" : "var(--line)";
-    stops.push(`${color} ${(index / statuses.length) * 100}% ${(end / statuses.length) * 100}%`);
-    index = end;
-  }
-  return `linear-gradient(90deg, ${stops.join(", ")})`;
+function stripColors(points: Point[]): string[] {
+  return points.map((point) => {
+    const status = statusOf(point.verdict);
+    return status === "ok" ? "var(--ok)" : status === "fail" ? "var(--fail)" : status === "software" ? "var(--degraded)" : "var(--line)";
+  });
 }
 
 function ChartBody({

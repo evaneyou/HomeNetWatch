@@ -84,6 +84,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **KPI valid working hours (6:00 AM – 12:00 AM EST, 7 days a week):** KPI availability, packet drop, time offline, outages, reporting gaps and daily health scores now count only measurements taken during valid working hours from 6:00 AM to 12:00 AM Eastern Time (`America/New_York`), 7 days a week; overnight hours (12:00 AM – 6:00 AM ET) are excluded. Migration `0055_kpi_valid_hours` and the KPI backfill purge historical off-hour rows from `kpi_hourly` and recompute `kpi_daily` by Eastern date so all past dates reflect the working-hours window. The KPI Dashboard header, verdict banner, Daily KPI History and footer explicitly state the valid hours.
 - **Landing page redesign:** `site/` has a new look and message (enterprise infrastructure principles applied to a
   home network), a moving radar background that follows the pointer, clickable system layers, an advanced-features
   grid and a new Security section. Still plain HTML, CSS and JS under the existing CSP; `enter.html` is unchanged.

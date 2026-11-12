@@ -67,7 +67,7 @@ def get_daily(
     monitor_id: Optional[uuid.UUID] = None,
 ) -> list[dict[str, Any]]:
     """The stored daily KPIs, newest first. Defaults to the last 90 days."""
-    today = datetime.now(timezone.utc).date()
+    today = kpi.eastern_today()
     last = min(last or today, today)
     first = first or last - timedelta(days=89)
     return kpi.daily_history(db, first, last, monitor_id, limit)

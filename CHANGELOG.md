@@ -161,6 +161,13 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **A deploy no longer restarts every agent:** `scripts/deploy.sh` recreated the RTNP receiver on every full deploy.
+  That cut the control connection of the running voice, video and remote desktop flows, the server then asked each
+  agent to restart, and the restarted agent ran all of its tests again at once. The receiver is now recreated only
+  when the WireGuard container really was recreated.
+- **The Cloudflare Speed Test keeps its schedule across an agent restart (Pi agent 0.8.15):** a test that runs at most
+  every 30 minutes saves the time of its last run in `schedule.json` beside the agent's config, so a restart does not
+  run it again early. Cloudflare refuses runs that come too often.
 - **Caddyfile changes reach Caddy:** `deploy/Caddyfile` is mounted into the container as a single file, and
   `git pull` replaces the file, so the running container kept the old copy and neither a deploy nor `caddy reload`
   applied a change. `scripts/deploy.sh` now compares the two copies after every deploy and, when they differ,

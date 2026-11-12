@@ -3,18 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>HomeNetWatch | A network platform built by AI from written operating rules</title>
+    <title>HomeNetWatch | Enterprise infrastructure principles, built for my house</title>
     <meta
       name="description"
-      content="HomeNetWatch watches a real home network: sensors, tunnels, path, speed, and wireless security. Coding agents built it from written institutional knowledge, with review and tests on every change."
+      content="HomeNetWatch watches a real home network with the principles of a corporate one: sensors, encrypted tunnels, BGP path correlation, wireless intrusion detection, and a hardened server. Coding agents built it from thirty years of written institutional knowledge."
     />
-    <meta name="theme-color" content="#080b11" />
+    <meta name="theme-color" content="#05070c" />
+    <meta name="color-scheme" content="dark" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="HomeNetWatch" />
-    <meta property="og:title" content="HomeNetWatch: a network platform built by AI from written operating rules" />
+    <meta property="og:title" content="HomeNetWatch: enterprise infrastructure principles, built for my house" />
     <meta
       property="og:description"
-      content="Sensors, path, speed, and wireless security in production. Coding agents wrote most of it. The shape came from rules written down first: how networks fail, what stays private, and what must pass before a change ships."
+      content="Thirty years of managing enterprise infrastructure, written down as operating rules. Coding agents built this platform from that institutional knowledge, and it runs on a real home network."
     />
     <meta property="og:image" content="https://live.homenetwatch.com/welcome/homenetwatch.png" />
     <link rel="icon" type="image/png" href="icon.png" />
@@ -22,366 +23,336 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@300;400;600;700&display=swap"
     />
-    <link rel="stylesheet" href="site.css?v=0.6.11" />
+    <link rel="stylesheet" href="site.css?v=0.6.12" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
+    <div class="backdrop" aria-hidden="true"></div>
 
-    <header class="nav" id="top">
-      <div class="wrap nav-row">
-        <div class="brand-cluster">
-          <a class="brand" href="#top" aria-label="HomeNetWatch home">
-            <img src="homenetwatch.png" alt="HomeNetWatch" width="126" height="31" />
-          </a>
-          <span class="status-pill"><i class="dot" aria-hidden="true"></i> v0.6 in production</span>
-        </div>
-        <div class="nav-cta">
-          <a class="btn-live" href="https://live.homenetwatch.com/welcome/enter.html">
-            <span class="long">Open live dashboard &rarr;</span>
-            <span class="short">Live system &rarr;</span>
-          </a>
-        </div>
+    <div class="page" id="top">
+      <div class="radar" aria-hidden="true">
+        <div class="sweep"></div>
+        <svg viewBox="0 0 1400 1400" fill="none" stroke="#4fd1b5">
+          <circle cx="700" cy="700" r="160" stroke-opacity="0.22" />
+          <circle cx="700" cy="700" r="320" stroke-opacity="0.16" />
+          <circle cx="700" cy="700" r="480" stroke-opacity="0.12" />
+          <circle cx="700" cy="700" r="640" stroke-opacity="0.08" />
+          <path d="M700 0v1400M0 700h1400" stroke-opacity="0.08" />
+        </svg>
+        <div class="ping"></div>
+        <div class="ping"></div>
+        <div class="ping"></div>
+        <div class="ping"></div>
+        <span class="blip b1"></span>
+        <span class="blip b2"></span>
+        <span class="blip b3"></span>
+        <span class="blip b4"></span>
       </div>
-    </header>
+      <div class="spot" aria-hidden="true"></div>
 
-    <main id="main" class="wrap main-stage">
-      <div class="intro">
-        <p class="eyebrow">HomeNetWatch &middot; production home network platform</p>
-        <h1>A live network platform, built by AI that started from the operating rules.</h1>
-        <p class="lead">
-          Sensors on the home network, isolated measurement tunnels, path and speed, wireless security, and a dashboard
-          you can open. Coding agents wrote most of it. They worked from institutional knowledge written down first:
-          how a network actually fails, what has to stay private, and which checks must pass before a change ships.
-        </p>
-      </div>
+      <header class="wrap nav-row">
+        <a class="brand" href="#top" aria-label="HomeNetWatch home">
+          <img src="homenetwatch.png" alt="HomeNetWatch" width="139" height="34" />
+        </a>
+        <nav class="nav-links" aria-label="Sections">
+          <a href="#layers">Layers</a>
+          <a href="#features">Platform</a>
+          <a href="#security">Security</a>
+          <a href="#about-author">Author</a>
+          <a class="btn-live" href="https://live.homenetwatch.com/welcome/enter.html">Live system</a>
+        </nav>
+      </header>
 
-      <section class="caps" aria-label="What the platform does">
-        <article class="cap">
-          <b>Path View</b>
-          <span>Traceroute grouped into networks, set next to the BGP path public collectors see from the provider.</span>
-        </article>
-        <article class="cap">
-          <b>Speed Test</b>
-          <span>Live download and upload on Wired or Wi-Fi. A link the device does not have stays visible and disabled.</span>
-        </article>
-        <article class="cap">
-          <b>Airwaves</b>
-          <span>Nearby Wi-Fi, clients, and wireless security from a radio that listens and never joins a network.</span>
-        </article>
-        <article class="cap">
-          <b>Internet checks</b>
-          <span>HTTP, ICMP, and path traces to this server and to the public services a household actually uses.</span>
-        </article>
-        <article class="cap">
-          <b>Real-time health</b>
-          <span>Voice and video streams measured on the link, queued so the test does not create the lag it reports.</span>
-        </article>
-        <article class="cap">
-          <b>Server Health</b>
-          <span>Disk forecast, encrypted backups, and the host the platform runs on, separate from the home network.</span>
-        </article>
-      </section>
-
-      <section class="topology-shell" aria-label="Interactive System Architecture">
-        <div class="diagram-pane">
-          <div class="diagram-hint">SELECT A SYSTEM LAYER TO INSPECT</div>
-          <div class="nodes-track" role="tablist" aria-label="System layers">
-            <button
-              type="button"
-              class="node-btn active"
-              role="tab"
-              id="tab-edge"
-              aria-selected="true"
-              aria-controls="panel-edge"
-              data-node="edge"
-            >
-              <span class="node-idx">01</span>
-              <span class="node-title">
-                <b>Raspberry Pi &amp; Android TV Sensors (Home Edge)</b>
-                <span>Dual-NIC Pi + Shield Wi-Fi agents, Kismet WIDS, Rust UDP generator</span>
-              </span>
-              <span class="node-tag">Hardware</span>
-            </button>
-
-            <button
-              type="button"
-              class="node-btn"
-              role="tab"
-              id="tab-tunnel"
-              aria-selected="false"
-              aria-controls="panel-tunnel"
-              data-node="tunnel"
-            >
-              <span class="node-idx">02</span>
-              <span class="node-title">
-                <b>Dual WireGuard + Access Plane Split</b>
-                <span>Ed25519 enrollment, pinned TLS, self-healing wg0/wg1 tunnels</span>
-              </span>
-              <span class="node-tag">Security</span>
-            </button>
-
-            <button
-              type="button"
-              class="node-btn"
-              role="tab"
-              id="tab-core"
-              aria-selected="false"
-              aria-controls="panel-core"
-              data-node="core"
-            >
-              <span class="node-idx">03</span>
-              <span class="node-title">
-                <b>FastAPI + PostgreSQL + Correlation Engine</b>
-                <span>Separates ISP drops, tunnel staleness, and bandwidth collapse</span>
-              </span>
-              <span class="node-tag">Backend</span>
-            </button>
-
-            <button
-              type="button"
-              class="node-btn"
-              role="tab"
-              id="tab-ai"
-              aria-selected="false"
-              aria-controls="panel-ai"
-              data-node="ai"
-            >
-              <span class="node-idx">04</span>
-              <span class="node-title">
-                <b>Institutional knowledge, then AI coding</b>
-                <span>SPEC.md, house rules, tests, and review before anything reaches production</span>
-              </span>
-              <span class="node-tag">Method</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="inspector-pane" aria-live="polite">
-          <!-- Panel 01: Edge -->
-          <article
-            class="inspector-card"
-            id="panel-edge"
-            role="tabpanel"
-            aria-labelledby="tab-edge"
-            data-panel="edge"
-          >
-            <div>
-              <div class="inspector-tag">01 / Edge Hardware</div>
-              <h2>Raspberry Pi &amp; Android TV Sensors on a Real Home Network</h2>
-              <p>
-                A Raspberry Pi measures both Wired Ethernet and Wi-Fi simultaneously—running HTTP and ICMP path checks,
-                LibreSpeed throughput tests, Kismet wireless intrusion detection, on-demand LAN scans, and a custom Rust
-                real-time UDP stream generator (Voice G.711 A-law/µ-law &amp; Video)—while an NVIDIA Shield Android TV
-                agent adds QR-onboarded Wi-Fi voice and throughput telemetry from the living room.
-              </p>
-              <div class="tradeoff-box">
-                <strong>Architectural Trade-off</strong>
-                <span>
-                  Spaced heavy tests in a serialized queue rather than firing parallel streams that would peg the Pi's
-                  CPU, saturate residential uplink, and create the very lag we measure.
-                </span>
-              </div>
-            </div>
-            <div class="proof-links">
-              <a class="proof-link primary" href="https://live.homenetwatch.com/welcome/enter.html">Inspect live sensor &rarr;</a>
-              <a
-                class="proof-link"
-                href="https://github.com/evaneyou/homenetwatch/blob/main/monitor/README.md"
-                target="_blank"
-                rel="noopener"
-              >Agent README &nearr;</a>
-              <a
-                class="proof-link"
-                href="https://github.com/evaneyou/RTN_PackGen"
-                target="_blank"
-                rel="noopener"
-              >Rust RTNP repo &nearr;</a>
-            </div>
-          </article>
-
-          <!-- Panel 02: Tunnel & Security -->
-          <article
-            class="inspector-card"
-            id="panel-tunnel"
-            role="tabpanel"
-            aria-labelledby="tab-tunnel"
-            data-panel="tunnel"
-            hidden
-          >
-            <div>
-              <div class="inspector-tag">02 / Security &amp; Networking</div>
-              <h2>Access Plane vs. Measurement Tunnel Split</h2>
-              <p>
-                Devices enroll with Ed25519 signatures and pin the server's TLS certificate. Wired (<code>wg0</code>)
-                and Wi-Fi (<code>wg1</code>) each maintain an isolated WireGuard tunnel. When an ISP blip leaves a stale
-                route pin, the agent detects that public web works while the tunnel peer is unreachable and self-heals
-                within 60 seconds.
-              </p>
-              <div class="tradeoff-box">
-                <strong>Why It Matters</strong>
-                <span>
-                  Separating public web checks from WireGuard tunnel checks prevents false "Wi-Fi Down" alarms when only
-                  a measurement tunnel dropped—and HSTS, strict CSP, and server-side RBAC protect the public guest demo.
-                </span>
-              </div>
-            </div>
-            <div class="proof-links">
-              <a
-                class="proof-link"
-                href="https://github.com/evaneyou/homenetwatch/blob/main/SECURITY.md"
-                target="_blank"
-                rel="noopener"
-              >Security policy &nearr;</a>
-              <a
-                class="proof-link"
-                href="https://github.com/evaneyou/homenetwatch/blob/main/docs/deploy.md#security-headers"
-                target="_blank"
-                rel="noopener"
-              >Security headers &amp; deploy &nearr;</a>
-              <a class="proof-link" href="https://live.homenetwatch.com/welcome/enter.html">Open live dashboard &rarr;</a>
-            </div>
-          </article>
-
-          <!-- Panel 03: Core Backend -->
-          <article
-            class="inspector-card"
-            id="panel-core"
-            role="tabpanel"
-            aria-labelledby="tab-core"
-            data-panel="core"
-            hidden
-          >
-            <div>
-              <div class="inspector-tag">03 / Portable Cloud Stack</div>
-              <h2>FastAPI, PostgreSQL &amp; Hierarchical Correlation</h2>
-              <p>
-                Deployed via clean Docker Compose and Caddy on Oracle Cloud with zero proprietary lock-in. The alert
-                engine evaluates a strict hierarchy—Pi offline &rarr; shared WAN outage &rarr; upstream bandwidth
-                collapse &rarr; single link &rarr; tunnel—suppressing downstream alert noise automatically, while Server
-                Health monitors disk forecasts, encrypted off-host backups, and weekly CVEs.
-              </p>
-              <div class="tradeoff-box">
-                <strong>Architectural Trade-off</strong>
-                <span>
-                  Gave up familiar AWS and GCP managed services to prove the entire stack can migrate to any Linux host
-                  or bare metal without rewriting code.
-                </span>
-              </div>
-            </div>
-            <div class="proof-links">
-              <a
-                class="proof-link"
-                href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md"
-                target="_blank"
-                rel="noopener"
-              >Read SPEC.md &nearr;</a>
-              <a
-                class="proof-link"
-                href="https://github.com/evaneyou/homenetwatch/blob/main/CHANGELOG.md"
-                target="_blank"
-                rel="noopener"
-              >Changelog (v0.1–v0.6) &nearr;</a>
-              <a
-                class="proof-link"
-                href="https://github.com/evaneyou/homenetwatch/commits/main"
-                target="_blank"
-                rel="noopener"
-              >Commit history &nearr;</a>
-            </div>
-          </article>
-
-          <!-- Panel 04: How it was built -->
-          <article
-            class="inspector-card"
-            id="panel-ai"
-            role="tabpanel"
-            aria-labelledby="tab-ai"
-            data-panel="ai"
-            hidden
-          >
-            <div>
-              <div class="inspector-tag">04 / How it was built</div>
-              <h2>Coding agents, working inside written knowledge</h2>
-              <p>
-                The platform was not one open prompt. Architecture, security, and delivery rules were written first in
-                <code>SPEC.md</code> and <code>CLAUDE.md</code>: remote agents push, browsers only read, roles are
-                enforced on the server, secrets never enter a public repo, and an alert names the cause rather than
-                every symptom under it. Several coding agents then implemented on isolated branches. Each change went
-                through pull-request review, server tests in a throwaway database, and a TypeScript build before it
-                reached the live system.
-              </p>
-              <div class="tradeoff-box">
-                <strong>What the rules refused</strong>
-                <span>
-                  No always-on language model reading logs. Deterministic correlation runs first. Gemini is on demand,
-                  for a root-cause note or a fault walkthrough, and a guest session is read-only with the home address
-                  removed on the server.
-                </span>
-              </div>
-            </div>
-            <div class="proof-links">
-              <a
-                class="proof-link"
-                href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md"
-                target="_blank"
-                rel="noopener"
-              >SPEC.md &nearr;</a>
-              <a
-                class="proof-link"
-                href="https://github.com/evaneyou/homenetwatch/blob/main/CLAUDE.md"
-                target="_blank"
-                rel="noopener"
-              >House rules &nearr;</a>
-              <a
-                class="proof-link"
-                href="https://github.com/evaneyou/homenetwatch/pulls?q=is%3Apr+is%3Amerged"
-                target="_blank"
-                rel="noopener"
-              >Reviewed pull requests &nearr;</a>
-              <a class="proof-link primary" href="https://live.homenetwatch.com/welcome/enter.html">Open the platform &rarr;</a>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section class="author" id="about-author" aria-label="About the author">
-        <div class="author-rail">
-          <span class="author-photo-frame">
-            <img class="author-photo" src="evan-you.jpg" alt="Evan You" width="120" height="120" />
-          </span>
-          <div class="author-roles">
-            <p class="author-rank">Leader</p>
-            <p>Builder</p>
-            <p>Strategist</p>
-            <p>Mentor</p>
-          </div>
-        </div>
-        <div class="author-body">
-          <h2>Evan You</h2>
-          <p class="role">Infrastructure, cloud, networking, and cybersecurity.</p>
-          <p>
-            An IT degree from Rochester Institute of Technology, then thirty years in charge of those systems, is what
-            he turned into written instructions: how a network fails, what stays private, and what must pass before a
-            change ships. Coding agents built this platform from those instructions.
+      <main id="main">
+        <section class="wrap hero">
+          <span class="status-pill mono"><i class="dot" aria-hidden="true"></i> v0.6 in production</span>
+          <h1>Enterprise infrastructure principles. <span class="teal">Built for my house.</span></h1>
+          <p class="lead">
+            Thirty years of managing enterprise infrastructure, written down as operating rules. Coding agents built
+            this platform from that institutional knowledge, and it runs on a real home network with the same
+            principles a corporate network is held to.
           </p>
-          <p class="author-aside">
-            Away from this project: a five-year member of the
-            <a href="https://golfmissiontour.com/" target="_blank" rel="noopener">Golf Mission Association</a>, and a
-            weekly podcast that turns Golf Genius match data into a match report.
-          </p>
-          <div class="proof-links">
-            <a class="proof-link" href="https://www.linkedin.com/in/evan-you-9509603" target="_blank" rel="noopener">LinkedIn &nearr;</a>
-            <a class="proof-link" href="https://github.com/evaneyou" target="_blank" rel="noopener">GitHub &nearr;</a>
-            <a class="proof-link" href="https://open.spotify.com/show/0AJatn9IzYBylJqaAYOXNC" target="_blank" rel="noopener">Golf podcast &nearr;</a>
+          <div class="cta-row">
+            <a class="cta primary" href="https://live.homenetwatch.com/welcome/enter.html">Open live dashboard</a>
+            <a class="cta ghost" href="https://github.com/evaneyou/homenetwatch" target="_blank" rel="noopener">Read the source</a>
           </div>
-        </div>
-      </section>
-    </main>
+          <p class="hint mono">
+            <span class="pointer-only">Move your pointer to steer the radar.</span> Click anywhere here to send a ping.
+          </p>
+        </section>
 
-    <footer class="foot wrap">
-      <div class="foot-flex">
+        <section class="wrap layers" id="layers" aria-label="System layers">
+          <div class="track" aria-hidden="true"><span></span><span></span></div>
+          <div class="tabs" role="tablist" aria-label="System layers">
+            <button type="button" class="node-btn active" role="tab" id="tab-edge" aria-selected="true" aria-controls="panel-edge" data-node="edge">
+              <span class="node-tag">01 &middot; HARDWARE</span>
+              <b>Home edge sensors</b>
+              <span class="node-sub">Dual-NIC Raspberry Pi and Shield Wi-Fi agents, Kismet WIDS, Rust UDP generator.</span>
+            </button>
+            <button type="button" class="node-btn" role="tab" id="tab-tunnel" aria-selected="false" aria-controls="panel-tunnel" data-node="tunnel" tabindex="-1">
+              <span class="node-tag">02 &middot; SECURITY</span>
+              <b>Dual WireGuard tunnels</b>
+              <span class="node-sub">Ed25519 enrollment, pinned TLS, self-healing wg0/wg1 with a split access plane.</span>
+            </button>
+            <button type="button" class="node-btn" role="tab" id="tab-core" aria-selected="false" aria-controls="panel-core" data-node="core" tabindex="-1">
+              <span class="node-tag">03 &middot; BACKEND</span>
+              <b>Correlation engine</b>
+              <span class="node-sub">FastAPI and PostgreSQL separating ISP drops, tunnel staleness, and bandwidth collapse.</span>
+            </button>
+            <button type="button" class="node-btn" role="tab" id="tab-ai" aria-selected="false" aria-controls="panel-ai" data-node="ai" tabindex="-1">
+              <span class="node-tag">04 &middot; METHOD</span>
+              <b>Knowledge, then AI coding</b>
+              <span class="node-sub">SPEC.md, house rules, tests, and review before anything reaches production.</span>
+            </button>
+          </div>
+
+          <div aria-live="polite">
+            <article class="inspector-card" id="panel-edge" role="tabpanel" aria-labelledby="tab-edge" data-panel="edge">
+              <div class="inspector-head">
+                <div class="mono teal">01 / EDGE HARDWARE</div>
+                <h3>Raspberry Pi and Android TV sensors on a real home network</h3>
+              </div>
+              <div class="inspector-body">
+                <p>
+                  A Raspberry Pi measures both Wired Ethernet and Wi-Fi at the same time: HTTP and ICMP path checks,
+                  LibreSpeed throughput tests, Kismet wireless intrusion detection, on-demand LAN scans, and a custom
+                  Rust real-time UDP stream generator (Voice G.711 A-law/&micro;-law and Video). An NVIDIA Shield
+                  Android TV agent adds QR-onboarded Wi-Fi voice and throughput telemetry from the living room.
+                </p>
+                <div class="tradeoff-box">
+                  <strong>Architectural trade-off</strong>
+                  <span>
+                    Heavy tests run spaced in a serialized queue, not as parallel streams that would peg the Pi's CPU,
+                    saturate the residential uplink, and create the very lag being measured.
+                  </span>
+                </div>
+                <div class="proof-links">
+                  <a href="https://live.homenetwatch.com/welcome/enter.html">Inspect live sensor</a>
+                  <a href="https://github.com/evaneyou/homenetwatch/blob/main/monitor/README.md" target="_blank" rel="noopener">Agent README &nearr;</a>
+                  <a href="https://github.com/evaneyou/RTN_PackGen" target="_blank" rel="noopener">Rust RTNP repo &nearr;</a>
+                </div>
+              </div>
+            </article>
+
+            <article class="inspector-card" id="panel-tunnel" role="tabpanel" aria-labelledby="tab-tunnel" data-panel="tunnel" hidden>
+              <div class="inspector-head">
+                <div class="mono teal">02 / SECURITY AND NETWORKING</div>
+                <h3>Access plane and measurement tunnels, kept apart</h3>
+              </div>
+              <div class="inspector-body">
+                <p>
+                  Devices enroll with Ed25519 signatures and pin the server's TLS certificate. Wired
+                  (<code>wg0</code>) and Wi-Fi (<code>wg1</code>) each maintain an isolated WireGuard tunnel. When an
+                  ISP blip leaves a stale route pin, the agent detects that public web works while the tunnel peer is
+                  unreachable and self-heals within 60 seconds.
+                </p>
+                <div class="tradeoff-box">
+                  <strong>Why it matters</strong>
+                  <span>
+                    Separating public web checks from WireGuard tunnel checks prevents false "Wi-Fi Down" alarms when
+                    only a measurement tunnel dropped. HSTS, a strict CSP, and server-side RBAC protect the public
+                    guest demo.
+                  </span>
+                </div>
+                <div class="proof-links">
+                  <a href="https://github.com/evaneyou/homenetwatch/blob/main/SECURITY.md" target="_blank" rel="noopener">Security policy &nearr;</a>
+                  <a href="https://github.com/evaneyou/homenetwatch/blob/main/docs/deploy.md#security-headers" target="_blank" rel="noopener">Security headers and deploy &nearr;</a>
+                </div>
+              </div>
+            </article>
+
+            <article class="inspector-card" id="panel-core" role="tabpanel" aria-labelledby="tab-core" data-panel="core" hidden>
+              <div class="inspector-head">
+                <div class="mono teal">03 / PORTABLE CLOUD STACK</div>
+                <h3>FastAPI, PostgreSQL and hierarchical correlation</h3>
+              </div>
+              <div class="inspector-body">
+                <p>
+                  Deployed with plain Docker Compose and Caddy on Oracle Cloud, with no proprietary lock-in. The alert
+                  engine evaluates a strict hierarchy (Pi offline &rarr; shared WAN outage &rarr; upstream bandwidth
+                  collapse &rarr; single link &rarr; tunnel) and suppresses downstream alert noise automatically, while
+                  Server Health monitors disk forecasts, encrypted off-host backups, and weekly CVEs.
+                </p>
+                <div class="tradeoff-box">
+                  <strong>Architectural trade-off</strong>
+                  <span>
+                    Gave up familiar AWS and GCP managed services to prove the entire stack can move to any Linux host
+                    or bare metal without rewriting code.
+                  </span>
+                </div>
+                <div class="proof-links">
+                  <a href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md" target="_blank" rel="noopener">Read SPEC.md &nearr;</a>
+                  <a href="https://github.com/evaneyou/homenetwatch/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog &nearr;</a>
+                  <a href="https://github.com/evaneyou/homenetwatch/commits/main" target="_blank" rel="noopener">Commit history &nearr;</a>
+                </div>
+              </div>
+            </article>
+
+            <article class="inspector-card" id="panel-ai" role="tabpanel" aria-labelledby="tab-ai" data-panel="ai" hidden>
+              <div class="inspector-head">
+                <div class="mono teal">04 / HOW IT WAS BUILT</div>
+                <h3>Coding agents, working inside written knowledge</h3>
+              </div>
+              <div class="inspector-body">
+                <p>
+                  The platform was not one open prompt. Architecture, security, and delivery rules were written first
+                  in <code>SPEC.md</code> and <code>CLAUDE.md</code>: remote agents push, browsers only read, roles
+                  are enforced on the server, secrets never enter a public repo, and an alert names the cause rather
+                  than every symptom under it. Several coding agents then implemented on isolated branches. Each
+                  change went through pull-request review, server tests in a throwaway database, and a TypeScript
+                  build before it reached the live system.
+                </p>
+                <div class="proof-links">
+                  <a href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md" target="_blank" rel="noopener">SPEC.md &nearr;</a>
+                  <a href="https://github.com/evaneyou/homenetwatch/blob/main/CLAUDE.md" target="_blank" rel="noopener">House rules &nearr;</a>
+                  <a href="https://github.com/evaneyou/homenetwatch/pulls?q=is%3Apr+is%3Amerged" target="_blank" rel="noopener">Reviewed pull requests &nearr;</a>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="wrap section features" id="features">
+          <h2>Advanced features you would expect in a corporate network.</h2>
+          <div class="grid">
+            <article class="tile wide">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 18h7a3 3 0 0 0 0-6h-4a3 3 0 0 1 0-6h7" /><circle cx="5" cy="18" r="2" /><circle cx="19" cy="6" r="2" /></svg>
+              <div class="mono teal">PATH VIEW</div>
+              <h3>BGP path correlation</h3>
+              <p>Traceroute grouped into networks, set next to the BGP path public collectors see from the provider.</p>
+              <div class="hops" aria-hidden="true">
+                <span class="hop-lan">Home</span><i></i><span class="hop-isp">Provider</span><i></i><span class="hop-silent">No reply</span><i></i><span class="hop-srv">Server</span>
+              </div>
+            </article>
+            <article class="tile">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 17a8 8 0 1 1 16 0" /><path d="M12 17l4-6" /></svg>
+              <div class="mono teal">SPEED TEST &middot; INTERNET CHECKS</div>
+              <h3>Dual-link testing</h3>
+              <p>A dual-NIC sensor measures Wired Ethernet and Wi-Fi at the same time: throughput, HTTP, ICMP, and path traces to the services the household uses.</p>
+            </article>
+            <article class="tile">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 9a14 14 0 0 1 18 0" /><path d="M6.5 12.5a9 9 0 0 1 11 0" /><path d="M10 16a4 4 0 0 1 4 0" /><circle cx="12" cy="19" r="1" /></svg>
+              <div class="mono teal">AIRWAVES</div>
+              <h3>Wireless intrusion detection</h3>
+              <p>Kismet WIDS on a radio that listens and never joins a network: nearby Wi-Fi, clients, and wireless security.</p>
+            </article>
+            <article class="tile">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+              <div class="mono teal">SENSOR SECURITY</div>
+              <h3>Encrypted sensor tunnels</h3>
+              <p>Ed25519 device enrollment, pinned TLS, and dual self-healing WireGuard tunnels that keep measurement and access on separate planes.</p>
+            </article>
+            <article class="tile">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6" /></svg>
+              <div class="mono teal">REAL-TIME HEALTH</div>
+              <h3>Synthetic voice and video</h3>
+              <p>A custom Rust UDP generator sends G.711 voice and video streams over the link, queued so the test does not create the lag it reports.</p>
+            </article>
+            <article class="tile">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="1" /><rect x="4" y="14" width="16" height="6" rx="1" /><path d="M8 7h.01" /><path d="M8 17h.01" /></svg>
+              <div class="mono teal">SERVER HEALTH</div>
+              <h3>Capacity forecast and backups</h3>
+              <p>Disk forecast, encrypted backups, and the host the platform runs on, separate from the home network.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="wrap section security" id="security">
+          <div class="security-intro">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.800-1.200-8-4.500-8-9V6l8-3z" /><path d="M9 12l2 2 4-4" /></svg>
+            <div class="mono teal">SECURITY</div>
+            <h2>A server I run myself, built with cybersecurity first.</h2>
+            <p>
+              The platform is public, so the server behind it is managed like production: owned end to end, kept
+              patched, and locked down in layers, from the sensor to the dashboard.
+            </p>
+            <div class="proof-links">
+              <a href="https://github.com/evaneyou/homenetwatch/blob/main/SECURITY.md" target="_blank" rel="noopener">Security policy &nearr;</a>
+            </div>
+          </div>
+          <div class="security-grid">
+            <article class="tile">
+              <div class="mono teal">IN TRANSIT</div>
+              <h3>Encrypted end to end</h3>
+              <p>HTTPS with automatically renewed certificates, HSTS and a strict CSP, WireGuard tunnels to every sensor, and a pinned TLS key for enrollment.</p>
+            </article>
+            <article class="tile">
+              <div class="mono teal">IDENTITY</div>
+              <h3>Every sensor proves who it is</h3>
+              <p>Devices enroll with their own Ed25519 key and signed requests, and nothing joins until an admin approves it.</p>
+            </article>
+            <article class="tile">
+              <div class="mono teal">ACCESS</div>
+              <h3>Read-only for guests</h3>
+              <p>Visitors see live graphs through a guest role enforced on the server. Private details are removed in the API itself, not just hidden on screen.</p>
+            </article>
+            <article class="tile">
+              <div class="mono teal">PATCHING</div>
+              <h3>Vulnerability tracking</h3>
+              <p>Server Health checks the installed software against known CVEs every week, so unpatched packages are seen and fixed.</p>
+            </article>
+            <article class="tile">
+              <div class="mono teal">RECOVERY</div>
+              <h3>Encrypted off-host backups</h3>
+              <p>Backups are encrypted and kept off the host, and a disk forecast warns before the server runs out of room.</p>
+            </article>
+            <article class="tile">
+              <div class="mono teal">CHANGE CONTROL</div>
+              <h3>Nothing ships unchecked</h3>
+              <p>Every change passes tests and review before it reaches production, and the rules say what must stay private.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="band" aria-label="What the rules refused">
+          <div class="wrap band-row">
+            <div class="band-quote">
+              <div class="mono">WHAT THE RULES REFUSED</div>
+              <p>No always-on language model reading logs. Deterministic correlation runs first.</p>
+            </div>
+            <div class="band-side">
+              <p>
+                Gemini is on demand, for a root-cause note or a fault walkthrough, and a guest session is read-only
+                with the home address removed on the server.
+              </p>
+              <div class="proof-links">
+                <a href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md" target="_blank" rel="noopener">SPEC.md &nearr;</a>
+                <a href="https://github.com/evaneyou/homenetwatch/blob/main/CLAUDE.md" target="_blank" rel="noopener">House rules &nearr;</a>
+                <a href="https://live.homenetwatch.com/welcome/enter.html">Open the platform</a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="wrap author" id="about-author" aria-label="About the author">
+          <span class="author-photo"><img src="evan-you.jpg" alt="Evan You" width="120" height="120" /></span>
+          <div class="author-body">
+            <div class="mono">Leader &middot; Builder &middot; Strategist &middot; Mentor</div>
+            <h2>Evan You</h2>
+            <p>
+              Infrastructure, cloud, networking, and cybersecurity. An IT degree from Rochester Institute of
+              Technology, then thirty years managing enterprise infrastructure. As a leader, he has led teams that
+              drove innovation with automation and AI, taking infrastructure engineers to a full DevOps way of
+              working. That institutional knowledge became the written instructions coding agents built this platform
+              from: the principles of a corporate network, applied to one house.
+            </p>
+            <p>
+              Away from this project: a five-year member of the
+              <a href="https://golfmissiontour.com/" target="_blank" rel="noopener">Golf Mission Association</a>, and a
+              weekly podcast that turns Golf Genius match data into a match report, all built with AI as well.
+            </p>
+            <div class="proof-links">
+              <a href="https://www.linkedin.com/in/evan-you-9509603" target="_blank" rel="noopener">LinkedIn &nearr;</a>
+              <a href="https://github.com/evaneyou" target="_blank" rel="noopener">GitHub &nearr;</a>
+              <a href="https://open.spotify.com/show/0AJatn9IzYBylJqaAYOXNC" target="_blank" rel="noopener">Golf podcast &nearr;</a>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="wrap foot">
         <span>
           Copyright &copy; 2026 Evan You. All rights reserved. Source under
           <a href="https://github.com/evaneyou/homenetwatch/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>.
@@ -392,9 +363,9 @@
           <a href="https://github.com/evaneyou/homenetwatch/blob/main/SPEC.md" target="_blank" rel="noopener">SPEC.md</a>
           <a href="#about-author">About the author</a>
         </div>
-      </div>
-    </footer>
+      </footer>
+    </div>
 
-    <script src="demo.js?v=0.6.4" defer></script>
+    <script src="demo.js?v=0.6.12" defer></script>
   </body>
 </html>

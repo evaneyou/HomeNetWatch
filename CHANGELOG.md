@@ -84,6 +84,9 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Landing page redesign:** `site/` has a new look and message (enterprise infrastructure principles applied to a
+  home network), a moving radar background that follows the pointer, clickable system layers, an advanced-features
+  grid and a new Security section. Still plain HTML, CSS and JS under the existing CSP; `enter.html` is unchanged.
 - **Guest view: hidden values are `#` and blurred:** identifying values in a guest's view (home and LAN addresses,
   the city, device and wireless names) are still replaced letter by letter with `#` on the server, so the real value
   never reaches the browser, and the dashboard now also blurs them so a guest can see that something is hidden. The

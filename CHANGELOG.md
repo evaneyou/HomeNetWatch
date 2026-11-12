@@ -162,6 +162,11 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **Measurement flows no longer lose a packet every minute:** the UDP 8998 allowlist was rebuilt step by step every 60
+  seconds, and for a few milliseconds its address set was empty while the chain still ended in `drop`. Every running
+  voice, video and remote desktop flow lost a packet in that gap. `scripts/rtnp-allowlist.py` now leaves the filter
+  alone when the peer addresses have not changed and otherwise replaces it in one nft transaction. It also keeps the
+  filter as it is when WireGuard cannot be asked for its peers.
 - **A deploy no longer restarts every agent:** `scripts/deploy.sh` recreated the RTNP receiver on every full deploy.
   That cut the control connection of the running voice, video and remote desktop flows, the server then asked each
   agent to restart, and the restarted agent ran all of its tests again at once. The receiver is now recreated only

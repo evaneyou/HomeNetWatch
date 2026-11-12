@@ -20,10 +20,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
   are unchanged. When Cloudflare refuses a run, the agent sends no result (migration `0056_cloudflare_speed`).
   Agent 0.8.14 reports the round trip Cloudflare measured for the connection; 0.8.13 timed each request, which added
   the time Cloudflare takes to build its answer.
-- **Wired Network Health shows the Cloudflare reading first:** on a Raspberry Pi agent's Wired view, **Internet
-  Connection** is now the newest Cloudflare Speed Test reading with the time it was measured, and the Bandwidth Test
-  to the server sits below it as **Internet Connection to Dashboard**. The charts follow the same order and names.
-  Wi-Fi and Android agents are unchanged.
+- **Wired Network Health shows the Cloudflare reading first:** on a Raspberry Pi agent's Wired view, the first row is
+  **Internet Connection to Cloudflare**: the newest Cloudflare Speed Test reading with the time it was measured. The
+  Bandwidth Test to the server sits below it as **Internet Connection to Dashboard**. The charts follow the same order
+  and names. Wi-Fi and Android agents are unchanged.
 
 ### Security
 

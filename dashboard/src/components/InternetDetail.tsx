@@ -81,6 +81,13 @@ export function InternetDetail({
     return test ? [test] : [];
   });
   const { points, loading, failed } = useSeries(watched, range);
+  // The Cloudflare Speed Test runs about once an hour, so a short range often holds no reading. The newest
+  // one of the last day is fetched on its own, so the row can always show a figure and when it was measured.
+  const cloudflareTest = bySlug.get(CLOUDFLARE_SLUG);
+  const cloudflareDay = useSeries(
+    useMemo(() => (cloudflareTest ? [cloudflareTest] : []), [cloudflareTest]),
+    "24h",
+  );
 
   const httpSlug = detail === "isp" ? "http-path" : `http-${detail}`;
   const icmpSlug = detail === "isp" ? "icmp-path" : `icmp-${detail}`;
@@ -165,6 +172,15 @@ export function InternetDetail({
     [points],
   );
 
+  const latestCloudflare = (cloudflareDay.points.get(CLOUDFLARE_SLUG) ?? []).at(-1) ?? (points.get(CLOUDFLARE_SLUG) ?? []).at(-1);
+  const cloudflareStrip = useMemo(
+    () => statusStrip(points.get(CLOUDFLARE_SLUG) ?? [], range),
+    [points, range],
+  );
+  const cloudflareAt = latestCloudflare
+    ? new Date(latestCloudflare.t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : null;
+
   const latestHops = (points.get(mtrSlug) ?? []).at(-1)?.hops ?? [];
   const latestLibre = (points.get("librespeed") ?? []).at(-1);
   const transferStrip = useMemo(
@@ -222,8 +238,21 @@ export function InternetDetail({
             <div className="muted">Could not load internet checks.</div>
           ) : (
             <div className="health-stack">
+              {hasCloudflare ? (
+                <HealthBar
+                  title="Internet Connection"
+                  detail={
+                    latestCloudflare
+                      ? `${fmt(speed(latestCloudflare).down)} Mbps down · ${fmt(speed(latestCloudflare).up)} Mbps up · ping ${fmt(latestCloudflare.rtt_ms)} ms · jitter ${fmt(latestCloudflare.jitter_ms)} ms · at ${cloudflareAt}`
+                      : "Waiting for the first hourly reading"
+                  }
+                  strip={cloudflareStrip}
+                  empty={false}
+                  onOpen={() => openCheck("librespeed")}
+                />
+              ) : null}
               <HealthBar
-                title="Internet Connection"
+                title={hasCloudflare ? "Internet Connection to Dashboard" : "Internet Connection"}
                 detail={`${fmt(speed(latestLibre).down)} Mbps down · ${fmt(speed(latestLibre).up)} Mbps up · ping ${fmt(latestLibre?.rtt_ms)} ms · jitter ${fmt(latestLibre?.jitter_ms)} ms`}
                 strip={transferStrip}
                 empty={transferChart.length === 0}
@@ -259,20 +288,10 @@ export function InternetDetail({
           <div className="muted">Could not load internet checks.</div>
         ) : (
           <>
-            <PathChart
-              title="Download and upload"
-              data={transferChart}
-              span={span}
-              series={[
-                { key: "down", label: "Download" },
-                { key: "up", label: "Upload" },
-              ]}
-              unit=" Mbps"
-            />
             {hasCloudflare ? (
               <>
                 <PathChart
-                  title="Download and upload to Cloudflare"
+                  title="Download and upload"
                   data={cloudflareChart}
                   span={span}
                   series={[
@@ -282,14 +301,24 @@ export function InternetDetail({
                   unit=" Mbps"
                 />
                 <p className="muted field-hint">
-                  The chart above is the Bandwidth Test to the HomeNetWatch server, through the tunnel. This one is the
-                  Cloudflare Speed Test: the wired link against speed.cloudflare.com, outside the tunnel, about once an
-                  hour. Pick a range of 6 hours or more to see several readings.
+                  The chart above is the Cloudflare Speed Test: the wired link against speed.cloudflare.com, outside the
+                  tunnel, about once an hour. Pick a range of 6 hours or more to see several readings. The charts below
+                  are the Bandwidth Test to the HomeNetWatch server, through the tunnel.
                 </p>
               </>
             ) : null}
-            <PathChart title="Ping" data={transferChart} span={span} dataKey="ping" label="Ping" unit=" ms" />
-            <PathChart title="Jitter" data={transferChart} span={span} dataKey="jitter" label="Jitter" unit=" ms" />
+            <PathChart
+              title={hasCloudflare ? "Download and upload to Dashboard" : "Download and upload"}
+              data={transferChart}
+              span={span}
+              series={[
+                { key: "down", label: "Download" },
+                { key: "up", label: "Upload" },
+              ]}
+              unit=" Mbps"
+            />
+            <PathChart title={hasCloudflare ? "Ping to Dashboard" : "Ping"} data={transferChart} span={span} dataKey="ping" label="Ping" unit=" ms" />
+            <PathChart title={hasCloudflare ? "Jitter to Dashboard" : "Jitter"} data={transferChart} span={span} dataKey="jitter" label="Jitter" unit=" ms" />
             <ConnectionLimitChart points={transferChart} range={range} domain={span} variancePct={settingsQ.data?.librespeed_variance_pct ?? 25} />
           </>
         )}

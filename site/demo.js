@@ -1,70 +1,90 @@
 // The live-dashboard links sign in as the read-only guest on their own.
-// An older /welcome/#demo address still does that. This also drives the system-layer tabs.
+// An older /welcome/#demo address still does that. This also drives the system-layer tabs
+// and the pointer effects on the page background.
 (function () {
   if (window.location.hash === "#demo") {
     window.location.replace("https://live.homenetwatch.com/welcome/enter.html");
   }
 
-  // Interactive topology layer switcher
-  var topologyShell = document.querySelector(".topology-shell");
-  var inspectorPane = document.querySelector(".inspector-pane");
-  var nodeTabs = document.querySelectorAll("[data-node]");
+  var reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // System-layer tabs
+  var tabs = Array.prototype.slice.call(document.querySelectorAll("[data-node]"));
   var panels = document.querySelectorAll("[data-panel]");
-  var stackedQuery = window.matchMedia("(max-width: 900px)");
 
-  function placeInspector() {
-    if (!topologyShell || !inspectorPane) return;
-    var activeTab = document.querySelector(".node-btn.active") || nodeTabs[0];
-    if (stackedQuery.matches && activeTab && activeTab.parentNode) {
-      activeTab.insertAdjacentElement("afterend", inspectorPane);
-    } else if (inspectorPane.parentNode !== topologyShell) {
-      topologyShell.appendChild(inspectorPane);
-    }
-  }
-
-  function selectNode(nodeKey, fromClick) {
-    var clickedTab = null;
-    nodeTabs.forEach(function (tab) {
-      var active = tab.getAttribute("data-node") === nodeKey;
+  function selectNode(key, focus) {
+    tabs.forEach(function (tab) {
+      var active = tab.getAttribute("data-node") === key;
       tab.classList.toggle("active", active);
       tab.setAttribute("aria-selected", active ? "true" : "false");
-      if (active) clickedTab = tab;
+      tab.setAttribute("tabindex", active ? "0" : "-1");
+      if (active && focus) tab.focus();
     });
-    var prevTop = clickedTab ? clickedTab.getBoundingClientRect().top : null;
     panels.forEach(function (panel) {
-      var match = panel.getAttribute("data-panel") === nodeKey;
-      if (match) {
+      if (panel.getAttribute("data-panel") === key) {
         panel.removeAttribute("hidden");
       } else {
         panel.setAttribute("hidden", "");
       }
     });
-    placeInspector();
-    if (fromClick && stackedQuery.matches && clickedTab && inspectorPane) {
-      if (prevTop !== null) {
-        var newTop = clickedTab.getBoundingClientRect().top;
-        if (Math.abs(newTop - prevTop) > 1) {
-          window.scrollBy(0, newTop - prevTop);
-        }
-      }
-      var tabRect = clickedTab.getBoundingClientRect();
-      var paneRect = inspectorPane.getBoundingClientRect();
-      if (tabRect.top < 12 || paneRect.bottom > window.innerHeight - 12) {
-        var targetY = window.scrollY + tabRect.top - 16;
-        window.scrollTo({ top: Math.max(0, targetY), behavior: "smooth" });
-      }
-    }
   }
 
-  nodeTabs.forEach(function (tab) {
+  tabs.forEach(function (tab, index) {
     tab.addEventListener("click", function () {
-      var key = tab.getAttribute("data-node");
-      if (key) selectNode(key, true);
+      selectNode(tab.getAttribute("data-node"), false);
+    });
+    tab.addEventListener("keydown", function (event) {
+      var next = null;
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") next = tabs[(index + 1) % tabs.length];
+      if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = tabs[(index + tabs.length - 1) % tabs.length];
+      if (event.key === "Home") next = tabs[0];
+      if (event.key === "End") next = tabs[tabs.length - 1];
+      if (next) {
+        event.preventDefault();
+        selectNode(next.getAttribute("data-node"), true);
+      }
     });
   });
 
-  placeInspector();
-  if (stackedQuery.addEventListener) {
-    stackedQuery.addEventListener("change", placeInspector);
+  if (reducedMotion) return;
+
+  // The radar and the glow follow the pointer.
+  var page = document.querySelector(".page");
+  var pending = null;
+  if (page) {
+    page.addEventListener("pointermove", function (event) {
+      if (event.pointerType === "touch") return;
+      var first = pending === null;
+      pending = event;
+      if (!first) return;
+      window.requestAnimationFrame(function () {
+        var rect = page.getBoundingClientRect();
+        var x = pending.clientX - rect.left;
+        var y = pending.clientY - rect.top;
+        pending = null;
+        page.style.setProperty("--px", x + "px");
+        page.style.setProperty("--py", y + "px");
+        page.style.setProperty("--mx", (x / rect.width - 0.5).toFixed(3));
+        page.style.setProperty("--my", (Math.min(y, 900) / 900 - 0.5).toFixed(3));
+      });
+    });
+  }
+
+  // A click on the hero sends a ping ring out from that point.
+  var hero = document.querySelector(".hero");
+  if (hero) {
+    hero.addEventListener("click", function (event) {
+      if (event.target.closest("a, button")) return;
+      var rect = hero.getBoundingClientRect();
+      var ring = document.createElement("span");
+      ring.className = "ripple";
+      ring.setAttribute("aria-hidden", "true");
+      ring.style.left = event.clientX - rect.left + "px";
+      ring.style.top = event.clientY - rect.top + "px";
+      ring.addEventListener("animationend", function () {
+        ring.remove();
+      });
+      hero.appendChild(ring);
+    });
   }
 })();

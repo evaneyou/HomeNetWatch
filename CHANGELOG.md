@@ -18,6 +18,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
   Internet Service), raises no alerts and stays out of the Overview and the KPI figures. Its download and upload
   show as a second chart on the wired Internet Connection view. The Bandwidth Test and the Speed Test to the server
   are unchanged. When Cloudflare refuses a run, the agent sends no result (migration `0056_cloudflare_speed`).
+  Agent 0.8.14 reports the round trip Cloudflare measured for the connection; 0.8.13 timed each request, which added
+  the time Cloudflare takes to build its answer.
 
 ### Security
 

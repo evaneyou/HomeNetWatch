@@ -29,6 +29,7 @@ def _load(name: str):
 class FakeCloudflare(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     refuse = 0
+    l4 = ""
     seen: list[str] = []
 
     def log_message(self, *_args):
@@ -54,6 +55,8 @@ class FakeCloudflare(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(left))
+        if type(self).l4:
+            self.send_header("Server-Timing", type(self).l4)
         self.end_headers()
         block = b"\0" * 65536
         try:
@@ -87,6 +90,7 @@ class FakeCloudflare(BaseHTTPRequestHandler):
 @pytest.fixture
 def lab(monkeypatch):
     FakeCloudflare.refuse = 0
+    FakeCloudflare.l4 = ""
     FakeCloudflare.seen = []
     server = ThreadingHTTPServer(("127.0.0.1", 0), FakeCloudflare)
     server.daemon_threads = True
@@ -111,6 +115,15 @@ def test_ping_reports_a_round_trip_and_jitter(lab):
     ping, jitter = module.measure_ping(connect, count=5)
     assert ping is not None and 0 <= ping < 500 and jitter is not None and jitter >= 0
     assert FakeCloudflare.seen.count("/__down?bytes=0") == 6
+
+
+def test_ping_uses_the_round_trip_cloudflare_measured(lab):
+    module, connect = lab
+    # Cloudflare takes tens of milliseconds to build an answer, so timing the request overstates the line.
+    FakeCloudflare.l4 = 'cfSpeedEdge;dur=10, cfSpeedWorker;dur=32, cfL4;desc="?proto=TCP&rtt=8678&min_rtt=6186&rtt_var=4099&sent=8"'
+    ping, jitter = module.measure_ping(connect, count=4)
+    assert ping == pytest.approx(8.678)
+    assert jitter == pytest.approx(4.099)
 
 
 def test_each_direction_reports_a_speed(lab):

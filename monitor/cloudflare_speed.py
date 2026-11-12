@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import http.client
 import os
+import re
 import socket
 import ssl
 import threading
@@ -70,9 +71,32 @@ def _refusal(status: int) -> str:
     return f"Cloudflare refused the speed test (HTTP {status})"
 
 
+_L4 = re.compile(r"[?&]rtt=(\d+).*?[?&]rtt_var=(\d+)")
+
+
+def _l4_timing(header: Optional[str]) -> Optional[tuple[float, float]]:
+    """Round trip and its variation in ms, as Cloudflare's own TCP stack measured them for this connection.
+
+    Each answer carries them in Server-Timing as `cfL4;desc="?proto=TCP&rtt=8678&...&rtt_var=4099..."`, in
+    microseconds. Timing the request instead would add the time Cloudflare takes to build the answer, which
+    is tens of milliseconds and now and then a few hundred.
+    """
+    if not header or "cfL4" not in header:
+        return None
+    found = _L4.search(header)
+    if found is None:
+        return None
+    return int(found.group(1)) / 1000, int(found.group(2)) / 1000
+
+
 def measure_ping(connect: Connect, count: int = 8) -> tuple[Optional[float], Optional[float]]:
-    """Round trip and jitter in ms over one connection. The first request, which connects, is not counted."""
+    """Round trip and jitter in ms over one connection. The first request, which connects, is not counted.
+
+    Cloudflare's own measurement of the connection is used when its answers carry one. Otherwise the
+    figure is the time each request took.
+    """
     times: list[float] = []
+    measured: list[tuple[float, float]] = []
     conn: Optional[http.client.HTTPConnection] = None
     try:
         conn = connect(5.0)
@@ -85,6 +109,9 @@ def measure_ping(connect: Connect, count: int = 8) -> tuple[Optional[float], Opt
                 raise Refused(_refusal(response.status))
             if index:
                 times.append((time.perf_counter() - started) * 1000)
+                l4 = _l4_timing(response.getheader("Server-Timing"))
+                if l4 is not None:
+                    measured.append(l4)
     except Refused:
         raise
     except (OSError, http.client.HTTPException):
@@ -94,6 +121,8 @@ def measure_ping(connect: Connect, count: int = 8) -> tuple[Optional[float], Opt
             conn.close()
     if not times:
         return None, None
+    if len(measured) == len(times):
+        return sum(rtt for rtt, _ in measured) / len(measured), sum(var for _, var in measured) / len(measured)
     gaps = [abs(b - a) for a, b in zip(times, times[1:])]
     return sum(times) / len(times), (sum(gaps) / len(gaps) if gaps else 0.0)
 

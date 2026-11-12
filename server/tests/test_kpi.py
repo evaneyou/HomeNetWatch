@@ -827,6 +827,9 @@ def test_only_valid_working_hours_6am_to_12am_eastern_are_counted_and_old_dates_
 
     end_of_sat = datetime(2026, 10, 17, 23, 30, tzinfo=kpi.EASTERN).astimezone(timezone.utc)
     kpi.backfill(db, now=end_of_sat)
+    # Backfill only fills hours before the earliest KPI row (Oct 10 here); the regular refresh computes recent hours.
+    start_of_sat = datetime(2026, 10, 17, 0, 0, tzinfo=kpi.EASTERN).astimezone(timezone.utc)
+    kpi.rebuild(db, start_of_sat, end_of_sat + timedelta(hours=1))
     db.commit()
 
     # Legacy 03:00 ET row was purged and Oct 10 daily record reflects 100% availability

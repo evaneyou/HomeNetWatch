@@ -10,28 +10,6 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
-### Added
-
-- **Cloudflare Speed Test (Pi agent 0.8.13):** a second scheduled speed test that measures the wired link of a
-  Raspberry Pi agent against `speed.cloudflare.com`, outside the tunnel, so the HomeNetWatch server's own bandwidth
-  does not limit the reading. It runs every 60 minutes by default (30 minutes at the fastest, set under Settings >
-  Internet Service), raises no alerts and stays out of the Overview and the KPI figures. Its download and upload
-  show as a second chart on the wired Internet Connection view. The Bandwidth Test and the Speed Test to the server
-  are unchanged. When Cloudflare refuses a run, the agent sends no result (migration `0056_cloudflare_speed`).
-  Agent 0.8.14 reports the round trip Cloudflare measured for the connection; 0.8.13 timed each request, which added
-  the time Cloudflare takes to build its answer.
-- **Wired Network Health shows the Cloudflare reading first:** on a Raspberry Pi agent's Wired view, the first row is
-  **Internet Connection to Cloudflare**: the newest Cloudflare Speed Test reading with the time it was measured. The
-  Bandwidth Test to the server sits below it as **Internet Connection to Dashboard**. The charts follow the same order
-  and names. Wi-Fi and Android agents are unchanged.
-
-### Changed
-
-- **Health rows are a row of ticks with a time axis:** the solid status bar on the Internet Connection and Real-Time
-  Application Health rows is now 48 separate ticks running from the start of the selected range to now, with the
-  start, midpoint and "now" labelled underneath. A row where everything passed no longer looks like a plain green
-  line. When one tick covers several samples it takes the worst status, so a short failure still shows.
-
 ### Security
 
 - **Old-style agent keys are no longer accepted:** every agent key is now stored as SHA-256, so the bcrypt lookup
@@ -118,6 +96,11 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Health rows are a row of ticks with a time axis:** the solid status bar on the Internet Connection and Real-Time
+  Application Health rows is now 48 separate ticks running from the start of the selected range to now, with the
+  start, midpoint and "now" labelled underneath. A row where everything passed no longer looks like a plain green
+  line. When one tick covers several samples it takes the worst status, so a short failure still shows.
+
 - **KPI valid working hours (6:00 AM – 12:00 AM EST, 7 days a week):** KPI availability, packet drop, time offline, outages, reporting gaps and daily health scores now count only measurements taken during valid working hours from 6:00 AM to 12:00 AM Eastern Time (`America/New_York`), 7 days a week; overnight hours (12:00 AM – 6:00 AM ET) are excluded. Migration `0055_kpi_valid_hours` and the KPI backfill purge historical off-hour rows from `kpi_hourly` and recompute `kpi_daily` by Eastern date so all past dates reflect the working-hours window. The KPI Dashboard header, verdict banner, Daily KPI History and footer explicitly state the valid hours.
 - **Landing page redesign:** `site/` has a new look and message (enterprise infrastructure principles applied to a
   home network), a moving radar background that follows the pointer, clickable system layers, an advanced-features
@@ -152,6 +135,19 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
   G.723.1 and Market data options.
 
 ### Added
+
+- **Cloudflare Speed Test (Pi agent 0.8.13):** a second scheduled speed test that measures the wired link of a
+  Raspberry Pi agent against `speed.cloudflare.com`, outside the tunnel, so the HomeNetWatch server's own bandwidth
+  does not limit the reading. It runs every 60 minutes by default (30 minutes at the fastest, set under Settings >
+  Internet Service), raises no alerts and stays out of the Overview and the KPI figures. Its download and upload
+  show as a second chart on the wired Internet Connection view. The Bandwidth Test and the Speed Test to the server
+  are unchanged. When Cloudflare refuses a run, the agent sends no result (migration `0056_cloudflare_speed`).
+  Agent 0.8.14 reports the round trip Cloudflare measured for the connection; 0.8.13 timed each request, which added
+  the time Cloudflare takes to build its answer.
+- **Wired Network Health shows the Cloudflare reading first:** on a Raspberry Pi agent's Wired view, the first row is
+  **Internet Connection to Cloudflare**: the newest Cloudflare Speed Test reading with the time it was measured. The
+  Bandwidth Test to the server sits below it as **Internet Connection to Dashboard**. The charts follow the same order
+  and names. Wi-Fi and Android agents are unchanged.
 
 - **Server-only sites stay out of the repository:** `deploy/Caddyfile` imports `deploy/local/*.caddy` and the
   production overlay mounts that folder, and an optional `docker-compose.local.yml` can be added to `COMPOSE_FILE`.

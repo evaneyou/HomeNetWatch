@@ -26,7 +26,7 @@ from sqlalchemy import Date, DateTime, case, cast, delete, func, literal, select
 from sqlalchemy.orm import Session, aliased
 
 from app.internet_tests import WEB_SERVICES
-from app.models import KpiDaily, KpiHourly, Monitor, Network, NetworkKind, ResultStatus, SyntheticRun, SyntheticSample, Test, TestKind, TestResult
+from app.models import KpiDaily, KpiHourly, Monitor, Network, NetworkKind, ResultStatus, SyntheticRun, SyntheticSample, Test, TestResult
 from app.synthetic import SOFTWARE, is_blackout
 
 log = logging.getLogger(__name__)
@@ -349,12 +349,12 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
                 data = metrics or {}
                 acc.add_metrics(_number(data.get("rtt_ms")), _number(data.get("jitter_ms")), _number(data.get("loss_pct")))
 
-    # Speed: the bandwidth test.
+    # Speed: the bandwidth test to this server. The Cloudflare Speed Test is a different path and is left out.
     speed_rows = db.execute(
         select(TestResult.started_at, TestResult.status, TestResult.metrics, Test.monitor_id, Network.kind)
         .join(Test, TestResult.test_id == Test.id)
         .join(Network, Test.network_id == Network.id)
-        .where(Test.kind == TestKind.librespeed, TestResult.started_at >= start, TestResult.started_at < end, ~TestResult.external_id.startswith("rollup-"))
+        .where(Test.slug == "librespeed", TestResult.started_at >= start, TestResult.started_at < end, ~TestResult.external_id.startswith("rollup-"))
     ).all()
     for started, status, metrics, monitor_id, kind in speed_rows:
         if not is_valid_hour(started) or status.value == "fail":

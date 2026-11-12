@@ -35,7 +35,8 @@ problem starts: DNS, TCP, TLS, the server's first byte, the measurement tunnel, 
   **G.711 µ-law**, **G.729**), **Video conference** and **Remote desktop**, with real round-trip timing
   (`--meter rtt`).
 - **Speed Test & Network Test.** Live 30-second LibreSpeed download/upload throughput tests with animated
-  path diagrams, plus multi-session stress runs to see how links hold up under load.
+  path diagrams, plus multi-session stress runs to see how links hold up under load. An hourly **Cloudflare
+  Speed Test** on a Pi's wired link measures the home line against `speed.cloudflare.com`, outside the tunnel.
 - **Wired and wireless views.** Test over Ethernet (`wg0`) and Wi-Fi (`wg1`) separately on a Raspberry Pi,
   or add Wi-Fi-only Android TV agents in other rooms, and compare links side by side.
 - **KPI Dashboard & Gemini AI Root Cause Analysis.** Daily, weekly, monthly and yearly availability,
@@ -255,7 +256,7 @@ tests go to your own server over the WireGuard tunnel.
 
 The project follows [Semantic Versioning](https://semver.org/) and is pre-1.0, so minor releases may
 include breaking changes. The version is in [`VERSION`](./VERSION) and history is in
-[`CHANGELOG.md`](./CHANGELOG.md). The Pi agent (`0.8.12`, `AGENT_VERSION` in `monitor/agent_state.py`) and
+[`CHANGELOG.md`](./CHANGELOG.md). The Pi agent (`0.8.13`, `AGENT_VERSION` in `monitor/agent_state.py`) and
 the Android TV agent (`0.5.0`, `versionName` in `android/app/build.gradle.kts`) carry their own versions,
 reported to the server.
 

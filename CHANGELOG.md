@@ -10,6 +10,15 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ## [Unreleased]
 
+### Added
+
+- **Cloudflare Speed Test (Pi agent 0.8.13):** a second scheduled speed test that measures the wired link of a
+  Raspberry Pi agent against `speed.cloudflare.com`, outside the tunnel, so the HomeNetWatch server's own bandwidth
+  does not limit the reading. It runs every 60 minutes by default (30 minutes at the fastest, set under Settings >
+  Internet Service), raises no alerts and stays out of the Overview and the KPI figures. Its download and upload
+  show as a second chart on the wired Internet Connection view. The Bandwidth Test and the Speed Test to the server
+  are unchanged. When Cloudflare refuses a run, the agent sends no result (migration `0056_cloudflare_speed`).
+
 ### Security
 
 - **Old-style agent keys are no longer accepted:** every agent key is now stored as SHA-256, so the bcrypt lookup

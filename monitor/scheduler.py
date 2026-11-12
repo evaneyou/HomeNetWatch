@@ -100,7 +100,7 @@ def remember_tests(tests: object) -> None:
     for item in tests:
         if not isinstance(item, dict):
             continue
-        if item.get("kind") not in {"http", "librespeed", "ping", "mtr"}:
+        if item.get("kind") not in {"http", "librespeed", "cloudflare", "ping", "mtr"}:
             continue
         if not item.get("slug") or not item.get("target"):
             continue

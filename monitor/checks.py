@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import cloudflare_speed
+
 TUNNEL_HOST = "10.7.0.1"
 LIBRESPEED_PORT = 8080
 LIBRESPEED_SECONDS = 8
@@ -682,6 +684,8 @@ def run_check(test: dict) -> dict | None:
     kind = test.get("kind")
     if kind == "librespeed":
         return check_librespeed(test)
+    if kind == "cloudflare":
+        return check_cloudflare(test)
     if kind == "http":
         return check_http(test)
     if kind == "ping":
@@ -749,6 +753,33 @@ def check_librespeed(test: dict) -> dict:
         [_stage("transfer", started, status)],
         _speed_metrics(down, up, ping, jitter, total),
         f"{host}:{LIBRESPEED_PORT}",
+    )
+
+
+def check_cloudflare(test: dict) -> dict:
+    """The home line against Cloudflare, outside the tunnel, on the link the test names.
+
+    When Cloudflare refuses the test (a rate limit), this raises and no result is sent: a refusal says
+    nothing about the line, so it must not show as a failed test.
+    """
+    started_at = _now()
+    started = time.perf_counter()
+    host = _host_only(str(test.get("target") or cloudflare_speed.HOST))
+    if not _valid_host(host):
+        return _result(test, started_at, "fail", [_stage("transfer", started, "fail")], _speed_metrics(None, None, None, None, 0), "Cloudflare Speed Test target is not a host")
+    report = cloudflare_speed.measure(cloudflare_speed.connector(_probe_interface(test), host))
+    total = round((time.perf_counter() - started) * 1000, 1)
+    if report is None:
+        return _result(test, started_at, "fail", [_stage("transfer", started, "fail")], _speed_metrics(None, None, None, None, total), f"{host} could not be reached")
+    down, up = report["down_mbps"], report["up_mbps"]
+    status = "ok" if down and up else "fail"
+    return _result(
+        test,
+        started_at,
+        status,
+        [_stage("transfer", started, status)],
+        _speed_metrics(down, up, report["ping_ms"], report["jitter_ms"], total),
+        host,
     )
 
 

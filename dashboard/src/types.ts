@@ -454,6 +454,8 @@ export type InternetServiceSetting = {
   librespeed_enabled: boolean;
   librespeed_interval_seconds: number;
   librespeed_variance_pct: number;
+  cloudflare_enabled: boolean;
+  cloudflare_interval_seconds: number;
 };
 
 export type TestDetail = {

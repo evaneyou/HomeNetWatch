@@ -122,6 +122,8 @@ def _internet_service_out(row) -> InternetServiceSettingOut:
         librespeed_enabled=row.librespeed_enabled,
         librespeed_interval_seconds=row.librespeed_interval_seconds,
         librespeed_variance_pct=row.librespeed_variance_pct,
+        cloudflare_enabled=row.cloudflare_enabled,
+        cloudflare_interval_seconds=row.cloudflare_interval_seconds,
     )
 
 

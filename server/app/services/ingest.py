@@ -6,6 +6,8 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.internet_tests import (
+    CLOUDFLARE_SLUG,
+    classify_cloudflare,
     classify_transfer,
     classify_web_service,
     is_path_check,
@@ -64,6 +66,8 @@ def ingest_results(
         if test.slug == "librespeed":
             pct = variance[0] if variance is not None else internet.librespeed_variance_pct
             status, reason = classify_transfer(db, test, item.metrics, pct)
+        elif test.slug == CLOUDFLARE_SLUG:
+            status, reason = classify_cloudflare(item.metrics)
         elif variance is not None:
             if test.kind.value == "http":
                 abs_floor, jitter_floor = stability.abs_floor_http_ms, 0

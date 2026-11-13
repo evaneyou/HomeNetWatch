@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { Line, LineChart, YAxis } from "recharts";
 import { api } from "../api";
 import { isAnonymized, shownAnon } from "../anonymized";
 import { isAndroid } from "../deviceType";
-import type { HealthCell, MonitorAdmin, Summary, User } from "../types";
+import type { HealthCell, Issue, MonitorAdmin, Summary, User } from "../types";
 import "../overview.css";
 
 type CheckState = "ok" | "slow" | "down" | "unknown";
@@ -317,6 +318,85 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
   return { locations };
 }
 
+/** One traffic type of the continuous voice and video streams on a link, as /synthetic/health returns it. */
+type StreamType = {
+  slug: string;
+  latest: { rtt_ms: number | null; jitter_ms: number | null; loss_pct: number | null };
+  points: { rtt_ms: number | null; jitter_ms: number | null }[];
+};
+type TileMetric = { value: string; label: string; series: number[] };
+
+const HERO_WORD: Record<Mood, string> = {
+  happy: "happy",
+  curious: "warming up",
+  slow: "a little slow",
+  down: "having trouble",
+};
+
+/** At most `max` values, evenly spaced, so a sparkline stays light whatever the sample count. */
+function thin(values: number[], max = 40): number[] {
+  if (values.length <= max) return values;
+  const step = values.length / max;
+  return Array.from({ length: max }, (_, index) => values[Math.floor(index * step)]);
+}
+
+function numbers(values: (number | null)[]): number[] {
+  return values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+}
+
+/** Round-trip time of the first stream on a link that has reported one. */
+function rttMetric(types: StreamType[]): TileMetric | null {
+  const type = types.find((item) => item.latest.rtt_ms !== null);
+  if (!type || type.latest.rtt_ms === null) return null;
+  return {
+    value: `${Math.round(type.latest.rtt_ms)} ms`,
+    label: "round trip",
+    series: thin(numbers(type.points.map((point) => point.rtt_ms))),
+  };
+}
+
+/** The worst current jitter across every stream: the number a call or a video would feel first. */
+function jitterMetric(types: StreamType[]): TileMetric | null {
+  let worst: StreamType | null = null;
+  for (const type of types) {
+    if (type.latest.jitter_ms === null) continue;
+    if (!worst || type.latest.jitter_ms > (worst.latest.jitter_ms ?? 0)) worst = type;
+  }
+  if (!worst || worst.latest.jitter_ms === null) return null;
+  return {
+    value: `${worst.latest.jitter_ms < 10 ? worst.latest.jitter_ms.toFixed(1) : Math.round(worst.latest.jitter_ms)} ms`,
+    label: "jitter",
+    series: thin(numbers(worst.points.map((point) => point.jitter_ms))),
+  };
+}
+
+function webMetric(cells: HealthCell[], monitorId: string): TileMetric | null {
+  const cell = cells.find((item) => item.monitor_id === monitorId && item.column === "web" && item.quorum && item.quorum.total > 0);
+  if (!cell?.quorum) return null;
+  return { value: `${cell.quorum.total - cell.quorum.bad}/${cell.quorum.total}`, label: "sites up", series: [] };
+}
+
+/** The last hour of a number as a small line. Decoration: the value beside it carries the meaning. */
+function Spark({ series }: { series: number[] }) {
+  if (series.length < 2) return null;
+  return (
+    <span className="home-spark" aria-hidden="true">
+      <LineChart width={120} height={30} data={series.map((v) => ({ v }))} margin={{ top: 4, right: 3, bottom: 4, left: 3 }}>
+        <YAxis hide domain={["dataMin", "dataMax"]} />
+        <Line type="monotone" dataKey="v" dot={false} strokeWidth={2.4} isAnimationActive animationDuration={1600} />
+      </LineChart>
+    </span>
+  );
+}
+
+function when(iso: string): string {
+  const date = new Date(iso);
+  const sameDay = date.toDateString() === new Date().toDateString();
+  return sameDay
+    ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : date.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+}
+
 export default function OverviewPage() {
   const q = useQuery({
     queryKey: ["summary"],
@@ -329,7 +409,25 @@ export default function OverviewPage() {
     refetchInterval: 30_000,
   });
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.me() as Promise<User> });
-  const hideCity = me.data?.role === "guest" || !me.data;
+  const issuesQ = useQuery({
+    queryKey: ["issues", "all"],
+    queryFn: () => api.issues() as Promise<Issue[]>,
+    refetchInterval: 60_000,
+  });
+  const role = me.data?.role;
+  const hideCity = role === "guest" || !me.data;
+
+  // The numbers and sparklines on the tiles come from the continuous streams: Wi-Fi and Wired on a Pi, Wi-Fi on Android.
+  const streamLinks = (q.data?.monitors ?? []).flatMap((monitor) =>
+    (isAndroid(monitor.platform) ? (["wireless"] as const) : (["wireless", "wired"] as const)).map((link) => ({ id: monitor.id, link })),
+  );
+  const streamQs = useQueries({
+    queries: streamLinks.map(({ id, link }) => ({
+      queryKey: ["synthetic-health", id, link, "1h"],
+      queryFn: () => api.syntheticHealth(id, link, "1h") as Promise<{ types: StreamType[] }>,
+      refetchInterval: 60_000,
+    })),
+  });
 
   if (q.isLoading) {
     return (
@@ -346,19 +444,100 @@ export default function OverviewPage() {
     );
   }
 
+  const data = q.data;
   const regionById = new Map((monitorsQ.data ?? []).map((monitor) => [monitor.id, monitor.region]));
-  const view = viewOf(q.data, regionById);
+  const view = viewOf(data, regionById);
+
+  const streams = new Map<string, StreamType[]>();
+  streamLinks.forEach(({ id, link }, index) => streams.set(`${id}:${link}`, streamQs[index]?.data?.types ?? []));
+  const metricOf = (monitorId: string, key: string): TileMetric | null => {
+    const wifi = streams.get(`${monitorId}:wireless`) ?? [];
+    const wired = streams.get(`${monitorId}:wired`) ?? [];
+    if (key === "wifi") return rttMetric(wifi);
+    if (key === "wired") return rttMetric(wired);
+    if (key === "apps") return jitterMetric([...wifi, ...wired]);
+    return webMetric(data.matrix, monitorId);
+  };
+
+  const overall: Mood | null = view.locations.length > 0 ? view.locations[0].mood : null;
+  const online = view.locations.filter((location) => location.probeOnline).length;
+  const openCount = data.open_issues.length;
+  const lately = [...(issuesQ.data ?? [])].sort((a, b) => b.opened_at.localeCompare(a.opened_at)).slice(0, 3);
+  const shortcuts = [
+    { to: "/path", label: "Path View", note: "Hop by hop to the server" },
+    { to: "/airwaves", label: "Airwaves", note: "Wi-Fi around the house" },
+    { to: "/issues", label: "Issues", note: openCount === 0 ? "None open" : `${openCount} open` },
+    { to: "/kpi", label: "KPI Dashboard", note: "Scores over time" },
+    ...(role === "admin" || role === "guest" ? [{ to: "/server-health", label: "Server Health", note: "CPU, memory, disk" }] : []),
+  ];
 
   return (
     <div className="dash">
-      <header className="dash-head">
+      <div className="home-sky" aria-hidden="true">
+        <span className="home-glow g1" />
+        <span className="home-glow g2" />
+        <span className="home-glow g3" />
+        <span className="home-star s1" />
+        <span className="home-star s2" />
+        <span className="home-star s3" />
+        <span className="home-star s4" />
+      </div>
+
+      <header className={`home-hero mood-${overall ?? "curious"}`}>
+        <div className="home-hero-orb" aria-hidden="true">
+          <span className="home-ripple" />
+          <span className="home-ripple r2" />
+          <span className="home-ripple r3" />
+          <div className="home-bob">
+            <div className={`orb mood-${overall ?? "curious"}`}>
+              <Face mood={overall ?? "curious"} />
+            </div>
+          </div>
+        </div>
+        <div className="home-hero-text">
+          {overall ? (
+            <h1>
+              Your home network is{" "}
+              <span className="home-word">
+                {HERO_WORD[overall]}
+                <svg viewBox="0 0 120 12" preserveAspectRatio="none" aria-hidden="true">
+                  <path pathLength={1} d="M2 7c10-8 18 8 29 0s19 8 29 0 19 8 29 0 19 7 29 0" />
+                </svg>
+              </span>
+              .
+            </h1>
+          ) : (
+            <h1>Waiting for your first remote agent.</h1>
+          )}
+          <ul className="home-pills">
+            <li className="live">
+              <span className="home-live-dot" />
+              {online} of {view.locations.length} {view.locations.length === 1 ? "agent" : "agents"} reporting
+            </li>
+            <li>
+              <Link to="/issues">{openCount === 0 ? "No open issues" : `${openCount} open ${openCount === 1 ? "issue" : "issues"}`}</Link>
+            </li>
+            <li>Checked {when(data.generated_at)}</li>
+          </ul>
+        </div>
         <ul className="legend" aria-label="What the colors mean">
           <li><span className="dot ok" />Happy</li>
           <li><span className="dot slow" />Slow</li>
           <li><span className="dot down" />Down</li>
           <li><span className="dot unknown" />Not tested yet</li>
         </ul>
+        <div className="home-wave w1" aria-hidden="true">
+          <svg viewBox="0 0 1200 34" preserveAspectRatio="none">
+            <path d="M0 18c50-18 100 18 150 0s100 18 150 0 100 18 150 0 100 18 150 0 100 18 150 0 100 18 150 0 100 18 150 0 100 18 150 0v16H0z" />
+          </svg>
+        </div>
+        <div className="home-wave w2" aria-hidden="true">
+          <svg viewBox="0 0 1200 24" preserveAspectRatio="none">
+            <path d="M0 12c50-12 100 12 150 0s100 12 150 0 100 12 150 0 100 12 150 0 100 12 150 0 100 12 150 0 100 12 150 0 100 12 150 0v12H0z" />
+          </svg>
+        </div>
       </header>
+
       <main className="probe-grid">
         {view.locations.length === 0 ? <p className="probe-text">No locations have checked in yet.</p> : null}
         {view.locations.map((location, index) => (
@@ -381,8 +560,10 @@ export default function OverviewPage() {
             </Link>
             <div className="probe-top">
               <div className="orb-wrap" tabIndex={0} aria-label={`${location.colorTitle}. ${location.reason}`}>
-                <div className={`orb mood-${location.mood}`} role="img" aria-hidden="true">
-                  <Face mood={location.mood} />
+                <div className="home-bob">
+                  <div className={`orb mood-${location.mood}`} role="img" aria-hidden="true">
+                    <Face mood={location.mood} />
+                  </div>
                 </div>
                 <div className="orb-popover" role="tooltip">
                   <div className="orb-popover-head">
@@ -410,7 +591,9 @@ export default function OverviewPage() {
                 </div>
               </div>
               <div className="probe-text">
-                <h2 id={`loc-${index + 1}`}>{location.name}</h2>
+                <h2 id={`loc-${index + 1}`}>
+                  <Link to={`/monitors/${location.id}`}>{location.name}</Link>
+                </h2>
                 <span className="device-chip">
                   <DeviceArt android={location.android} />
                   {location.android ? "NVIDIA Shield · Android" : "Raspberry Pi · Linux"}
@@ -433,23 +616,70 @@ export default function OverviewPage() {
               </div>
             </div>
             <ul className="checks">
-              {location.checks.map((check) => (
-                <li key={check.key}>
-                  <Link className={`chip ${check.state}`} to={check.href}>
-                    <span className="chip-icon">
-                      <Icon name={check.icon} />
-                    </span>
-                    <span className="chip-text">
-                      <span className="chip-label">{check.label}</span>
-                      <span className="chip-detail">{check.detail}</span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
+              {location.checks.map((check) => {
+                const metric = check.state === "unknown" ? null : metricOf(location.id, check.key);
+                return (
+                  <li key={check.key}>
+                    <Link className={`chip ${check.state}`} to={check.href}>
+                      <span className="chip-icon">
+                        <Icon name={check.icon} />
+                      </span>
+                      <span className="chip-text">
+                        <span className="chip-label">{check.label}</span>
+                        <span className="chip-detail">{check.detail}</span>
+                      </span>
+                      {metric ? <Spark series={metric.series} /> : null}
+                      {metric ? (
+                        <span className="chip-metric">
+                          <span className="chip-value">{metric.value}</span>
+                          <span className="chip-unit">{metric.label}</span>
+                        </span>
+                      ) : null}
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         ))}
       </main>
+
+      <section className="home-lately" aria-labelledby="home-lately-title">
+        <div className="home-lately-head">
+          <h2 id="home-lately-title">Lately</h2>
+          <Link to="/issues">See all issues</Link>
+        </div>
+        {issuesQ.isLoading ? <p className="home-lately-empty">Loading…</p> : null}
+        {issuesQ.isError ? <p className="home-lately-empty">Could not load recent issues.</p> : null}
+        {!issuesQ.isLoading && !issuesQ.isError && lately.length === 0 ? (
+          <p className="home-lately-empty">Nothing to report. No issues on record.</p>
+        ) : null}
+        {lately.length > 0 ? (
+          <ul>
+            {lately.map((issue) => {
+              const open = issue.status === "open";
+              return (
+                <li key={issue.id}>
+                  <span className={`dot ${open ? (issue.severity === "critical" ? "down" : "slow") : "ok"}`} />
+                  <Link to={`/issues/${issue.id}`}>{issue.title}</Link>
+                  <span className="home-lately-meta">
+                    {open ? "Open" : "Resolved"} · {when(issue.opened_at)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </section>
+
+      <nav className="home-shortcuts" aria-label="Other views">
+        {shortcuts.map((item) => (
+          <Link key={item.to} to={item.to}>
+            <strong>{item.label}</strong>
+            <span>{item.note}</span>
+          </Link>
+        ))}
+      </nav>
     </div>
   );
 }

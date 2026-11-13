@@ -96,6 +96,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- Landing page (`site/`): the radar, background and pointer effects now play even when the device reports reduced motion, to match the Home page.
 - Home page redesign: a summary sentence with the overall mood, agents reporting, open issues and the time of the last check; each agent's Wi-Fi, Wired, Web and Apps tile now shows a live number (round trip, sites up, jitter) and a one-hour trend line from the continuous streams; a Lately list of the most recent issues; shortcuts to Path View, Airwaves, Issues, KPI Dashboard and Server Health. The characters, background and trend lines are animated; the Home page plays this motion even when the device reports reduced motion.
 - **The Cloudflare Speed Test runs on the clock, as often as every 15 minutes (Pi agent 0.8.17):** the shortest
   interval is 15 minutes, down from 30. The agent runs the test at whole intervals past the hour (every 15 minutes

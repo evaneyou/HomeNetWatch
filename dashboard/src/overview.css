@@ -362,9 +362,6 @@
   50%      { transform: rotate(-0.8deg); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .dash::before, .dash::after, .orb, .chip.down { animation: none; }
-}
 
 /* ───── Home "Friendly glance": hero, moving characters, numbers and trend lines on the tiles ───── */
 
@@ -556,9 +553,8 @@
 @keyframes home-twinkle { 0%, 100% { opacity: 0.15; transform: scale(0.8); } 50% { opacity: 0.9; transform: scale(1.2); } }
 @keyframes home-rise { 0% { opacity: 0; transform: translateY(18px); } 100% { opacity: 1; transform: translateY(0); } }
 
-@media (prefers-reduced-motion: reduce) {
-  .dash *, .dash *::before, .dash *::after { animation: none !important; transition: none !important; }
-}
+/* The Home page keeps its motion when the device reports reduced motion (owner decision 2026-11-13): Windows
+   reports it on many PCs whose animation setting is on, and those visitors saw a completely still page. */
 
 /* A card's explanation pop-up must sit above the card after it. */
 .dash .probe:hover, .dash .probe:focus-within { z-index: 6; }

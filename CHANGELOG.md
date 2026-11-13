@@ -96,6 +96,13 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Health rows show internet availability, not the Bandwidth Test:** the row under the Cloudflare reading on an
+  agent's Wired view, the only row on its Wi-Fi view, and the two summaries on the Internet Connection page are now
+  **Internet Availability**: the share of the minute-by-minute ping checks that got an answer, with the latest ping
+  and loss, and ticks coloured from the ping and HTTP path checks. They no longer need the Bandwidth Test, which can
+  be turned off under Settings > Internet Service: each run filled the line for about 40 seconds and showed up as
+  failed samples on the real-time flows. The connection diagram shows the Cloudflare speed on the wired link and the
+  ping alone on Wi-Fi. Past Bandwidth Test readings stay on the charts.
 - **The Cloudflare Speed Test is gentler (Pi agent 0.8.16):** it filled the line with parallel connections for 8
   seconds each way, about 500 MB a run on a fast line, and Cloudflare refused it (HTTP 429) for hours afterwards. It
   now makes a few transfers one at a time, small ones first, with a pause between them, the way Cloudflare's own page

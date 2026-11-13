@@ -22,6 +22,8 @@ import HealthTicks from "./HealthTicks";
 import RealtimeHealth from "./RealtimeHealth";
 import {
   APPS,
+  availability,
+  availabilityText,
   COLORS,
   type ChartRange,
   type CheckKey,
@@ -183,11 +185,7 @@ export function InternetDetail({
     : null;
 
   const latestHops = (points.get(mtrSlug) ?? []).at(-1)?.hops ?? [];
-  const latestLibre = (points.get("librespeed") ?? []).at(-1);
-  const transferStrip = useMemo(
-    () => statusStrip(points.get("librespeed") ?? [], range),
-    [points, range],
-  );
+  const available = useMemo(() => availability(points, range), [points, range]);
   const span = chartWindow(range);
   const linkHealth = detail === "isp" && (linkLabel === "Wired" || linkLabel === "Wi-Fi");
   const healthLink = linkLabel === "Wi-Fi" ? "wireless" : "wired";
@@ -254,10 +252,10 @@ export function InternetDetail({
                 />
               ) : null}
               <HealthBar
-                title={hasCloudflare ? "Internet Connection to Dashboard" : "Internet Connection"}
-                detail={`${fmt(speed(latestLibre).down)} Mbps down · ${fmt(speed(latestLibre).up)} Mbps up · ping ${fmt(latestLibre?.rtt_ms)} ms · jitter ${fmt(latestLibre?.jitter_ms)} ms`}
-                strip={transferStrip}
-                empty={transferChart.length === 0}
+                title="Internet Availability"
+                detail={availabilityText(available)}
+                strip={available.strip}
+                empty={available.samples === 0}
                 range={range}
                 onOpen={openConnection}
               />
@@ -305,24 +303,30 @@ export function InternetDetail({
                 />
                 <p className="muted field-hint">
                   The chart above is the Cloudflare Speed Test: the wired link against speed.cloudflare.com, outside the
-                  tunnel, about once an hour. Pick a range of 6 hours or more to see several readings. The charts below
-                  are the Bandwidth Test to the HomeNetWatch server, through the tunnel.
+                  tunnel, about once an hour. Pick a range of 6 hours or more to see several readings.
+                  {transferChart.length > 0 ? " The charts below are the Bandwidth Test to the HomeNetWatch server, through the tunnel." : ""}
                 </p>
               </>
             ) : null}
-            <PathChart
-              title={hasCloudflare ? "Download and upload to Dashboard" : "Download and upload"}
-              data={transferChart}
-              span={span}
-              series={[
-                { key: "down", label: "Download" },
-                { key: "up", label: "Upload" },
-              ]}
-              unit=" Mbps"
-            />
-            <PathChart title={hasCloudflare ? "Ping to Dashboard" : "Ping"} data={transferChart} span={span} dataKey="ping" label="Ping" unit=" ms" />
-            <PathChart title={hasCloudflare ? "Jitter to Dashboard" : "Jitter"} data={transferChart} span={span} dataKey="jitter" label="Jitter" unit=" ms" />
-            <ConnectionLimitChart points={transferChart} range={range} domain={span} variancePct={settingsQ.data?.librespeed_variance_pct ?? 25} />
+            {transferChart.length > 0 ? (
+              <>
+                <PathChart
+                  title={hasCloudflare ? "Download and upload to Dashboard" : "Download and upload"}
+                  data={transferChart}
+                  span={span}
+                  series={[
+                    { key: "down", label: "Download" },
+                    { key: "up", label: "Upload" },
+                  ]}
+                  unit=" Mbps"
+                />
+                <PathChart title={hasCloudflare ? "Ping to Dashboard" : "Ping"} data={transferChart} span={span} dataKey="ping" label="Ping" unit=" ms" />
+                <PathChart title={hasCloudflare ? "Jitter to Dashboard" : "Jitter"} data={transferChart} span={span} dataKey="jitter" label="Jitter" unit=" ms" />
+                <ConnectionLimitChart points={transferChart} range={range} domain={span} variancePct={settingsQ.data?.librespeed_variance_pct ?? 25} />
+              </>
+            ) : hasCloudflare ? null : (
+              <div className="muted">The Bandwidth Test is turned off, so there is no speed reading in this range.</div>
+            )}
           </>
         )}
       </div>

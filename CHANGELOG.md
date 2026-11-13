@@ -96,6 +96,12 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **The Cloudflare Speed Test is gentler (Pi agent 0.8.16):** it filled the line with parallel connections for 8
+  seconds each way, about 500 MB a run on a fast line, and Cloudflare refused it (HTTP 429) for hours afterwards. It
+  now makes a few transfers one at a time, small ones first, with a pause between them, the way Cloudflare's own page
+  does: about 130 MB down and 40 MB up. The reading is the typical speed of the largest transfers, so download reads
+  a little lower than before on a fast line. After a refusal the agent waits the time Cloudflare asks for, plus five
+  minutes, before it tries again.
 - **Health rows are a row of ticks with a time axis:** the solid status bar on the Internet Connection and Real-Time
   Application Health rows is now 48 separate ticks running from the start of the selected range to now, with the
   start, midpoint and "now" labelled underneath. A row where everything passed no longer looks like a plain green

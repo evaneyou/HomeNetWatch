@@ -98,6 +98,10 @@ def poll_restart(config: dict) -> None:
 # own process when the server asks for a restart, and without this every such test would run again at
 # once: the Cloudflare Speed Test uses a free public service, which refuses runs that come too often.
 PERSIST_MIN_INTERVAL = 1800
+# When a service refuses a test and says how long to wait, the next try comes this long after that wait is
+# over, so it does not land on the last second of it. A wait is never stretched by more than MAX_EXTRA_WAIT.
+RETRY_MARGIN = 300
+MAX_EXTRA_WAIT = 4 * 3600
 SCHEDULE_PATH = state.CONFIG_PATH.with_name("schedule.json")
 
 def _saved_runs() -> dict[str, float]:
@@ -131,8 +135,8 @@ def _restore_runs(assigned: list[dict], now: float) -> None:
         if last is None:
             continue
         left = last + _interval_seconds(test) - wall
-        # A clock that moved back would give a wait longer than the interval; run now in that case.
-        if 0 < left <= _interval_seconds(test):
+        # A clock that moved back would give a wait far longer than the interval; run now in that case.
+        if 0 < left <= _interval_seconds(test) + MAX_EXTRA_WAIT:
             state._next_run[_test_key(test)] = now + left
 
 def remember_tests(tests: object) -> None:
@@ -173,21 +177,30 @@ def due_tests(now: float) -> list[dict]:
         ready = [test for test in assigned if now >= state._next_run.get(_test_key(test), 0)]
     return ready
 
-def _mark_ran(test: dict) -> None:
+def _extra_wait(test: dict, retry_after: object) -> float:
+    """Seconds to add to the usual interval so the next run comes after the wait a service asked for."""
+    if isinstance(retry_after, bool) or not isinstance(retry_after, (int, float)) or retry_after <= 0:
+        return 0.0
+    return min(max(0.0, retry_after + RETRY_MARGIN - _interval_seconds(test)), MAX_EXTRA_WAIT)
+
+def _mark_ran(test: dict, extra: float = 0.0) -> None:
     with state._lock:
-        state._next_run[_test_key(test)] = time.monotonic() + _interval_seconds(test)
+        state._next_run[_test_key(test)] = time.monotonic() + _interval_seconds(test) + extra
     if _interval_seconds(test) >= PERSIST_MIN_INTERVAL:
-        _save_run(_test_key(test), time.time())
+        # Saved as if the run were `extra` later, so a restart waits out the same time.
+        _save_run(_test_key(test), time.time() + extra)
 
 def _run_one(test: dict) -> dict | None:
     result = None
+    extra = 0.0
     try:
         result = run_check(test)
     except (OSError, TimeoutError, ValueError) as exc:
         with state._lock:
             state._last_error = str(exc)
+        extra = _extra_wait(test, getattr(exc, "retry_after", None))
     finally:
-        _mark_ran(test)
+        _mark_ran(test, extra)
     return result
 
 def _idle_seconds() -> float:

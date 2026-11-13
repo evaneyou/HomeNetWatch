@@ -83,3 +83,34 @@ def test_a_schedule_file_that_cannot_be_written_does_not_stop_the_test(agent, tm
     monkeypatch.setattr(module, "SCHEDULE_PATH", tmp_path / "missing-folder" / "schedule.json")
     module._mark_ran(CLOUDFLARE)
     assert KEY in module.state._next_run
+
+
+def test_a_refusal_with_a_wait_pushes_the_next_run_past_it(agent, monkeypatch, tmp_path):
+    module = agent()
+
+    class Refused(OSError):
+        retry_after = 3550.0
+
+    def refuse(_test):
+        raise Refused("Cloudflare refused the speed test (HTTP 429)")
+
+    monkeypatch.setattr(module, "run_check", refuse)
+    assert module._run_one(CLOUDFLARE) is None
+    # An hour from now would land ten seconds after the wait ends. The next run comes five minutes after it instead.
+    left = module.state._next_run[KEY] - time.monotonic()
+    assert 3840 < left <= 3850
+    assert "429" in module.state._last_error
+
+    # A restart keeps the longer wait.
+    restarted = agent()
+    assert "cloudflare-speed" not in _due(restarted)
+    assert 3800 < restarted.state._next_run[KEY] - time.monotonic() <= 3850
+
+
+def test_a_short_wait_or_none_keeps_the_usual_interval(agent, monkeypatch):
+    module = agent()
+    assert module._extra_wait(CLOUDFLARE, 600) == 0
+    assert module._extra_wait(CLOUDFLARE, None) == 0
+    assert module._extra_wait(CLOUDFLARE, "soon") == 0
+    # A very long wait is capped, so one bad answer cannot park the test for days.
+    assert module._extra_wait(CLOUDFLARE, 10**9) == module.MAX_EXTRA_WAIT

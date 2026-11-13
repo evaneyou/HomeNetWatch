@@ -1152,7 +1152,7 @@ export default function KpiPage() {
         ) : null}
 
         {pi ? (
-        <Panel title="Internet speed" note="Average from the bandwidth test, Mbit/s">
+        <Panel title="Internet speed" note="Average from the Cloudflare Speed Test, Mbit/s. Hours without one use the Bandwidth Test.">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid stroke={C.grid} vertical={false} />

@@ -96,6 +96,9 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **KPI internet speed comes from the Cloudflare Speed Test:** an hour and link with a Cloudflare reading uses it,
+  since it measures the line and not the HomeNetWatch server. An hour without one, such as the Wi-Fi link or any hour
+  before that test existed, keeps the Bandwidth Test's figures. Determine Root Cause is given both tests' readings.
 - **Health rows show internet availability, not the Bandwidth Test:** the row under the Cloudflare reading on an
   agent's Wired view, the only row on its Wi-Fi view, and the two summaries on the Internet Connection page are now
   **Internet Availability**: the share of the minute-by-minute ping checks that got an answer, with the latest ping

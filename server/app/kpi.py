@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Date, DateTime, case, cast, delete, func, literal, select
 from sqlalchemy.orm import Session, aliased
 
-from app.internet_tests import WEB_SERVICES
+from app.internet_tests import CLOUDFLARE_SLUG, WEB_SERVICES
 from app.models import KpiDaily, KpiHourly, Monitor, Network, NetworkKind, ResultStatus, SyntheticRun, SyntheticSample, Test, TestResult
 from app.synthetic import SOFTWARE, is_blackout
 
@@ -349,15 +349,23 @@ def compute_hours(db: Session, start: datetime, end: datetime) -> dict[Key, Acc]
                 data = metrics or {}
                 acc.add_metrics(_number(data.get("rtt_ms")), _number(data.get("jitter_ms")), _number(data.get("loss_pct")))
 
-    # Speed: the bandwidth test to this server. The Cloudflare Speed Test is a different path and is left out.
+    # Speed: the Cloudflare Speed Test, which measures the line and not this server. An hour and link with no
+    # such reading (the Wi-Fi link, and every hour before that test existed) keeps the Bandwidth Test's.
     speed_rows = db.execute(
-        select(TestResult.started_at, TestResult.status, TestResult.metrics, Test.monitor_id, Network.kind)
+        select(TestResult.started_at, TestResult.status, TestResult.metrics, Test.monitor_id, Network.kind, Test.slug)
         .join(Test, TestResult.test_id == Test.id)
         .join(Network, Test.network_id == Network.id)
-        .where(Test.slug == "librespeed", TestResult.started_at >= start, TestResult.started_at < end, ~TestResult.external_id.startswith("rollup-"))
+        .where(
+            Test.slug.in_(("librespeed", CLOUDFLARE_SLUG)),
+            TestResult.started_at >= start,
+            TestResult.started_at < end,
+            ~TestResult.external_id.startswith("rollup-"),
+        )
     ).all()
-    for started, status, metrics, monitor_id, kind in speed_rows:
-        if not is_valid_hour(started) or status.value == "fail":
+    speed_rows = [row for row in speed_rows if is_valid_hour(row[0]) and row[1].value != "fail"]
+    has_cloudflare = {(hour_of(started), monitor_id, _link(kind.value)) for started, _s, _m, monitor_id, kind, slug in speed_rows if slug == CLOUDFLARE_SLUG}
+    for started, status, metrics, monitor_id, kind, slug in speed_rows:
+        if slug != CLOUDFLARE_SLUG and (hour_of(started), monitor_id, _link(kind.value)) in has_cloudflare:
             continue
         acc = out[(hour_of(started), monitor_id, _link(kind.value), "speed")]
         acc.n += 1

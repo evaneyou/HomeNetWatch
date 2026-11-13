@@ -16,7 +16,7 @@ import {
 import { api } from "../api";
 import { TimeAxis } from "../components/InternetDetail";
 import { CHART_COLORS } from "../chartTheme";
-import { chartWindow, formatChartTick } from "../chartTime";
+import { chartTicks, chartWindow, formatChartTick, formatChartTime } from "../chartTime";
 import type { User } from "../types";
 
 type Range = "1h" | "6h" | "24h" | "7d";
@@ -271,7 +271,7 @@ function Chart({
               />
               {lines.length > 1 ? <Legend /> : null}
               <Tooltip
-            labelFormatter={(value) => formatChartTick(Number(value), span[1] - span[0])}
+            labelFormatter={(value) => formatChartTime(Number(value))}
             formatter={(value, name) => {
               const shown =
                 typeof value === "number" ? (unit === " %" ? `${value.toFixed(1)}%` : unit === "/s" ? perSecond(value) : amount(value)) : "—";
@@ -335,8 +335,10 @@ function StorageChart({ history, projection, total }: { history: { ts: number; u
             type="number"
             scale="time"
             domain={[rows[0].ts, end]}
+            ticks={chartTicks([rows[0].ts, end])}
             tick={{ fontSize: 11, fill: "var(--muted)" }}
-            tickFormatter={(value) => new Date(Number(value)).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            minTickGap={24}
+            tickFormatter={(value) => formatChartTick(value, end - rows[0].ts)}
           />
           <YAxis
             domain={[0, total]}

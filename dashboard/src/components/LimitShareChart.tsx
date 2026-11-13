@@ -1,6 +1,6 @@
 import { Bar, BarChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { CHART_COLORS } from "../chartTheme";
-import { chartWindow, formatChartTick } from "../chartTime";
+import { chartWindow, formatChartTime } from "../chartTime";
 import { TimeAxis } from "./TimeAxis";
 
 export type LimitMetric = {
@@ -139,7 +139,7 @@ export default function LimitShareChart({
                 width={64}
               />
               <Tooltip
-                labelFormatter={(value) => formatChartTick(value, span[1] - span[0])}
+                labelFormatter={(value) => formatChartTime(value)}
                 formatter={(value, name, item) => {
                   const key = String(item?.dataKey ?? "");
                   const metric = metrics.find((entry) => entry.key === key);

@@ -16,7 +16,7 @@ import {
 } from "recharts";
 import { api } from "../api";
 import { CHART_COLORS } from "../chartTheme";
-import { chartTicks, chartWindow, formatChartTick, zoomedDomain } from "../chartTime";
+import { chartTicks, chartWindow, formatChartTick, formatChartTime, zoomedDomain } from "../chartTime";
 import { useChartZoom } from "../useChartZoom";
 import { checkLabel, networkLabel } from "../labels";
 import type { MetricsResponse, TestDetail } from "../types";
@@ -193,7 +193,7 @@ function ZoomArea({
             tick={{ fontSize: 10 }}
           />
           <YAxis tick={{ fontSize: 11 }} unit="ms" />
-          <Tooltip labelFormatter={(value) => formatChartTick(value, domain[1] - domain[0])} />
+          <Tooltip labelFormatter={(value) => formatChartTime(value)} />
           {zoom.selection}
           {stageNames.map((name, i) => (
             <Area
@@ -244,7 +244,7 @@ function ZoomLine({
             tick={{ fontSize: 10 }}
           />
           <YAxis tick={{ fontSize: 11 }} unit={unit} />
-          <Tooltip labelFormatter={(value) => formatChartTick(value, domain[1] - domain[0])} />
+          <Tooltip labelFormatter={(value) => formatChartTime(value)} />
           {zoom.selection}
           <Line type="monotone" dataKey={dataKey} stroke={stroke} dot={false} strokeWidth={2} />
         </LineChart>
@@ -279,7 +279,7 @@ function ZoomBars({
             tick={{ fontSize: 10 }}
           />
           <YAxis tick={{ fontSize: 11 }} unit="%" />
-          <Tooltip labelFormatter={(value) => formatChartTick(value, domain[1] - domain[0])} />
+          <Tooltip labelFormatter={(value) => formatChartTime(value)} />
           {zoom.selection}
           <Bar dataKey="loss_pct" fill="var(--degraded)" radius={[12, 12, 4, 4]} />
         </BarChart>

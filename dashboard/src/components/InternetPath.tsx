@@ -5,19 +5,20 @@ import ConnectionDiagramLink from "./ConnectionDiagramLink";
 import { HealthBar, InternetDetail, RangeTabs, TimeAxis } from "./InternetDetail";
 import {
   APPS,
+  AVAILABILITY_SLUGS,
+  availability,
+  availabilityLive,
+  availabilityText,
   RANGES,
   type ChartRange,
   type DetailKey,
   type StripRange,
   STRIP_RANGES,
   type TestRow,
-  fmt,
   isDetail,
   isSaasProbe,
-  liveOf,
   logProbeForDetail,
   speed,
-  statusStrip,
   stripGradient,
   useAppStrips,
   useSeries,
@@ -75,7 +76,7 @@ export default function InternetPath({
     const next = new URLSearchParams(searchParams);
     next.set("detail", "isp");
     next.set("link", linkName);
-    next.set("check", "librespeed");
+    next.set("check", "availability");
     next.delete("view");
     const id = (linkName === "wireless" ? wireless : wired)[0]?.network_id;
     if (id) next.set("network", id);
@@ -352,45 +353,47 @@ function InternetConnection({
   const [localRange, setLocalRange] = useState<ChartRange>("1h");
   const range = rangeProp ?? localRange;
   const setRange = onRangeChange ?? setLocalRange;
+  const pathTests = (tests: TestRow[]) => tests.filter((test) => (AVAILABILITY_SLUGS as readonly string[]).includes(test.slug));
+  const wiredPath = useSeries(pathTests(wired), range);
+  const wirelessPath = useSeries(pathTests(wireless), range);
+  // The only speed reading left is the Cloudflare Speed Test on the wired link, about once an hour.
   const wiredSpeed = useSeries(
-    wired.filter((test) => test.slug === "librespeed"),
-    range,
+    wired.filter((test) => test.slug === "cloudflare-speed"),
+    "24h",
   );
-  const wirelessSpeed = useSeries(
-    wireless.filter((test) => test.slug === "librespeed"),
-    range,
-  );
+  const wiredAvailable = availability(wiredPath.points, range);
+  const wirelessAvailable = availability(wirelessPath.points, range);
+  const wiredFigures = speed((wiredSpeed.points.get("cloudflare-speed") ?? []).at(-1));
   return (
     <section className="panel network-health">
       <h2 style={{ marginTop: 0, fontSize: "1rem" }}>Internet Connection</h2>
       <ConnectionDiagramLink
         monitorId={monitorId}
-        wired={liveOf(wiredSpeed.points.get("librespeed") ?? [])}
-        wireless={liveOf(wirelessSpeed.points.get("librespeed") ?? [])}
+        wired={{ ...availabilityLive(wiredAvailable), down: wiredFigures.down, up: wiredFigures.up }}
+        wireless={availabilityLive(wirelessAvailable)}
       />
       {onRangeChange ? null : <RangeTabs range={range} onChange={setRange} />}
       <div className="health-stack">
-        <SpeedSummary label="Wired Internet Connection" query={wiredSpeed} range={range} onOpen={() => onOpen("wired")} />
-        <SpeedSummary label="Wireless Internet Connection" query={wirelessSpeed} range={range} onOpen={() => onOpen("wireless")} />
+        <AvailabilitySummary label="Wired Internet Availability" query={wiredPath} value={wiredAvailable} range={range} onOpen={() => onOpen("wired")} />
+        <AvailabilitySummary label="Wireless Internet Availability" query={wirelessPath} value={wirelessAvailable} range={range} onOpen={() => onOpen("wireless")} />
       </div>
     </section>
   );
 }
 
-function SpeedSummary({
+function AvailabilitySummary({
   label,
   query,
+  value,
   range,
   onOpen,
 }: {
   label: string;
   query: ReturnType<typeof useSeries>;
+  value: ReturnType<typeof availability>;
   range: (typeof RANGES)[number];
   onOpen: () => void;
 }) {
-  const series = query.points.get("librespeed") ?? [];
-  const latest = series.at(-1);
-  const strip = statusStrip(series, range);
   return (
     <div className="connection-summary">
       {query.loading ? (
@@ -398,14 +401,7 @@ function SpeedSummary({
       ) : query.failed ? (
         <div className="muted">Could not load internet checks.</div>
       ) : (
-        <HealthBar
-          title={label}
-          detail={`${fmt(speed(latest).down)} Mbps down · ${fmt(speed(latest).up)} Mbps up · ping ${fmt(latest?.rtt_ms)} ms · jitter ${fmt(latest?.jitter_ms)} ms`}
-          strip={strip}
-          empty={series.length === 0}
-          range={range}
-          onOpen={onOpen}
-        />
+        <HealthBar title={label} detail={availabilityText(value)} strip={value.strip} empty={value.samples === 0} range={range} onOpen={onOpen} />
       )}
     </div>
   );

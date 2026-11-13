@@ -43,7 +43,7 @@ export const APPS = [
 export type AppKey = (typeof APPS)[number]["key"];
 export type DetailKey = "isp" | AppKey;
 /** A built-in check, or one application probe by slug. */
-export type CheckKey = "librespeed" | `rtnp:${string}`;
+export type CheckKey = "librespeed" | "availability" | `rtnp:${string}`;
 
 export function probeKinds(_key: AppKey): ("http" | "icmp")[] {
   return ["http", "icmp"];
@@ -193,17 +193,67 @@ export function fmt(value: number | null | undefined, digits = 1): string {
   return value.toFixed(digits);
 }
 
+/** The checks that say whether the internet is reachable on a link: a ping and an HTTP request every minute. */
+export const AVAILABILITY_SLUGS = ["icmp-path", "http-path"] as const;
+
+export type Availability = {
+  /** One status for each slice of the range, for the row of ticks. */
+  strip: string[];
+  /** Share of the checks in the range that got an answer, 0 to 100. Null when there were none. */
+  pct: number | null;
+  /** The newest ping, or the newest HTTP check when the ping is turned off. */
+  latest: Point | undefined;
+  samples: number;
+};
+
+/** Internet availability on one link over a range, from the path checks. A check that got no answer is down time. */
+export function availability(points: Map<string, Point[]>, range: ChartRange): Availability {
+  const series = new Map<string, Point[]>();
+  for (const slug of AVAILABILITY_SLUGS) {
+    const rows = points.get(slug);
+    if (rows && rows.length > 0) series.set(slug, rows);
+  }
+  const primary = series.get("icmp-path") ?? series.get("http-path") ?? [];
+  const answered = primary.filter((point) => point.status !== "fail").length;
+  return {
+    strip: series.size > 0 ? ispStrip(series, RANGE_HOURS[range]) : [],
+    pct: primary.length > 0 ? (answered / primary.length) * 100 : null,
+    latest: primary.at(-1),
+    samples: primary.length,
+  };
+}
+
+/** "99.8% available · ping 84.1 ms · loss 0%", or a plain sentence when there is nothing to show. */
+export function availabilityText(value: Availability): string {
+  if (value.pct == null) return "No checks in this range";
+  const pct = value.pct >= 99.995 ? "100" : value.pct.toFixed(value.pct >= 99 ? 2 : 1);
+  const parts = [`${pct}% available`];
+  if (value.latest?.rtt_ms != null) parts.push(`ping ${fmt(value.latest.rtt_ms)} ms`);
+  if (value.latest?.loss_pct != null) parts.push(`loss ${fmt(value.latest.loss_pct)}%`);
+  return parts.join(" · ");
+}
+
+/** A link's state for the connection diagram, from its newest path check. It carries no speed. */
+export function availabilityLive(value: Availability): LinkLive {
+  const latest = value.latest;
+  const fresh = latest != null && Date.now() - new Date(latest.t).getTime() < FRESH_MS;
+  const status: LinkStatus =
+    fresh && (latest.status === "ok" || latest.status === "degraded" || latest.status === "fail") ? latest.status : "unknown";
+  return { status, down: null, up: null, ping: latest?.rtt_ms ?? null };
+}
+
 export function isDetail(value: string | null): value is DetailKey {
   return value === "isp" || APPS.some((app) => app.key === value);
 }
 
 export function isCheck(value: string | null): value is CheckKey {
-  return value === "librespeed" || Boolean(value?.startsWith("rtnp:"));
+  return value === "librespeed" || value === "availability" || Boolean(value?.startsWith("rtnp:"));
 }
 
 export function logProbeForDetail(detail: string | null, check: string | null = null): string | null {
   if (check?.startsWith("rtnp:")) return check;
-  if (detail === "isp" && isCheck(check)) return `slug:${check}`;
+  // Availability is read from the path checks, which the log files under "internet".
+  if (detail === "isp" && isCheck(check) && check !== "availability") return `slug:${check}`;
   if (detail === "isp") return "internet";
   if (APPS.some((app) => app.key === detail)) return `svc:${detail}`;
   return null;

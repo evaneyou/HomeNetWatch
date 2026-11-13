@@ -113,7 +113,8 @@ function mbps(value: number | null): string {
 function linkLines(link: LinkLive): string[] {
   if (link.status === "unknown" && link.down == null) return ["No recent result"];
   return [
-    `↓ ${mbps(link.down)} · ↑ ${mbps(link.up)} Mbps`,
+    // A link with no speed test (Wi-Fi, or any link when the tests are off) shows its ping alone.
+    link.down == null && link.up == null ? "" : `↓ ${mbps(link.down)} · ↑ ${mbps(link.up)} Mbps`,
     link.ping != null ? `ping ${link.ping >= 100 ? link.ping.toFixed(0) : link.ping.toFixed(1)} ms` : "",
   ].filter(Boolean);
 }

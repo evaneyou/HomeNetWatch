@@ -6,8 +6,6 @@
     window.location.replace("https://live.homenetwatch.com/welcome/enter.html");
   }
 
-  var reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
   // System-layer tabs
   var tabs = Array.prototype.slice.call(document.querySelectorAll("[data-node]"));
   var panels = document.querySelectorAll("[data-panel]");
@@ -45,8 +43,6 @@
       }
     });
   });
-
-  if (reducedMotion) return;
 
   // The radar and the glow follow the pointer.
   var page = document.querySelector(".page");

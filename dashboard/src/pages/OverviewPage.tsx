@@ -462,7 +462,13 @@ export default function OverviewPage() {
   const overall: Mood | null = view.locations.length > 0 ? view.locations[0].mood : null;
   const online = view.locations.filter((location) => location.probeOnline).length;
   const openCount = data.open_issues.length;
-  const lately = [...(issuesQ.data ?? [])].sort((a, b) => b.opened_at.localeCompare(a.opened_at)).slice(0, 3);
+  // The same problem can open several times in a row: show it once, newest first, with how often it happened.
+  const lately: { issue: Issue; times: number }[] = [];
+  for (const issue of [...(issuesQ.data ?? [])].sort((a, b) => b.opened_at.localeCompare(a.opened_at))) {
+    const same = lately.find((entry) => entry.issue.title === issue.title && entry.issue.status === issue.status);
+    if (same) same.times += 1;
+    else if (lately.length < 3) lately.push({ issue, times: 1 });
+  }
   const shortcuts = [
     { to: "/path", label: "Path View", note: "Hop by hop to the server" },
     { to: "/airwaves", label: "Airwaves", note: "Wi-Fi around the house" },
@@ -656,7 +662,7 @@ export default function OverviewPage() {
         ) : null}
         {lately.length > 0 ? (
           <ul>
-            {lately.map((issue) => {
+            {lately.map(({ issue, times }) => {
               const open = issue.status === "open";
               return (
                 <li key={issue.id}>
@@ -664,6 +670,7 @@ export default function OverviewPage() {
                   <Link to={`/issues/${issue.id}`}>{issue.title}</Link>
                   <span className="home-lately-meta">
                     {open ? "Open" : "Resolved"} · {when(issue.opened_at)}
+                    {times > 1 ? ` · ${times} times` : ""}
                   </span>
                 </li>
               );

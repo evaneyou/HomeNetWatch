@@ -562,3 +562,7 @@
 
 /* A card's explanation pop-up must sit above the card after it. */
 .dash .probe:hover, .dash .probe:focus-within { z-index: 6; }
+
+/* Cards need about 440px for a tile to hold its words, trend line and number on one row. */
+.dash .probe-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 24px; }
+.dash .chip-label, .dash .chip-detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

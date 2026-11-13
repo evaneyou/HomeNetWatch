@@ -6,13 +6,13 @@ import {
   LineChart,
   ResponsiveContainer,
   Tooltip,
-  XAxis,
   YAxis,
 } from "recharts";
 import { api } from "../api";
 import { AnonPlate, AnonText, PlaceText, coordinate, isAnonymized, shownAnon } from "../anonymized";
 import CityMap from "./CityMap";
-import { formatChartHour } from "../chartTime";
+import { dataWindow, formatChartTime, withTs, zoomedDomain } from "../chartTime";
+import { TimeAxis } from "./TimeAxis";
 import { isAndroid } from "../deviceType";
 import { useChartZoom } from "../useChartZoom";
 import type { DeviceReport } from "../types";
@@ -77,16 +77,18 @@ function temperatureRange(points: DevicePoint[]): string | null {
 
 function HealthChart({ vital, data }: { vital: VitalKey; data: DevicePoint[] }) {
   const { title, dataKey, color, unit, axisWidth } = VITALS[vital];
-  const zoom = useChartZoom(data);
+  const rows = withTs(data);
+  const zoom = useChartZoom(rows);
+  const domain = zoomedDomain(dataWindow(rows), rows.length, zoom.visible);
   return (
     <div className="chart-zoom" ref={zoom.boxRef} onDoubleClick={zoom.onDoubleClick}>
       <ResponsiveContainer width="100%" height={145}>
         <LineChart data={zoom.visible} onMouseDown={zoom.onMouseDown} onMouseMove={zoom.onMouseMove}>
           <CartesianGrid stroke="var(--line)" vertical={false} />
-          <XAxis dataKey="t" tickFormatter={formatChartHour} minTickGap={28} stroke="var(--muted)" tick={{ fontSize: 11 }} />
+          <TimeAxis domain={domain} />
           <YAxis stroke="var(--muted)" width={axisWidth} tick={{ fontSize: 11 }} />
           <Tooltip
-            labelFormatter={(value) => formatChartHour(String(value))}
+            labelFormatter={(value) => formatChartTime(Number(value))}
             formatter={(value) => [`${value} ${unit}`, title]}
           />
           {zoom.selection}

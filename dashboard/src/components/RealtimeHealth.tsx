@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { api } from "../api";
 import { CHART_COLORS } from "../chartTheme";
-import { chartWindow, formatChartTick, zoomedDomain } from "../chartTime";
+import { chartWindow, formatChartTime, zoomedDomain } from "../chartTime";
 import { useChartZoom } from "../useChartZoom";
 import HealthTicks from "./HealthTicks";
 import LimitShareChart from "./LimitShareChart";
@@ -232,7 +232,7 @@ function MiniChart({
             <TimeAxis domain={domain} />
             <YAxis tick={{ fontSize: 11 }} width={64} />
             <Tooltip
-              labelFormatter={(value) => formatChartTick(Number(value), domain[1] - domain[0])}
+              labelFormatter={(value) => formatChartTime(Number(value))}
               formatter={(value) => `${value ?? ""}${unit}`}
             />
             {zoom.selection}

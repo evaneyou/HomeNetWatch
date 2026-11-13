@@ -184,6 +184,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **Chart time labels:** charts over an hour long printed each hour twice (the axis chose ticks every 30 minutes but labelled them by the hour). Every time chart now uses evenly spaced ticks on whole minutes, hours or days sized to the window, with labels that match the spacing, and tooltips show the exact time of the sample instead of a rounded hour. The device vitals, Wi-Fi scan and disk forecast charts move onto the same shared time axis.
 - **Measurement flows no longer lose a packet every minute:** the UDP 8998 allowlist was rebuilt step by step every 60
   seconds, and for a few milliseconds its address set was empty while the chain still ended in `drop`. Every running
   voice, video and remote desktop flow lost a packet in that gap. `scripts/rtnp-allowlist.py` now leaves the filter

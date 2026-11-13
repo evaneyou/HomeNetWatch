@@ -7,13 +7,13 @@ import {
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
-  XAxis,
   YAxis,
 } from "recharts";
 import { api } from "../api";
 import { isAnonymized, shownAnon, stableId } from "../anonymized";
 import { CHART_COLORS } from "../chartTheme";
-import { formatChartHour } from "../chartTime";
+import { dataWindow, formatChartTime, zoomedDomain } from "../chartTime";
+import { TimeAxis } from "./TimeAxis";
 import { useChartZoom } from "../useChartZoom";
 import type { WifiObservation } from "../types";
 
@@ -267,7 +267,9 @@ function ScanChart({
   domain?: [number, number];
   zeroLine?: boolean;
 }) {
-  const zoom = useChartZoom(data);
+  const rows = data.map((row) => ({ ...row, ts: new Date(String(row.t)).getTime() }));
+  const zoom = useChartZoom(rows);
+  const span = zoomedDomain(dataWindow(rows), rows.length, zoom.visible);
   return (
     <>
       <h3 className="wifi-heading">{title}</h3>
@@ -280,19 +282,10 @@ function ScanChart({
             onMouseMove={zoom.onMouseMove}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
-            <XAxis
-              dataKey="t"
-              tickFormatter={formatChartHour}
-              tick={{ fontSize: 10, fill: "var(--muted)" }}
-              minTickGap={56}
-              interval="preserveStartEnd"
-              angle={-28}
-              textAnchor="end"
-              height={40}
-            />
+            <TimeAxis domain={span} />
             <YAxis tick={{ fontSize: 11 }} unit={unit} domain={domain} width={72} />
             {zeroLine ? <ReferenceLine y={0} stroke="var(--muted)" strokeDasharray="4 4" /> : null}
-            <Tooltip labelFormatter={formatChartHour} />
+            <Tooltip labelFormatter={(value) => formatChartTime(Number(value))} />
             {zoom.selection}
             {keys.map((key, i) => (
               <Line

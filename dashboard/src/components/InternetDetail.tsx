@@ -14,7 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import { isAnonymized, shownAnon } from "../anonymized";
-import { chartWindow, formatChartTick, zoomedDomain } from "../chartTime";
+import { chartWindow, formatChartTime, zoomedDomain } from "../chartTime";
 import { TimeAxis } from "./TimeAxis";
 import { useChartZoom } from "../useChartZoom";
 import LimitShareChart, { type LimitMetric } from "./LimitShareChart";
@@ -494,7 +494,7 @@ function HttpAreaChart({
           <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
           <TimeAxis domain={domain} />
           <YAxis tick={{ fontSize: 11 }} unit=" ms" width={64} />
-          <Tooltip labelFormatter={(value) => formatChartTick(value, domain[1] - domain[0])} />
+          <Tooltip labelFormatter={(value) => formatChartTime(value)} />
           {zoom.selection}
           {stageNames.map((name, index) => (
             <Area
@@ -607,7 +607,7 @@ function PathChart({
               <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
               <TimeAxis domain={domain} />
               <YAxis tick={{ fontSize: 11 }} unit={unit} width={64} />
-              <Tooltip labelFormatter={(value) => formatChartTick(value, domain[1] - domain[0])} />
+              <Tooltip labelFormatter={(value) => formatChartTime(value)} />
               {zoom.selection}
               {lines.map((line, index) => (
                 <Line

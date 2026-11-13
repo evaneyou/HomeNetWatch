@@ -830,7 +830,7 @@ class InternetServiceSettingIn(BaseModel):
     librespeed_interval_seconds: int = Field(ge=300, le=86400)
     librespeed_variance_pct: int = Field(ge=0, le=100)
     cloudflare_enabled: Optional[bool] = None
-    cloudflare_interval_seconds: Optional[int] = Field(default=None, ge=1800, le=86400)
+    cloudflare_interval_seconds: Optional[int] = Field(default=None, ge=900, le=86400)
 
 
 class IssueOut(BaseModel):

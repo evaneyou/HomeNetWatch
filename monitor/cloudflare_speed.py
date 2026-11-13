@@ -5,6 +5,9 @@ server's own bandwidth. This test measures the home line against Cloudflare's ne
 the same service as the speed test page at speed.cloudflare.com. Download reads /__down, upload posts
 to /__up, and latency reads the round trip Cloudflare reports for an empty /__down.
 
+The agent runs it on the clock (every 15 minutes means on the hour and each quarter after it), no more often
+than every 15 minutes.
+
 It is a free public service that limits how much one address may download, so the test is gentle, the
 way Cloudflare's own page is: a few transfers, one at a time, small ones first, with a pause between
 them. Filling the line with parallel streams for several seconds moved about 500 MB a run on a fast

@@ -96,6 +96,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **The Cloudflare Speed Test runs on the clock, as often as every 15 minutes (Pi agent 0.8.17):** the shortest
+  interval is 15 minutes, down from 30. The agent runs the test at whole intervals past the hour (every 15 minutes
+  means :00, :15, :30 and :45), where it used to run a set time after the last run and drift later each time. After a
+  refusal it skips to the first such time past the wait Cloudflare asked for.
 - **KPI internet speed comes from the Cloudflare Speed Test:** an hour and link with a Cloudflare reading uses it,
   since it measures the line and not the HomeNetWatch server. An hour without one, such as the Wi-Fi link or any hour
   before that test existed, keeps the Bandwidth Test's figures. Determine Root Cause is given both tests' readings.

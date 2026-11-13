@@ -48,8 +48,39 @@ def _due(module) -> set[str]:
     return {test["slug"] for test in module.due_tests(time.monotonic())}
 
 
-def test_a_new_agent_runs_every_test_at_once(agent):
-    assert _due(agent()) == {"cloudflare-speed", "icmp-path"}
+def _left(module, key: str = KEY) -> float:
+    return module.state._next_run[key] - time.monotonic()
+
+
+def test_a_new_agent_runs_its_checks_at_once_and_the_cloudflare_test_on_the_clock(agent):
+    module = agent()
+    # A ping has nothing to line up with. The Cloudflare test waits for the next mark: it never runs "this second".
+    assert _due(module) == {"icmp-path"}
+    assert 0 < _left(module) <= 3600
+
+
+def test_marks_are_whole_intervals_past_the_hour(agent):
+    module = agent()
+    nine_twenty = 1_794_560_400 + 9 * 3600 + 20 * 60  # 09:20:00 on a day that starts at a whole hour
+    assert module._next_mark(900, nine_twenty) == nine_twenty + 600  # 09:30
+    assert module._next_mark(900, nine_twenty + 600) == nine_twenty + 600  # already on a mark
+    assert module._next_mark(900, nine_twenty + 601) == nine_twenty + 1500  # 09:45
+    assert module._next_mark(3600, nine_twenty) == nine_twenty + 2400  # 10:00
+
+
+def test_each_run_is_followed_by_the_next_mark_not_a_set_time_later(agent, monkeypatch):
+    module = agent()
+    quarter = dict(CLOUDFLARE, interval_seconds=900)
+    module.remember_tests([quarter, PING])
+    # A run that ended 40 seconds after 09:30: the next is at 09:45, 860 seconds on, not 900.
+    half_past = 1_794_560_400 + 9 * 3600 + 30 * 60
+    monkeypatch.setattr(module.time, "time", lambda: half_past + 40.0)
+    module._mark_ran(quarter)
+    assert _left(module) == pytest.approx(860, abs=2)
+    # A run that ends exactly on a mark waits for the one after it.
+    monkeypatch.setattr(module.time, "time", lambda: half_past + 0.0)
+    module._mark_ran(quarter)
+    assert _left(module) == pytest.approx(900, abs=2)
 
 
 def test_a_restart_does_not_run_the_cloudflare_test_again_early(agent, tmp_path):
@@ -59,23 +90,29 @@ def test_a_restart_does_not_run_the_cloudflare_test_again_early(agent, tmp_path)
     saved = json.loads((tmp_path / "schedule.json").read_text())
     # Only the slow test is written down: a check that runs every minute may as well run again.
     assert list(saved) == [KEY]
+    wait = _left(first)
 
     restarted = agent()
     assert _due(restarted) == {"icmp-path"}
-    left = restarted.state._next_run[KEY] - time.monotonic()
-    assert 3500 < left <= 3600
+    assert _left(restarted) == pytest.approx(wait, abs=5)
 
 
-def test_the_cloudflare_test_runs_once_its_interval_has_passed(agent, tmp_path):
-    (tmp_path / "schedule.json").write_text(json.dumps({KEY: time.time() - 3700}))
-    assert "cloudflare-speed" in _due(agent())
+def test_a_run_long_overdue_waits_for_the_next_mark(agent, tmp_path):
+    (tmp_path / "schedule.json").write_text(json.dumps({KEY: time.time() - 3 * 3600}))
+    module = agent()
+    assert "cloudflare-speed" not in _due(module)
+    assert 0 < _left(module) <= 3600
 
 
-def test_a_clock_that_moved_back_or_a_damaged_file_does_not_hold_the_test_forever(agent, tmp_path):
+def test_a_clock_that_moved_back_or_a_damaged_file_does_not_hold_the_test_for_long(agent, tmp_path):
     (tmp_path / "schedule.json").write_text(json.dumps({KEY: time.time() + 86400}))
-    assert "cloudflare-speed" in _due(agent())
+    module = agent()
+    _due(module)
+    assert 0 < _left(module) <= 3600
     (tmp_path / "schedule.json").write_text("not json")
-    assert "cloudflare-speed" in _due(agent())
+    module = agent()
+    _due(module)
+    assert 0 < _left(module) <= 3600
 
 
 def test_a_schedule_file_that_cannot_be_written_does_not_stop_the_test(agent, tmp_path, monkeypatch):
@@ -96,21 +133,27 @@ def test_a_refusal_with_a_wait_pushes_the_next_run_past_it(agent, monkeypatch, t
 
     monkeypatch.setattr(module, "run_check", refuse)
     assert module._run_one(CLOUDFLARE) is None
-    # An hour from now would land ten seconds after the wait ends. The next run comes five minutes after it instead.
-    left = module.state._next_run[KEY] - time.monotonic()
-    assert 3840 < left <= 3850
+    # The wait plus five minutes is 3850 seconds: the next run is at the first mark after that.
+    wait = _left(module)
+    assert 3849 <= wait <= 3850 + 3600
     assert "429" in module.state._last_error
 
     # A restart keeps the longer wait.
     restarted = agent()
     assert "cloudflare-speed" not in _due(restarted)
-    assert 3800 < restarted.state._next_run[KEY] - time.monotonic() <= 3850
+    assert _left(restarted) == pytest.approx(wait, abs=5)
 
 
-def test_a_short_wait_or_none_keeps_the_usual_interval(agent, monkeypatch):
+def test_a_wait_is_five_minutes_longer_than_asked_and_never_endless(agent):
     module = agent()
-    assert module._extra_wait(CLOUDFLARE, 600) == 0
-    assert module._extra_wait(CLOUDFLARE, None) == 0
-    assert module._extra_wait(CLOUDFLARE, "soon") == 0
+    assert module._hold(CLOUDFLARE, 600) == 900
+    assert module._hold(CLOUDFLARE, None) == 0
+    assert module._hold(CLOUDFLARE, "soon") == 0
     # A very long wait is capped, so one bad answer cannot park the test for days.
-    assert module._extra_wait(CLOUDFLARE, 10**9) == module.MAX_EXTRA_WAIT
+    assert module._hold(CLOUDFLARE, 10**9) == 3600 + module.MAX_EXTRA_WAIT
+
+
+def test_a_check_that_is_not_on_the_clock_keeps_its_plain_interval(agent):
+    module = agent()
+    module._mark_ran(PING)
+    assert _left(module, "wired:icmp-path") == pytest.approx(60, abs=2)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import threading
@@ -97,7 +98,11 @@ def poll_restart(config: dict) -> None:
 # A test that runs at most every half hour keeps the time of its last run on disk. The agent replaces its
 # own process when the server asks for a restart, and without this every such test would run again at
 # once: the Cloudflare Speed Test uses a free public service, which refuses runs that come too often.
-PERSIST_MIN_INTERVAL = 1800
+PERSIST_MIN_INTERVAL = 900
+# These tests run on the clock, not a set time after the last run: every 15 minutes means on the hour and at
+# a quarter past, half past and a quarter to. Readings then line up from day to day and do not drift by the
+# length of a run each time.
+ALIGNED_KINDS = {"cloudflare"}
 # When a service refuses a test and says how long to wait, the next try comes this long after that wait is
 # over, so it does not land on the last second of it. A wait is never stretched by more than MAX_EXTRA_WAIT.
 RETRY_MARGIN = 300
@@ -131,13 +136,15 @@ def _restore_runs(assigned: list[dict], now: float) -> None:
     runs = _saved_runs()
     wall = time.time()
     for test in waiting:
+        interval = _interval_seconds(test)
         last = runs.get(_test_key(test))
-        if last is None:
-            continue
-        left = last + _interval_seconds(test) - wall
-        # A clock that moved back would give a wait far longer than the interval; run now in that case.
-        if 0 < left <= _interval_seconds(test) + MAX_EXTRA_WAIT:
+        left = last + interval - wall if last is not None else 0.0
+        # A clock that moved back would give a wait far longer than the interval; that wait is not kept.
+        if 0 < left <= interval + MAX_EXTRA_WAIT:
             state._next_run[_test_key(test)] = now + left
+        elif _aligned(test):
+            # Nothing to wait out: the first run is at the next mark on the clock, not this second.
+            state._next_run[_test_key(test)] = now + _next_mark(interval, wall + 1) - wall
 
 def remember_tests(tests: object) -> None:
     if not isinstance(tests, list):
@@ -177,30 +184,43 @@ def due_tests(now: float) -> list[dict]:
         ready = [test for test in assigned if now >= state._next_run.get(_test_key(test), 0)]
     return ready
 
-def _extra_wait(test: dict, retry_after: object) -> float:
-    """Seconds to add to the usual interval so the next run comes after the wait a service asked for."""
+def _aligned(test: dict) -> bool:
+    return test.get("kind") in ALIGNED_KINDS
+
+def _next_mark(interval: int, not_before: float) -> float:
+    """The first time on the clock at or after `not_before` that is a whole number of intervals past the hour."""
+    return math.ceil(not_before / interval) * interval
+
+def _hold(test: dict, retry_after: object) -> float:
+    """Seconds the next run must stay away after a service refused a test and said how long to wait. 0 when it did not."""
     if isinstance(retry_after, bool) or not isinstance(retry_after, (int, float)) or retry_after <= 0:
         return 0.0
-    return min(max(0.0, retry_after + RETRY_MARGIN - _interval_seconds(test)), MAX_EXTRA_WAIT)
+    return min(retry_after + RETRY_MARGIN, _interval_seconds(test) + MAX_EXTRA_WAIT)
 
-def _mark_ran(test: dict, extra: float = 0.0) -> None:
+def _mark_ran(test: dict, hold: float = 0.0) -> None:
+    interval = _interval_seconds(test)
+    wall = time.time()
+    if _aligned(test):
+        delay = _next_mark(interval, wall + max(hold, 1.0)) - wall
+    else:
+        delay = max(float(interval), hold)
     with state._lock:
-        state._next_run[_test_key(test)] = time.monotonic() + _interval_seconds(test) + extra
-    if _interval_seconds(test) >= PERSIST_MIN_INTERVAL:
-        # Saved as if the run were `extra` later, so a restart waits out the same time.
-        _save_run(_test_key(test), time.time() + extra)
+        state._next_run[_test_key(test)] = time.monotonic() + delay
+    if interval >= PERSIST_MIN_INTERVAL:
+        # Saved as the run time that would give this wait, so a restart waits out the same time.
+        _save_run(_test_key(test), wall + delay - interval)
 
 def _run_one(test: dict) -> dict | None:
     result = None
-    extra = 0.0
+    hold = 0.0
     try:
         result = run_check(test)
     except (OSError, TimeoutError, ValueError) as exc:
         with state._lock:
             state._last_error = str(exc)
-        extra = _extra_wait(test, getattr(exc, "retry_after", None))
+        hold = _hold(test, getattr(exc, "retry_after", None))
     finally:
-        _mark_ran(test, extra)
+        _mark_ran(test, hold)
     return result
 
 def _idle_seconds() -> float:

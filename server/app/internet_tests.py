@@ -30,13 +30,14 @@ SERVER_HTTP = f"http://{TUNNEL_SERVER_IP}:8847/api/v1/healthz"
 HEAVY_INTERVAL_SECONDS = 900
 # The Cloudflare Speed Test measures the home line against Cloudflare, not this server, so the
 # server's own bandwidth does not limit the reading. Wired link of a Pi only. It uses a free
-# public service, so it runs at most every 30 minutes.
+# public service, so it runs at most every 15 minutes. The agent runs it on the clock: on the hour and each
+# whole interval after it.
 CLOUDFLARE_SLUG = "cloudflare-speed"
 CLOUDFLARE_NAME = "Cloudflare Speed Test"
 CLOUDFLARE_HOST = "speed.cloudflare.com"
 CLOUDFLARE_KIND = "cloudflare"
 CLOUDFLARE_INTERVAL_SECONDS = 3600
-CLOUDFLARE_MIN_INTERVAL_SECONDS = 1800
+CLOUDFLARE_MIN_INTERVAL_SECONDS = 900
 # Bandwidth Test variance: 100% means no drop in speed turns it amber, which is how the owner
 # silences speed alerts. A test with no answer in either direction is still red.
 MAX_TRANSFER_VARIANCE_PCT = 100

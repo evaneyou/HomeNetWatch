@@ -31,8 +31,8 @@ type IntervalField = "interval_seconds" | "librespeed_interval_seconds" | "cloud
 
 // At 100% no drop in speed turns the Bandwidth Test amber, which silences its alerts.
 const BANDWIDTH_VARIANCE_MAX = 100;
-// Cloudflare's speed test is a free public service, so the server accepts nothing faster than every 30 minutes.
-const CLOUDFLARE_INTERVAL_MIN = 1800;
+// Cloudflare's speed test is a free public service, so the server accepts nothing faster than every 15 minutes.
+const CLOUDFLARE_INTERVAL_MIN = 900;
 
 const SIGNATURE_FIELDS = [
   "interval_seconds",
@@ -201,7 +201,8 @@ export default function InternetServicePage() {
         amber when download or upload falls more than its percent below the recent normal; set it to 100% to turn
         speed-drop alerts off. Cloudflare Speed Test measures the wired link of a Raspberry Pi agent against
         speed.cloudflare.com, outside the tunnel, so this server's own bandwidth does not limit the reading. It runs
-        at most every 30 minutes and raises no alerts.
+        at most every 15 minutes, on the clock (every 15 minutes means on the hour and each quarter after it), and
+        raises no alerts.
       </p>
       <div className="panel table-scroll">
         <table className="table web-service-table">

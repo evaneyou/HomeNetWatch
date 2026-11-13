@@ -103,9 +103,13 @@ def test_admin_can_turn_it_off_and_change_how_often_it_runs(client: TestClient, 
     assert current["cloudflare_enabled"] is True
     assert current["cloudflare_interval_seconds"] == 3600
     try:
-        # Free public service: nothing faster than every 30 minutes.
-        too_often = client.put("/api/v1/settings/internet-service", json={**current, "cloudflare_interval_seconds": 900}, headers=csrf)
+        # Free public service: nothing faster than every 15 minutes.
+        too_often = client.put("/api/v1/settings/internet-service", json={**current, "cloudflare_interval_seconds": 600}, headers=csrf)
         assert too_often.status_code == 422
+
+        quarter = client.put("/api/v1/settings/internet-service", json={**current, "cloudflare_interval_seconds": 900}, headers=csrf)
+        assert quarter.status_code == 200, quarter.text
+        assert _assigned(db, monitor)[0]["interval_seconds"] == 900
 
         slower = client.put("/api/v1/settings/internet-service", json={**current, "cloudflare_interval_seconds": 7200}, headers=csrf)
         assert slower.status_code == 200, slower.text

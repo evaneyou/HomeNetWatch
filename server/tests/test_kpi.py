@@ -861,3 +861,56 @@ def test_only_valid_working_hours_6am_to_12am_eastern_are_counted_and_old_dates_
 
 
 
+
+
+def _speed_test(db, monitor: Monitor, kind: NetworkKind, slug: str) -> Test:
+    network = db.scalar(select(Network).where(Network.group_id == db.info["group_id"], Network.kind == kind))
+    if network is None:
+        network = Network(group_id=db.info["group_id"], slug=f"{kind.value}-{uuid.uuid4().hex[:4]}", name=kind.value, kind=kind)
+        db.add(network)
+        db.flush()
+    test = Test(monitor_id=monitor.id, network_id=network.id, slug=slug, name=slug, kind=TestKind.librespeed, target="x")
+    db.add(test)
+    db.flush()
+    return test
+
+
+def _speed(db, test: Test, minute: int, down: float, up: float, status: ResultStatus = ResultStatus.ok, when: datetime = HOUR) -> None:
+    db.add(
+        TestResult(
+            external_id=f"kpi-speed-{uuid.uuid4().hex}",
+            test_id=test.id,
+            started_at=when + timedelta(minutes=minute),
+            finished_at=when + timedelta(minutes=minute, seconds=20),
+            status=status,
+            metrics={"down_mbps": down, "up_mbps": up},
+        )
+    )
+
+
+def test_speed_comes_from_the_cloudflare_test_when_an_hour_has_one(db):
+    monitor = _pi(db)
+    bandwidth = _speed_test(db, monitor, NetworkKind.wired, "librespeed")
+    cloudflare = _speed_test(db, monitor, NetworkKind.wired, "cloudflare-speed")
+    wifi = _speed_test(db, monitor, NetworkKind.wifi, "librespeed")
+    later = HOUR + timedelta(hours=1)
+    # The Bandwidth Test reads no higher than the server's own bandwidth. The Cloudflare reading is the line.
+    _speed(db, bandwidth, 5, 47.0, 31.0)
+    _speed(db, bandwidth, 20, 46.0, 32.0)
+    _speed(db, cloudflare, 28, 568.0, 34.0)
+    # A Cloudflare run with no answer does not count as a reading.
+    _speed(db, cloudflare, 40, 0.0, 0.0, status=ResultStatus.fail)
+    _speed(db, wifi, 6, 45.0, 30.0)
+    _speed(db, bandwidth, 5, 47.0, 31.0, when=later)
+    db.commit()
+    kpi.rebuild(db, HOUR, later + timedelta(hours=1))
+    db.commit()
+    rows = {
+        (row.bucket_start, row.link): row
+        for row in db.scalars(select(KpiHourly).where(KpiHourly.monitor_id == monitor.id, KpiHourly.kind == "speed"))
+    }
+    wired = rows[(HOUR, "wired")]
+    assert (wired.down_n, wired.down_sum, wired.up_sum) == (1, 568.0, 34.0)
+    # Wi-Fi has no Cloudflare test, and neither does the next hour: both keep the Bandwidth Test.
+    assert (rows[(HOUR, "wireless")].down_n, rows[(HOUR, "wireless")].down_sum) == (1, 45.0)
+    assert (rows[(later, "wired")].down_n, rows[(later, "wired")].down_sum) == (1, 47.0)

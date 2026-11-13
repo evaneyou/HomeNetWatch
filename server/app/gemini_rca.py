@@ -199,14 +199,14 @@ def build_event_context(
     # Include 24h before start_dt for bandwidth tests so we have baseline context
     bw_start = start_dt - timedelta(hours=24)
 
-    # 1. LibreSpeed bandwidth log
+    # 1. Speed log: the Bandwidth Test to this server and the Cloudflare Speed Test
     bw_q = (
         select(TestResult, Test, Network, Monitor)
         .join(Test, TestResult.test_id == Test.id)
         .join(Network, Test.network_id == Network.id)
         .join(Monitor, Test.monitor_id == Monitor.id)
         .where(
-            Test.slug == "librespeed",
+            Test.slug.in_(("librespeed", "cloudflare-speed")),
             Network.slug.in_(("wired", "wifi")),
             TestResult.started_at >= bw_start,
             TestResult.started_at <= end_dt,
@@ -217,7 +217,7 @@ def build_event_context(
         bw_q = bw_q.where(Test.monitor_id == monitor_id)
     bw_rows = db.execute(bw_q).all()
     bandwidth_log: list[dict[str, Any]] = []
-    for res, _test, net, mon in bw_rows[-80:]:
+    for res, speed_test, net, mon in bw_rows[-80:]:
         m = res.metrics or {}
         down = m.get("down_mbps")
         up = m.get("up_mbps")
@@ -225,6 +225,7 @@ def build_event_context(
             {
                 "time_et": _et(res.started_at),
                 "sensor": mon.name,
+                "test": speed_test.name,
                 "link": "Wi-Fi" if net.kind == NetworkKind.wifi else "Wired",
                 "status": res.status.value,
                 "down_mbps": round(float(down), 2) if isinstance(down, (int, float)) else None,

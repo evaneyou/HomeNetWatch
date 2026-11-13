@@ -451,6 +451,10 @@ def summary(
     cell_map: dict[tuple[UUID, UUID, str], HealthCell] = {}
     for monitor in monitors:
         for network in networks:
+            # A monitor is only ever tested on its own group's networks. A cell for another group's network
+            # could never be anything but "unknown", and would sit beside the real one under the same name.
+            if network.group_id != monitor.group_id:
+                continue
             columns = ["internet", "web", "apps"] if network.slug in {"wan", "wired", "wifi"} else [network.slug]
             for column in columns:
                 cell_map[(monitor.id, network.id, column)] = HealthCell(

@@ -829,8 +829,12 @@ def test_rfc3550_jitter_and_remote_desktop_rtcp_and_cross_link_diagnosis(client,
     assert summary.status_code == 200
     data = summary.json()
     assert data["diagnoses"][str(monitor.id)]["cause"] == "wifi"
-    wifi_apps = next(c for c in data["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wifi" and c["column"] == "apps")
-    wifi_inet = next(c for c in data["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wifi" and c["column"] == "internet")
+    # Matched by the network's id: another group's tests may have left a network with the same name.
+    from app.models import Network
+
+    wifi_id = str(db.scalar(select(Network.id).where(Network.group_id == monitor.group_id, Network.slug == "wifi")))
+    wifi_apps = next(c for c in data["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_id"] == wifi_id and c["column"] == "apps")
+    wifi_inet = next(c for c in data["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_id"] == wifi_id and c["column"] == "internet")
     assert wifi_apps["cause"] == "wifi"
     assert wifi_inet["cause"] == "wifi"
     assert wifi_inet["status"] in ("degraded", "fail")
@@ -932,8 +936,9 @@ def test_bandwidth_collapse_diagnosed_as_root_cause_on_synthetic_health(client, 
 
     summary = client.get("/api/v1/summary", headers=headers).json()
     assert summary["diagnoses"][str(monitor.id)]["cause"] == "bandwidth"
-    wired_inet = next(c for c in summary["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wired" and c["column"] == "internet")
-    wifi_inet = next(c for c in summary["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_slug"] == "wifi" and c["column"] == "internet")
+    ids = {slug: str(db.scalar(select(Network.id).where(Network.group_id == monitor.group_id, Network.slug == slug))) for slug in ("wired", "wifi")}
+    wired_inet = next(c for c in summary["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_id"] == ids["wired"] and c["column"] == "internet")
+    wifi_inet = next(c for c in summary["matrix"] if c["monitor_id"] == str(monitor.id) and c["network_id"] == ids["wifi"] and c["column"] == "internet")
     assert wired_inet["status"] in ("degraded", "fail") and wired_inet["cause"] == "bandwidth"
     assert wifi_inet["status"] in ("degraded", "fail") and wifi_inet["cause"] == "bandwidth"
 

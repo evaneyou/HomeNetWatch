@@ -1,14 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The Android TV banner: the HomeNetWatch mark (house on a soft teal tile), centred on the app's dark blue. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="320dp"
     android:height="180dp"
     android:viewportWidth="320"
     android:viewportHeight="180">
     <path android:fillColor="#0F1424" android:pathData="M0,0h320v180h-320z" />
-    <path
-        android:strokeColor="#4FD1B5"
-        android:strokeWidth="9"
-        android:strokeLineCap="round"
-        android:pathData="M100,112a60,60 0 0 1 120,0M130,112a30,30 0 0 1 60,0" />
-    <path android:fillColor="#4FD1B5" android:pathData="M160,114m-10,0a10,10 0 1 1 20,0a10,10 0 1 1 -20,0" />
+    <group
+        android:scaleX="3"
+        android:scaleY="3"
+        android:translateX="88"
+        android:translateY="18">
+        <path
+            android:fillColor="#294FD1B5"
+            android:pathData="M16,7h16a9,9 0 0 1 9,9v16a9,9 0 0 1 -9,9h-16a9,9 0 0 1 -9,-9v-16a9,9 0 0 1 9,-9z" />
+        <path
+            android:strokeColor="#4FD1B5"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M14.5,24.5L24,15.5L33.5,24.5M17.5,22.5V31a2,2 0 0 0 2,2H28.5a2,2 0 0 0 2,-2V22.5" />
+        <path
+            android:strokeColor="#4FD1B5"
+            android:strokeWidth="1.6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M20,28h2l1.3,-2.4l1.8,4.6l1.3,-2.2h2" />
+    </group>
 </vector>

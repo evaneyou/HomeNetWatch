@@ -241,7 +241,7 @@ function Shell({ role, onLogout }: { role: User["role"]; onLogout: () => void })
       <div className={loc.pathname === "/" ? "app-shell dash-shell" : "app-shell ui-compact"}>
       <header className="topbar">
         <div className="brand">
-          <img src="/homenetwatch.png" alt="HomeNetWatch" />
+          <img src="/homenetwatch.png?v=2" alt="HomeNetWatch" />
         </div>
         <div className="topbar-actions">
           {showBack ? (

@@ -841,7 +841,7 @@ def test_rfc3550_jitter_and_remote_desktop_rtcp_and_cross_link_diagnosis(client,
 
 
 
-def test_agent_has_no_daily_traffic_cap(tmp_path: Path):
+def test_agent_has_no_traffic_cap(tmp_path: Path):
     path = Path(__file__).resolve().parents[2] / "monitor" / "synthetic.py"
     if not path.is_file():
         return
@@ -853,22 +853,20 @@ def test_agent_has_no_daily_traffic_cap(tmp_path: Path):
         spec.loader.exec_module(module)
     finally:
         sys.path.remove(str(path.parent))
-    module.BUDGET_PATH = tmp_path / "rtnp-budget.json"
-    today = datetime.now(timezone.utc).date().isoformat()
-    payload = {"interval_s": 10, "flows": [{"sent": 500, "tx_kbps": 400}]}
 
-    assert not hasattr(module, "DAILY_BYTES")
-    assert not hasattr(module, "_over_budget")
+    # No cap by the day, and none by the run: the run cap was counted across every flow together and
+    # stopped all of them about every 93 minutes.
+    for gone in ("DAILY_BYTES", "MAX_RUN_BYTES", "_over_budget", "_budget", "_charge", "BUDGET_PATH"):
+        assert not hasattr(module, gone), gone
 
-    # A day total far past the old 20 GiB cap no longer stops a flow.
-    module._budget_mem = {"day": today, "bytes": 5 * 1024**4, "run": 0}
-    assert module._charge(payload) is False
+    # However much a flow has sent, a normal interval does not stop it.
+    steady = {"interval_s": 10, "flows": [{"sent": 500, "tx_kbps": 4000}]}
+    for _ in range(1000):
+        assert module._over_rate(steady) is False
 
-    # The per-run and packet-rate limits still do.
-    module._budget_mem = {"day": today, "bytes": 0, "run": module.MAX_RUN_BYTES}
-    assert module._charge(payload) is True
-    module._budget_mem = {"day": today, "bytes": 0, "run": 0}
-    assert module._charge({"interval_s": 1, "flows": [{"sent": module.MAX_PPS + 1, "tx_kbps": 1}]}) is True
+    # The packet-rate limit still stops a runaway sender.
+    assert module._over_rate({"interval_s": 1, "flows": [{"sent": module.MAX_PPS + 1, "tx_kbps": 1}]}) is True
+    assert module._over_rate({"interval_s": 0, "flows": [{"sent": 10**6}]}) is False
 
 
 def test_bandwidth_collapse_diagnosed_as_root_cause_on_synthetic_health(client, db, monitor_token):

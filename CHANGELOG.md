@@ -189,6 +189,13 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **The Pi no longer stops every real-time flow about every 93 minutes (Pi agent 0.8.18):** the agent stopped a flow
+  after 2 GiB "per run", but kept one count for all flows together. Six continuous flows reach that in about 93
+  minutes, so every healthy flow was stopped and relaunched sixteen times a day, and a flow restarted that way
+  sometimes came back losing every packet (the bursts of "stopped in the monitor" issues for Video conference on
+  Wi-Fi). The cap is removed. The limit of 200 packets a second still stops a runaway sender.
+- **A blacked-out flow's report is kept:** when a continuous flow reports no packets while its link is otherwise
+  fine, the server now stores what the sender reported for that interval, to show why.
 - **Chart time labels:** charts over an hour long printed each hour twice (the axis chose ticks every 30 minutes but labelled them by the hour). Every time chart now uses evenly spaced ticks on whole minutes, hours or days sized to the window, with labels that match the spacing, and tooltips show the exact time of the sample instead of a rounded hour. The device vitals, Wi-Fi scan and disk forecast charts move onto the same shared time axis.
 - **Measurement flows no longer lose a packet every minute:** the UDP 8998 allowlist was rebuilt step by step every 60
   seconds, and for a few milliseconds its address set was empty while the chain still ended in `drop`. Every running

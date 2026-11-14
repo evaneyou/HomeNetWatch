@@ -706,7 +706,9 @@ def post_sample(
                 sample_key=key,
                 interval_index=body.interval_index,
                 recorded_at=body.recorded_at,
-                metrics=body.metrics if run.mode == "stress" else ({"impact": SOFTWARE} if extracted.get("verdict") == SOFTWARE else {}),
+                # A continuous flow's reports are not kept, except when it blacks out while its link is fine: what
+                # the sender saw in that interval is the only evidence of why.
+                metrics=body.metrics if run.mode == "stress" else ({"impact": SOFTWARE, "report": body.metrics} if extracted.get("verdict") == SOFTWARE else {}),
                 **extracted,
             )
         )

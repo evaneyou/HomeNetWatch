@@ -957,13 +957,11 @@ export default function KpiPage() {
         </span>
         <div>
           <b>{headline}</b>
-          <span>
-            {measured.length === 0
-              ? "The report fills in as measurements arrive (valid working hours: 6:00 AM – 12:00 AM EST, 7 days a week)."
-              : report.diagnosis
-                ? `${report.diagnosis.summary} Valid hours: 6:00 AM – 12:00 AM EST, 7 days a week. Targets: internet ${targets.internet}%, voice, video and web ${targets.voice}%, packet drop ≤ ${targets.loss_pct}%.`
-                : `Valid hours: 6:00 AM – 12:00 AM EST, 7 days a week. Targets: internet ${targets.internet}%, voice, video and web ${targets.voice}%, packet drop at or under ${targets.loss_pct}%.`}
-          </span>
+          {measured.length === 0 ? (
+            <span>The report fills in as measurements arrive.</span>
+          ) : report.diagnosis ? (
+            <span>{report.diagnosis.summary}</span>
+          ) : null}
         </div>
         <ul>
           {checks.map((item) => (

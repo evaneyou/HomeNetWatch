@@ -96,6 +96,9 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **KPI banner is shorter:** the line under the headline that repeated the valid hours and the targets is gone. The
+  valid hours are still in the page's subtitle and each chart still names its target. A root-cause summary, when
+  there is one, stays.
 - **Lighter logo mark:** the heavy white box around the house is gone. The house now sits on a soft teal tile with no
   border, in the dashboard header, on the landing page, in the browser tab and bookmark icon, and in the Android app
   (its in-app logo, launcher icon and TV banner, which showed a Wi-Fi symbol before). A home-screen icon

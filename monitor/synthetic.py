@@ -20,7 +20,6 @@ UDP_PORT = 8998
 CONTROL_PORT = 8999
 KEY_PATH = Path(os.environ.get("MONITOR_RTNP_KEY", "/etc/monitor/rtnp.key"))
 SRTP_PATH = Path(os.environ.get("MONITOR_RTNP_SRTP", "/etc/monitor/rtnp-srtp.key"))
-BUDGET_PATH = Path(os.environ.get("MONITOR_RTNP_BUDGET", "/etc/monitor/rtnp-budget.json"))
 BINARY = os.environ.get("MONITOR_RTNP_BIN", "/opt/monitor/rtnp-send")
 BIND_LIB = Path(os.environ.get("MONITOR_RTNP_BIND", "/opt/monitor/rtnp-bind.so"))
 PRESETS = {
@@ -38,16 +37,15 @@ VOICE_PRESETS = {"voip-g711", "voip-g711a", "voip-g729", "voip-g723"}
 CONTROL_HOST = {"wired": "10.7.0.1", "wireless": "10.7.1.1"}
 MAX_PPS = 200
 MAX_DURATION = 3600
-MAX_RUN_BYTES = 2 * 1024 * 1024 * 1024
-# There is no daily cap. One that stopped every continuous flow for the rest of the UTC day once ran out
-# about 15:35 UTC each day, leaving the Apps tiles on "Not running" until midnight. The packet-rate and
-# per-run limits below still stop a runaway sender, and a stopped flow is relaunched on the next sync.
+# There is no cap on how much a flow may send, by the day or by the run. A daily one once stopped every
+# continuous flow about 15:35 UTC until midnight. A 2 GiB one "per run" was counted across all flows
+# together, so it stopped every healthy flow about every 93 minutes, and a flow that was restarted that way
+# sometimes came back losing every packet. The packet-rate limit still stops a runaway sender, and a stopped
+# flow is relaunched on the next sync.
 
 _lock = threading.Lock()
 _running: dict[tuple[str, str], dict[str, Any]] = {}
 _last_failure = ""
-_budget_mem: dict[str, Any] = {}
-_budget_saved_at: float = 0.0
 
 
 def is_tunnel_target(host: str) -> bool:
@@ -361,56 +359,11 @@ def _write_srtp(hex_key: str) -> None:
     tmp.replace(SRTP_PATH)
 
 
-def _budget() -> dict[str, Any]:
-    global _budget_mem
-    today = datetime.now(timezone.utc).date().isoformat()
-    with _lock:
-        if _budget_mem.get("day") == today:
-            return dict(_budget_mem)
-    try:
-        stored = json.loads(BUDGET_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        stored = {}
-    if stored.get("day") != today:
-        stored = {"day": today, "bytes": 0, "run": 0}
-    with _lock:
-        _budget_mem = dict(stored)
-    return stored
-
-
-def _save_budget(state: dict[str, Any], *, force: bool = False) -> None:
-    global _budget_mem, _budget_saved_at
-    now = time.monotonic()
-    with _lock:
-        _budget_mem = dict(state)
-        if not force and _budget_saved_at > 0 and now - _budget_saved_at < 300:
-            return
-        _budget_saved_at = now
-    try:
-        BUDGET_PATH.parent.mkdir(parents=True, exist_ok=True)
-        tmp = BUDGET_PATH.with_name(f"{BUDGET_PATH.name}.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(state), encoding="utf-8")
-        tmp.replace(BUDGET_PATH)
-    except OSError:
-        return
-
-
-def _charge(payload: dict[str, Any]) -> bool:
+def _over_rate(payload: dict[str, Any]) -> bool:
+    """True when an interval sent more packets a second than a measurement flow ever should."""
     interval = float(payload.get("interval_s") or 0)
-    sent = 0
-    octets = 0
-    for flow in payload.get("flows") or []:
-        sent += int(flow.get("sent") or 0)
-        octets += int(float(flow.get("tx_kbps") or 0) * interval * 1000 / 8)
-    state = _budget()
-    state["bytes"] = int(state.get("bytes") or 0) + octets
-    state["run"] = int(state.get("run") or 0) + octets
-    over = (
-        (interval > 0 and sent / interval > MAX_PPS)
-        or int(state["run"]) >= MAX_RUN_BYTES
-    )
-    _save_budget(state, force=over)
-    return over
+    sent = sum(int(flow.get("sent") or 0) for flow in payload.get("flows") or [])
+    return interval > 0 and sent / interval > MAX_PPS
 
 
 def _write_key(key: str) -> None:
@@ -653,10 +606,6 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
     if not Path(BINARY).is_file():
         _finish(config, run_id, link, "failed", "rtnp-send is not installed")
         return
-    if job.get("mode") != "stress":
-        state = _budget()
-        state["run"] = 0
-        _save_budget(state)
     proc = subprocess.Popen(
         args,
         stdout=subprocess.PIPE,
@@ -744,9 +693,9 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
                 with _lock:
                     if _last_failure.startswith(f"{link}:"):
                         _last_failure = ""
-        if mode_of(item) != "stress" and _charge(payload):
+        if mode_of(item) != "stress" and _over_rate(payload):
             proc.terminate()
-            _finish(config, run_id, link, "failed", "Traffic cap reached")
+            _finish(config, run_id, link, "failed", "Packet rate limit reached")
             break
         index = int(payload.get("index") or 0)
         unix_ms = payload.get("unix_ms")

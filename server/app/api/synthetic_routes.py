@@ -24,6 +24,7 @@ from app.synthetic import (
     classify_software,
     ensure_key,
     ensure_profiles,
+    idle_remote_desktop,
     metrics_from_interval,
     normalize_links,
     profile_category,
@@ -686,6 +687,10 @@ def post_sample(
         raise HTTPException(status_code=404, detail="Run not found")
     if body.link not in run.links:
         raise HTTPException(status_code=400, detail="This run does not include that link")
+    # A quiet remote-desktop interval is the traffic model, not a blackout. Keeping it would
+    # file "stopped in the monitor" and would record a round trip of 0.
+    if idle_remote_desktop(run.profile_slug, body.metrics):
+        return {"status": "ok"}
     extracted = classify_software(
         db, monitor, run, body.link, body.recorded_at, metrics_from_interval(body.metrics)
     )

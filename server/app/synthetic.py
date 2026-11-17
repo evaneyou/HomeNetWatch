@@ -579,6 +579,23 @@ def restart_token_for(run: SyntheticRun, link: str) -> int:
         return 0
 
 
+def idle_remote_desktop(profile_slug: str, payload: dict[str, Any]) -> bool:
+    """True when a remote-desktop interval transmitted nothing.
+
+    That preset's gaps are heavy-tailed, so a whole reporting interval can be empty. The receiver
+    then scores one packet left over from the previous interval as 100% loss and records no round
+    trip. The sender was quiet on purpose, so the interval is not a measurement.
+    """
+    if profile_slug != "remote-desktop" or not isinstance(payload, dict):
+        return False
+    flows = payload.get("flows") or []
+    flow = flows[0] if flows else {}
+    if not isinstance(flow, dict):
+        return False
+    sent = flow.get("sent")
+    return not isinstance(sent, bool) and isinstance(sent, (int, float)) and sent == 0
+
+
 def metrics_from_interval(payload: dict[str, Any]) -> dict[str, Any]:
     flows = payload.get("flows") or []
     flow = flows[0] if flows else {}
@@ -691,7 +708,7 @@ def rollup_samples(
     daily_before: datetime,
     delete_before: datetime,
 ) -> dict[str, int]:
-    """Same windows as the other measurements: raw 6 months, hourly, daily, then delete."""
+    """Same windows as the other measurements: raw 60 days, hourly through 12 months, daily, then delete."""
     deleted = db.execute(
         delete(SyntheticSample).where(SyntheticSample.recorded_at < delete_before)
     ).rowcount

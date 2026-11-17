@@ -43,7 +43,7 @@ PAYLOAD_VERSION = 2  # a cached check in an older shape is rebuilt on the next p
 MAX_DETAILS = 600
 
 # How long each kind of row is kept, longest first. Matches services/retention.py. Measurements keep full
-# detail for 6 months, then hourly and daily averages until they are deleted at 2 years.
+# detail for 60 days, then hourly averages through 12 months and daily averages until they are deleted at 2 years.
 RETENTION = [
     {"kept": "5 years", "items": ["KPI"]},
     {
@@ -1414,7 +1414,7 @@ def measure_storage(root: Path, used_bytes: int, total_bytes: int, db_bytes: int
                 {
                     "name": "Image layers and build cache",
                     "bytes": layers,
-                    "note": "Mostly build cache left over from deploys. On the server, docker builder prune clears it.",
+                    "note": "Container image layers, plus any deploy build cache still on disk. docker builder prune removes the cache.",
                 }
             ],
         },

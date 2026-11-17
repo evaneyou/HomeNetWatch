@@ -54,7 +54,7 @@ problem starts: DNS, TCP, TLS, the server's first byte, the measurement tunnel, 
 - **Secure enrollment & self-healing tunnels.** Agents check in with an Ed25519-signed request, pin the
   server's TLS key, wait for admin approval (or scan a QR code on Android TV), and receive a WireGuard
   tunnel with automatic stale-handshake recovery.
-- **Retention built in.** Raw results for 6 months, hourly averages up to 12 months, daily averages
+- **Retention built in.** Raw results for 60 days, hourly averages up to 12 months, daily averages
   up to 2 years.
 - **Three roles.** `admin` can change settings, run scans and approve devices; `viewer` is read-only;
   `guest` is the public read-only demo: identifying fields (home and LAN addresses, city, device and wireless

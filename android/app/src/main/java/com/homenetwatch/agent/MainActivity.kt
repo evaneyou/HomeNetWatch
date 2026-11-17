@@ -14,6 +14,7 @@ import android.net.VpnService
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.KeyEvent
@@ -25,6 +26,7 @@ import android.widget.TextView
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
+import java.time.ZoneId
 
 /** One screen for a TV: what the agent is doing, the installer code and where to open the setup page. */
 class MainActivity : Activity() {
@@ -284,34 +286,23 @@ class MainActivity : Activity() {
     /** The agent's state once it is approved: how long it has run and been connected, its tests and speed test. */
     private fun running(): String {
         val status = AgentService.Status
-        val now = System.currentTimeMillis()
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val nowWall = System.currentTimeMillis()
+        val zone = ZoneId.systemDefault()
         if (store.paused) return "Paused. No tests or reports until you choose Resume agent."
-        val clock = java.time.format.DateTimeFormatter.ofPattern("h:mm a")
-        fun at(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).format(clock)
         return listOfNotNull(
-            if (status.startedAt > 0) "Agent running for ${since(status.startedAt, now)} (since ${at(status.startedAt)})" else "Agent starting",
-            if (status.tunnelUpSince > 0) "Tunnel up for ${since(status.tunnelUpSince, now)}" else status.tunnel.ifEmpty { "Starting the tunnel" },
+            if (status.startedAt > 0) "Agent running for ${Since.running(status.startedAt, nowElapsed, nowWall, zone)}" else "Agent starting",
+            if (status.tunnelUpSince > 0) "Tunnel up for ${Since.span(Since.durationMs(status.tunnelUpSince, nowElapsed))}" else status.tunnel.ifEmpty { "Starting the tunnel" },
             if (status.connectedSince > 0) {
-                "Connected to the server for ${since(status.connectedSince, now)} · last report ${since(status.lastReportAt, now)} ago"
+                val up = Since.span(Since.durationMs(status.connectedSince, nowElapsed))
+                val ago = Since.span(Since.durationMs(status.lastReportAt, nowElapsed))
+                "Connected to the server for $up · last report $ago ago"
             } else {
                 status.health.ifEmpty { "Not connected to the server yet" }
             },
             status.voice?.summary(),
             status.speed?.lastResult?.takeIf { it.isNotEmpty() },
         ).joinToString("\n")
-    }
-
-    /** "3 h 12 m", "4 m 05 s", "1 d 2 h": short enough to read across a room. */
-    private fun since(then: Long, now: Long): String {
-        val seconds = maxOf(0L, (now - then) / 1000)
-        val hours = seconds / 3600
-        val minutes = (seconds % 3600) / 60
-        return when {
-            hours >= 24 -> "${hours / 24} d ${hours % 24} h"
-            hours > 0 -> "$hours h $minutes m"
-            minutes > 0 -> "$minutes m ${"%02d".format(seconds % 60)} s"
-            else -> "$seconds s"
-        }
     }
 
     /** Dots that count up once a second while the device waits for the dashboard, so the screen never looks frozen. */

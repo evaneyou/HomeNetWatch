@@ -189,6 +189,7 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **Android agent uptime on the TV (Android agent 0.5.1):** the Shield screen timed the agent and the tunnel with the wall clock. That clock is often wrong at boot and then jumps when the time syncs, so the screen showed hundreds of days and a time of day with no date. Those durations now follow the monotonic clock, and a start that was not today includes the date.
 - **The Pi no longer stops every real-time flow about every 93 minutes (Pi agent 0.8.18):** the agent stopped a flow
   after 2 GiB "per run", but kept one count for all flows together. Six continuous flows reach that in about 93
   minutes, so every healthy flow was stopped and relaunched sixteen times a day, and a flow restarted that way

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 
 /**
  * Keeps the agent running in the background: the setup page and enrollment, then, once approved, the tunnel, the
@@ -52,7 +53,7 @@ class AgentService : Service() {
         if (intent?.action != null) wake()
         if (!running) {
             running = true
-            Status.startedAt = System.currentTimeMillis()
+            Status.startedAt = SystemClock.elapsedRealtime()
             // Keep the CPU awake while the TV is in standby, so the tests do not stop.
             val power = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "homenetwatch:agent").apply { acquire() }
@@ -96,11 +97,11 @@ class AgentService : Service() {
                     Status.disconnected(problem)
                     return@loop RETRY_MS
                 }
-                if (Status.tunnelUpSince == 0L) Status.tunnelUpSince = System.currentTimeMillis()
+                if (Status.tunnelUpSince == 0L) Status.tunnelUpSince = SystemClock.elapsedRealtime()
                 Status.tunnel = "Tunnel up"
                 try {
                     Health.report(this, store, voice.lastFailure)
-                    val now = System.currentTimeMillis()
+                    val now = SystemClock.elapsedRealtime()
                     if (Status.connectedSince == 0L) Status.connectedSince = now
                     Status.lastReportAt = now
                     Status.health = ""
@@ -159,7 +160,10 @@ class AgentService : Service() {
         threads.forEach { it.interrupt() }
     }
 
-    /** What the TV screen shows about the running agent. Times are epoch milliseconds; 0 means not now. */
+    /**
+     * What the TV screen shows about the running agent. Times are [SystemClock.elapsedRealtime] milliseconds,
+     * so a wall-clock jump (the Shield correcting its clock after boot) does not add days. 0 means not now.
+     */
     object Status {
         @Volatile var tunnel = ""
         @Volatile var health = ""

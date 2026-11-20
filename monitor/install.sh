@@ -29,13 +29,25 @@ fi
 if [ -f hnw-wifi-tune.service ] && [ -d /etc/systemd/system ]; then
   install -m 644 hnw-wifi-tune.service /etc/systemd/system/hnw-wifi-tune.service
 fi
-if [ -d /etc/sudoers.d ] && [ -f /opt/monitor/restore_tunnel.sh ]; then
-  printf '%s\n' 'monitor ALL=(root) NOPASSWD: /opt/monitor/restore_tunnel.sh wg0, /opt/monitor/restore_tunnel.sh wg1, /opt/monitor/tune_wifi.sh' \
-    > /etc/sudoers.d/hnw-restore-tunnel
-  chmod 440 /etc/sudoers.d/hnw-restore-tunnel
+# The agent cannot use sudo (its service sets NoNewPrivileges), so a root systemd unit restarts a dead
+# tunnel when the agent leaves a request in /run/monitor.
+rm -f /etc/sudoers.d/hnw-restore-tunnel
+if [ -d /etc/systemd/system ]; then
+  install -m 644 hnw-restore-tunnel@.path hnw-restore-tunnel@.service /etc/systemd/system/
 fi
 if [ -f rtnp-send ]; then
-  install -m 755 rtnp-send /opt/monitor/rtnp-send
+  install -o root -g root -m 755 rtnp-send /opt/monitor/rtnp-send
+fi
+# The service runs this program, so it must be the real one, owned by root. A stand-in script that starts
+# a copy somewhere else (a temporary folder, say) stops working when that copy is cleaned away.
+if [ -f /opt/monitor/rtnp-send ]; then
+  if [ "$(head -c 4 /opt/monitor/rtnp-send | od -An -c | tr -d ' \n')" = "177ELF" ]; then
+    chown root:root /opt/monitor/rtnp-send
+    chmod 755 /opt/monitor/rtnp-send
+  else
+    echo "WARNING: /opt/monitor/rtnp-send is not the rtnp-send program. Build it with scripts/build-rtnp.sh," >&2
+    echo "pack again with monitor/pack.sh and run this script from the new package." >&2
+  fi
 fi
 # The sender binds its own UDP port, so the measurement socket can only be moved
 # onto one link by this shim. Without it every link measures the default route.
@@ -97,6 +109,9 @@ EOF
 chmod 755 /usr/local/bin/hnw-reset
 systemctl daemon-reload
 systemctl enable monitor.service
+if [ -f /etc/systemd/system/hnw-restore-tunnel@.path ]; then
+  systemctl enable --now hnw-restore-tunnel@wg0.path hnw-restore-tunnel@wg1.path
+fi
 if [ -f /etc/systemd/system/hnw-wifi-tune.service ]; then
   systemctl enable hnw-wifi-tune.service 2>/dev/null || true
 fi

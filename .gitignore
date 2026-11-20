@@ -26,6 +26,8 @@ wg*.conf
 
 # Build output
 monitor/dist/
+# The built sender (scripts/build-rtnp.sh puts it here for pack.sh). A binary, never committed.
+monitor/rtnp-send
 dashboard/dist/
 
 # Editors and OS

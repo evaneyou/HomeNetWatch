@@ -96,6 +96,9 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Android agent 0.5.2 includes the traffic sender.** Voice, video conference and remote desktop can start again. The 0.5.1 build was packed without `librtnp_send.so`, so the Shield reported the sender missing and those tests never started.
+- **Database backups are kept for 7 days.** WireGuard and agent TLS backups still keep 14 copies. `DB_KEEP` overrides the database count.
+- **Raw measurements are kept for 60 days.** From 60 days to 12 months, including months 10 through 12, each hour is one average. From 12 months to 2 years, each day is one average. Server Health states that schedule, and says database backups keep 7 copies while WireGuard and agent TLS keep 14.
 - **KPI banner is shorter:** the line under the headline that repeated the valid hours and the targets is gone. The
   valid hours are still in the page's subtitle and each chart still names its target. A root-cause summary, when
   there is one, stays.
@@ -192,6 +195,8 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **Remote desktop no longer files "stopped in the monitor" when it goes quiet:** that check's packet gaps are heavy-tailed, so a whole 10-second report sometimes contains no packets. The receiver scored the one packet still unaccounted from the previous report as 100% loss, and the server opened a software issue while voice and video on the same link were fine. An interval that sent nothing is now discarded.
+- **Android agent uptime on the TV (Android agent 0.5.1):** the Shield screen timed the agent and the tunnel with the wall clock. That clock is often wrong at boot and then jumps when the time syncs, so the screen showed hundreds of days and a time of day with no date. Those durations now follow the monotonic clock, and a start that was not today includes the date.
 - **The Pi can restart a dead tunnel again (Pi agent 0.8.19):** the agent restarted a WireGuard tunnel that stopped
   answering through `sudo`, but its service sets `NoNewPrivileges`, which blocks `sudo`, so every attempt failed. The
   agent now leaves a request in `/run/monitor` and a root systemd unit (`hnw-restore-tunnel@`) does the restart. The

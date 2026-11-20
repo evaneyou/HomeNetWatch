@@ -141,7 +141,7 @@ receiver would reflect packets to any spoofed source.
 ./scripts/backup.sh
 ```
 
-This writes a database dump plus the WireGuard and TLS state to `backups/`, keeping the newest 14 of each. Each file is encrypted with [age](https://github.com/FiloSottile/age) to the public key at `~/.config/homenetwatch/backup.pub` (override the path with `BACKUP_PUBKEY`). The private key is not on the server. Server Health shows the time and size of those copies, and does not serve the files. Run it daily from cron and copy `backups/` somewhere else:
+This writes a database dump plus the WireGuard and TLS state to `backups/`, keeping the newest 7 database dumps and the newest 14 WireGuard and TLS copies. Each file is encrypted with [age](https://github.com/FiloSottile/age) to the public key at `~/.config/homenetwatch/backup.pub` (override the path with `BACKUP_PUBKEY`). The private key is not on the server. Server Health shows the time and size of those copies, and does not serve the files. Run it daily from cron and copy `backups/` somewhere else:
 
 ```bash
 # On a machine other than the server, once:

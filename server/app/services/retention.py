@@ -1,6 +1,6 @@
 """Keep two years of measurements, and one year of guest visits.
 
-Raw samples stay for 6 months. From 6 to 12 months they are averaged into one
+Raw samples stay for 60 days. From 60 days to 12 months they are averaged into one
 row per hour. From 12 months to 2 years they are averaged into one row per day.
 Anything older than 2 years is deleted.
 """
@@ -44,6 +44,9 @@ from app.models import (
 
 log = logging.getLogger(__name__)
 
+# Full detail. Older than this, through 12 months, is one row per hour.
+RAW_DAYS = 60
+
 _STATUS_RANK = {ResultStatus.ok: 0, ResultStatus.degraded: 1, ResultStatus.fail: 2}
 _METRIC_KEYS = ("rtt_ms", "loss_pct", "total_ms", "up_mbps", "down_mbps")
 
@@ -63,14 +66,14 @@ def run_retention() -> None:
 def apply_retention(db: Session, now: datetime) -> dict[str, int]:
     """Roll up and delete measurement rows.
 
-    ``now - 6 months`` through ``now`` stays raw.
-    ``now - 12 months`` through ``now - 6 months`` becomes one row per hour.
+    ``now - 60 days`` through ``now`` stays raw.
+    ``now - 12 months`` through ``now - 60 days`` becomes one row per hour.
     ``now - 24 months`` through ``now - 12 months`` becomes one row per day.
     Older than 24 months is deleted.
     """
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
-    hourly_before = _subtract_months(now, 6)
+    hourly_before = now - timedelta(days=RAW_DAYS)
     daily_before = _subtract_months(now, 12)
     delete_before = _subtract_months(now, 24)
 

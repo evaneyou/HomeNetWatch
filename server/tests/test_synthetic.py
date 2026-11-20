@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.auth import hash_password
 from app.internet_tests import ensure_internet_tests
 from app.models import Issue, IssueStatus, Monitor, SyntheticRun, SyntheticSample, User, UserRole
-from app.synthetic import build_report, is_blackout, is_tunnel_target, launch_plan, public_host, send_args
+from app.synthetic import build_report, idle_remote_desktop, is_blackout, is_tunnel_target, launch_plan, public_host, send_args
 from conftest import login
 
 
@@ -747,6 +747,83 @@ def test_a_blackout_beside_a_healthy_check_is_a_software_issue(client, db, monit
     assert assignment.status_code == 200, assignment.text
     job = next(item for item in assignment.json()["jobs"] if item["run_id"] == str(video.id))
     assert job["restart_token"] == 2
+
+
+def test_a_quiet_remote_desktop_interval_is_not_a_blackout(client, db, monitor_token):
+    quiet = {"flows": [{"sent": 0, "lost": 1, "loss_pct": 100.0, "rtt": None, "rx": {"packets": 0, "delay_avg_ms": 0.0}}]}
+    assert idle_remote_desktop("remote-desktop", quiet)
+    assert not idle_remote_desktop("video-conference", quiet)
+    assert not idle_remote_desktop("remote-desktop", {"flows": [{"sent": 400, "loss_pct": 100.0}]})
+    assert not idle_remote_desktop("remote-desktop", {"flows": [{"loss_pct": 100.0}]})
+
+    monitor = _monitor(db)
+    voice = SyntheticRun(
+        monitor_id=monitor.id, profile_slug="voip-g711a", mode="continuous", links=["wireless"], options={}, status="running", finished_links=[]
+    )
+    desktop = SyntheticRun(
+        monitor_id=monitor.id, profile_slug="remote-desktop", mode="continuous", links=["wireless"], options={}, status="running", finished_links=[]
+    )
+    video = SyntheticRun(
+        monitor_id=monitor.id, profile_slug="video-conference", mode="continuous", links=["wireless"], options={}, status="running", finished_links=[]
+    )
+    db.add_all([voice, desktop, video])
+    db.commit()
+    start = datetime(2026, 11, 17, 0, 53, tzinfo=timezone.utc)
+    healthy = _post_sample(client, monitor_token, voice.id, "wireless", start, 89, 2, 0, True, 548)
+    assert healthy.status_code == 200, healthy.text
+
+    gap = client.post(
+        "/api/v1/synthetic/samples",
+        headers=_headers(monitor_token),
+        json={
+            "run_id": str(desktop.id),
+            "link": "wireless",
+            "interval_index": 548,
+            "recorded_at": start.isoformat(),
+            "metrics": {
+                "type": "interval",
+                "flows": [
+                    {
+                        "sent": 0,
+                        "lost": 1,
+                        "tx_kbps": 0.0,
+                        "loss_pct": 100.0,
+                        "rtt": None,
+                        "rx": {"packets": 0, "delay_avg_ms": 0.0, "jitter_rfc3550_ms": 0.0},
+                        "verdict": {"pass": False, "notes": ["round trip not measured"], "failures": ["loss 100.00% exceeds 1%"]},
+                    }
+                ],
+            },
+        },
+    )
+    assert gap.status_code == 200, gap.text
+    db.expire_all()
+    assert db.scalar(select(SyntheticSample).where(SyntheticSample.run_id == desktop.id)) is None
+    assert db.scalar(select(Issue).where(Issue.monitor_id == monitor.id, Issue.title.contains("Remote desktop"))) is None
+    assert "software_restarts" not in (db.get(SyntheticRun, desktop.id).options or {})
+
+    real = _post_sample(client, monitor_token, desktop.id, "wireless", start + timedelta(seconds=10), 0, 0, 100, False, 549)
+    assert real.status_code == 200, real.text
+    db.expire_all()
+    stored = db.scalar(select(SyntheticSample).where(SyntheticSample.run_id == desktop.id))
+    assert stored is not None and stored.verdict == "software"
+    issue = db.scalar(select(Issue).where(Issue.monitor_id == monitor.id, Issue.root_cause_stage == "software"))
+    assert issue is not None and "Remote desktop" in issue.title
+
+    dead_video = client.post(
+        "/api/v1/synthetic/samples",
+        headers=_headers(monitor_token),
+        json={
+            "run_id": str(video.id),
+            "link": "wireless",
+            "interval_index": 1,
+            "recorded_at": (start + timedelta(seconds=20)).isoformat(),
+            "metrics": {"type": "interval", "flows": [{"sent": 0, "loss_pct": 100.0, "rtt": None, "rx": {"packets": 0}, "verdict": {"pass": False}}]},
+        },
+    )
+    assert dead_video.status_code == 200, dead_video.text
+    db.expire_all()
+    assert db.scalar(select(SyntheticSample).where(SyntheticSample.run_id == video.id)).verdict == "software"
 
 
 def test_health_uses_the_running_checks_limits(client, db):

@@ -1,6 +1,6 @@
 """KPI reporting: availability, packet loss and application health over a day, week, month or year.
 
-Raw measurements are averaged after six months, which would blur a long report. So every hour the
+Raw measurements are averaged after 60 days, which would blur a long report. So every hour the
 exact counts (checks run, checks failed, loss, latency) are written to `kpi_hourly`, and the report
 adds those up. Counts and sums are kept, never averages, so any period combines without bias.
 

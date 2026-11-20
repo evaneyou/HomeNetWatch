@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Back up the database and the key material the agents depend on.
 #
-# Writes to ./backups (override with BACKUP_DIR), keeps the newest KEEP files of each kind
-# (default 14), and creates files readable only by you. Each file is encrypted to the public
+# Writes to ./backups (override with BACKUP_DIR). Database dumps keep the newest DB_KEEP
+# (default 7). WireGuard and TLS keep the newest KEEP (default 14). Files are readable only
+# by you. Each file is encrypted to the public
 # key in BACKUP_PUBKEY (default ~/.config/homenetwatch/backup.pub). The private key stays
 # off this machine. Copy ./backups off the server too.
 #
@@ -14,6 +15,7 @@ umask 077
 
 dir="${BACKUP_DIR:-backups}"
 keep="${KEEP:-14}"
+db_keep="${DB_KEEP:-7}"
 pub="${BACKUP_PUBKEY:-$HOME/.config/homenetwatch/backup.pub}"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$dir"
@@ -58,9 +60,13 @@ echo "Archiving WireGuard and TLS state..."
 docker compose exec -T wireguard tar -C /etc/wireguard -cz . | encrypt_to "$dir/wireguard-$stamp.tar.gz.age"
 docker compose exec -T agent-api tar -C /var/lib/hns-tls -cz . | encrypt_to "$dir/tls-$stamp.tar.gz.age"
 
-# Drop everything but the newest $keep of each kind.
+# Drop everything but the newest copies of each kind.
 for kind in db wireguard tls; do
-  ls -1t "$dir/$kind"-* 2>/dev/null | tail -n +"$((keep + 1))" | xargs -r rm -f --
+  limit="$keep"
+  if [ "$kind" = db ]; then
+    limit="$db_keep"
+  fi
+  ls -1t "$dir/$kind"-* 2>/dev/null | tail -n +"$((limit + 1))" | xargs -r rm -f --
 done
 
 echo "Backup written to $dir/ ($stamp)."

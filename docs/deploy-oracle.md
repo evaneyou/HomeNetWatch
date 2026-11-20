@@ -156,7 +156,7 @@ registration), and approve it when it checks in.
 ```
 
 This writes a database dump plus the WireGuard and TLS state to `backups/`, keeping the newest
-14 of each. Each file is encrypted with age to `~/.config/homenetwatch/backup.pub`. The private
+7 database dumps and the newest 14 WireGuard and TLS copies. Each file is encrypted with age to `~/.config/homenetwatch/backup.pub`. The private
 key stays off the server. Server Health shows the time and size of those copies, and does not
 serve the files. Run it daily from cron and copy `backups/` somewhere else (your PC, object storage):
 

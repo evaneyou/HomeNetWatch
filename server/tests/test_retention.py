@@ -69,6 +69,9 @@ def test_retention_averages_old_samples_and_drops_anything_past_two_years():
     session.add_all(
         [
             result(now - timedelta(days=1), 11, ResultStatus.ok, f"recent-{suffix}"),
+            result(now - timedelta(days=30), 12, ResultStatus.ok, f"within-{suffix}"),
+            result(now - timedelta(days=70), 13, ResultStatus.ok, f"past-a-{suffix}"),
+            result(now - timedelta(days=70) + timedelta(minutes=10), 15, ResultStatus.ok, f"past-b-{suffix}"),
             result(datetime(2025, 10, 15, 8, 10, tzinfo=timezone.utc), 10, ResultStatus.ok, f"h1-{suffix}"),
             result(datetime(2025, 10, 15, 8, 20, tzinfo=timezone.utc), 20, ResultStatus.ok, f"h2-{suffix}"),
             result(datetime(2025, 10, 15, 8, 40, tzinfo=timezone.utc), 30, ResultStatus.fail, f"h3-{suffix}"),
@@ -139,19 +142,23 @@ def test_retention_averages_old_samples_and_drops_anything_past_two_years():
         assert summary["deleted_wifi"] >= 1
 
         rows = session.scalars(select(TestResult).where(TestResult.test_id == test.id)).all()
-        by_message = {row.message: row for row in rows}
-        assert len(rows) == 3
-        assert by_message[None].external_id == f"recent-{suffix}"
-        assert by_message[None].metrics["rtt_ms"] == 11
+        assert len(rows) == 5
+        raw = [row for row in rows if row.message is None]
+        assert {row.external_id for row in raw} == {f"recent-{suffix}", f"within-{suffix}"}
+        assert next(row for row in raw if row.external_id == f"recent-{suffix}").metrics["rtt_ms"] == 11
 
-        hourly = by_message["Hourly average"]
+        hourlies = [row for row in rows if row.message == "Hourly average"]
+        assert len(hourlies) == 2
+        hourly = next(row for row in hourlies if row.started_at == datetime(2025, 10, 15, 8, 0, tzinfo=timezone.utc))
+        aged = next(row for row in hourlies if row.started_at == datetime(2026, 4, 6, 12, 0, tzinfo=timezone.utc))
+        assert aged.metrics["rtt_ms"] == 14
         assert hourly.started_at == datetime(2025, 10, 15, 8, 0, tzinfo=timezone.utc)
         assert hourly.status == ResultStatus.fail
         assert hourly.metrics["rtt_ms"] == 20
         assert hourly.stages[0]["duration_ms"] == 20
         assert hourly.stages[0]["status"] == "fail"
 
-        daily = by_message["Daily average"]
+        daily = next(row for row in rows if row.message == "Daily average")
         assert daily.started_at == datetime(2025, 4, 15, 0, 0, tzinfo=timezone.utc)
         assert daily.status == ResultStatus.degraded
         assert daily.metrics["rtt_ms"] == 50
@@ -171,7 +178,7 @@ def test_retention_averages_old_samples_and_drops_anything_past_two_years():
         assert again["daily_results"] == 0
         assert again["hourly_wifi"] == 0
         kept = session.scalars(select(TestResult).where(TestResult.test_id == test.id)).all()
-        assert len(kept) == 3
+        assert len(kept) == 5
     finally:
         session.execute(
             text("DELETE FROM test_results WHERE test_id = :tid"),

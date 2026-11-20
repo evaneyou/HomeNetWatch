@@ -1370,6 +1370,10 @@ export default function ServerHealthPage() {
             />
             {current.categories.length > 0 ? <DatabaseCategories categories={current.categories} /> : null}
             <h3 className="server-health-heading">How long rows are kept</h3>
+            <p className="muted server-health-note">
+              Test results, Wi-Fi, channels, clients, and synthetic samples keep every row for 60 days, then one row per
+              hour through 12 months, then one row per day through 2 years.
+            </p>
             <div className="server-health-kept">
               {current.retention.map((group) => (
                 <div className="server-health-kept-row" key={group.kept}>
@@ -1391,8 +1395,9 @@ export default function ServerHealthPage() {
           <div className="panel" key={key}>
             <h2 className="server-health-heading">Backup</h2>
             <p className="muted server-health-note">
-              A copy is taken every day at 3:15 AM UTC and encrypted before it is saved. The newest 14 of each kind stay
-              on this machine. The private key is not on this machine, and the files themselves are not shown here.
+              A copy is taken every day at 3:15 AM UTC and encrypted before it is saved. The newest 7 database copies stay
+              on this machine, and the newest 14 WireGuard and agent TLS copies. The private key is not on this machine,
+              and the files themselves are not shown here.
             </p>
             {!current.backups.available ? <div className="state-box">The server cannot see the backup folder.</div> : null}
             {current.backups.available && current.backups.kinds.every((kind) => kind.count === 0) ? (

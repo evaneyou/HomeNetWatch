@@ -15,7 +15,7 @@ case "$iface" in
 esac
 
 if [ "$(id -u)" -ne 0 ]; then
-  echo "Run as root (or via the monitor sudoers rule)." >&2
+  echo "Run as root (the agent asks through hnw-restore-tunnel@${iface}.service)." >&2
   exit 1
 fi
 

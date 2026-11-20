@@ -23,7 +23,9 @@ missing, `wireguard` when a tunnel config is present, and Kismet with `--kismet`
 The real-time flows need the `rtnp-send` binary from
 [RTN_PackGen](https://github.com/evaneyou/RTN_PackGen). It is not committed: build it once with
 `./scripts/build-rtnp.sh` (Docker, cross-compiles for 64-bit ARM into `monitor/rtnp-send`) and
-`pack.sh` includes it. Use the same RTN_PackGen release as the server's receiver.
+`pack.sh` includes it. Use the same RTN_PackGen release as the server's receiver. Install and update put it at
+`/opt/monitor/rtnp-send` owned by root, and warn when the file there is not the real program (for example a script
+that starts a copy kept somewhere else).
 
 ## Install
 
@@ -76,7 +78,9 @@ On-demand scans from the dashboard use Scapy (ARP discovery) and Nmap (common TC
 
 ## Tunnel watch
 
-The agent pings `10.7.0.1` (wired `wg0`) and `10.7.1.1` (Wi-Fi `wg1`) about every 30 seconds. After two misses it runs `sudo -n /opt/monitor/restore_tunnel.sh wgN`, which stops and starts that `wg-quick` unit so PostUp re-pins the current default route. While home internet on that link is also down, restores are limited to once per 15 minutes. Once public access is back (probe of `1.1.1.1` / `8.8.8.8` on the NIC) but the tunnel peer is still dead, it retries about once a minute so a stale pin from the outage does not leave Wi-Fi apps stranded. A dashboard **Restart probe** also bounces both tunnels before the agent process replaces itself. Install and update install a sudoers drop-in that allows only that script for user `monitor`.
+The agent pings `10.7.0.1` (wired `wg0`) and `10.7.1.1` (Wi-Fi `wg1`) about every 30 seconds. After two misses it asks a root helper to run `/opt/monitor/restore_tunnel.sh wgN`, which stops and starts that `wg-quick` unit so PostUp re-pins the current default route. While home internet on that link is also down, restores are limited to once per 15 minutes. Once public access is back (probe of `1.1.1.1` / `8.8.8.8` on the NIC) but the tunnel peer is still dead, it retries about once a minute so a stale pin from the outage does not leave Wi-Fi apps stranded. A dashboard **Restart probe** leaves the tunnels alone; the watch checks them as soon as the agent is back.
+
+The agent runs as user `monitor` with `NoNewPrivileges`, so it cannot use `sudo`. It asks by creating `/run/monitor/restore-wgN`. systemd watches for that file (`hnw-restore-tunnel@wgN.path`) and runs the script as root (`hnw-restore-tunnel@wgN.service`), which writes the outcome to `/run/hnw-restore-wgN.result` and removes the request. Install and update enable both path units. `journalctl -u 'hnw-restore-tunnel@*'` shows each restart.
 
 ## Airwave memory
 
@@ -130,7 +134,8 @@ Setup accepts HTTPS, or HTTP to a private LAN address.
 | `avahi-monitor.service` | Advertises the setup page as `<hostname>.local` |
 | `synthetic.py` | Real-time application traffic on the physical NIC |
 | `tunnel_watch.py` | Pings tunnel peers and restarts a dead `wg0` / `wg1` |
-| `restore_tunnel.sh` | Root helper invoked via sudoers to restart one WireGuard unit |
+| `restore_tunnel.sh` | Root helper that restarts one WireGuard unit |
+| `hnw-restore-tunnel@.path`, `hnw-restore-tunnel@.service` | Run `restore_tunnel.sh` as root when the agent leaves a request in `/run/monitor` |
 | `tune_wifi.sh` | Unmanages `hnwradio*`/`p2p-dev-*`, pins 5 GHz BSSID, and sets multicore IRQ/RPS + `fq_codel` |
 | `hnw-wifi-tune.service` | `systemd` oneshot unit that applies `tune_wifi.sh` after boot |
 | `lan_scan.py` | On-demand Scapy ARP + Nmap for Airwaves Security |

@@ -1,0 +1,8 @@
+[Unit]
+Description=Watch for the HomeNetWatch agent asking to restart tunnel %i
+
+[Path]
+PathExists=/run/monitor/restore-%i
+
+[Install]
+WantedBy=multi-user.target

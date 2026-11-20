@@ -17,10 +17,12 @@ for file in $files; do
     exit 1
   fi
 done
-if [ ! -f restore_tunnel.sh ]; then
-  echo "Missing restore_tunnel.sh. Unpack monitor.tar.gz and run this script from that directory." >&2
-  exit 1
-fi
+for file in restore_tunnel.sh monitor.service hnw-restore-tunnel@.path hnw-restore-tunnel@.service; do
+  if [ ! -f "$file" ]; then
+    echo "Missing $file. Unpack monitor.tar.gz and run this script from that directory." >&2
+    exit 1
+  fi
+done
 
 if [ ! -f /opt/monitor/agent.py ]; then
   echo "No agent is installed here. For a first install, run sudo ./install.sh." >&2
@@ -40,14 +42,28 @@ if [ -f hnw-wifi-tune.service ] && [ -d /etc/systemd/system ]; then
   systemctl daemon-reload
   systemctl enable hnw-wifi-tune.service 2>/dev/null || true
 fi
-# Narrow sudo so the monitor user can restart only the WireGuard tunnels.
-if [ -d /etc/sudoers.d ]; then
-  printf '%s\n' 'monitor ALL=(root) NOPASSWD: /opt/monitor/restore_tunnel.sh wg0, /opt/monitor/restore_tunnel.sh wg1, /opt/monitor/tune_wifi.sh' \
-    > /etc/sudoers.d/hnw-restore-tunnel
-  chmod 440 /etc/sudoers.d/hnw-restore-tunnel
+# The agent cannot use sudo (its service sets NoNewPrivileges), so a root systemd unit restarts a dead
+# tunnel when the agent leaves a request in /run/monitor. The old sudoers rule never worked and is removed.
+rm -f /etc/sudoers.d/hnw-restore-tunnel
+if [ -d /etc/systemd/system ]; then
+  install -o root -g root -m 644 hnw-restore-tunnel@.path hnw-restore-tunnel@.service /etc/systemd/system/
+  install -o root -g root -m 644 monitor.service /etc/systemd/system/monitor.service
+  systemctl daemon-reload
+  systemctl enable --now hnw-restore-tunnel@wg0.path hnw-restore-tunnel@wg1.path
 fi
 if [ -f rtnp-send ]; then
   install -o root -g root -m 755 rtnp-send /opt/monitor/rtnp-send
+fi
+# The service runs this program, so it must be the real one, owned by root. A stand-in script that starts
+# a copy somewhere else (a temporary folder, say) stops working when that copy is cleaned away.
+if [ -f /opt/monitor/rtnp-send ]; then
+  if [ "$(head -c 4 /opt/monitor/rtnp-send | od -An -c | tr -d ' \n')" = "177ELF" ]; then
+    chown root:root /opt/monitor/rtnp-send
+    chmod 755 /opt/monitor/rtnp-send
+  else
+    echo "WARNING: /opt/monitor/rtnp-send is not the rtnp-send program. Build it with scripts/build-rtnp.sh," >&2
+    echo "pack again with monitor/pack.sh and run this script from the new package." >&2
+  fi
 fi
 if [ -f rtnp_bind.c ] && command -v cc >/dev/null 2>&1; then
   cc -O2 -fPIC -shared -o /opt/monitor/rtnp-bind.so rtnp_bind.c

@@ -1,0 +1,9 @@
+[Unit]
+Description=Restart HomeNetWatch tunnel %i for the agent
+
+[Service]
+Type=oneshot
+ExecStart=/opt/monitor/restore_tunnel.sh %i
+# The outcome goes where only root can write, then the agent's request is removed so it knows this ran.
+ExecStopPost=/bin/sh -c 'echo "$$SERVICE_RESULT" > /run/hnw-restore-%i.result; rm -rf /run/monitor/restore-%i'
+TimeoutStartSec=75

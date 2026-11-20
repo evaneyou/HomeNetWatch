@@ -2,7 +2,12 @@
 
 The Wi-Fi radio can stay up while wg1 stops handshaking. App checks then fail against
 10.7.1.1 even though internet over wlan0 is fine. This loop pings the tunnel peers and
-asks restore_tunnel.sh (via a narrow sudoers rule) to restart the unit.
+asks a root helper to restart the unit.
+
+The agent cannot become root: its service sets NoNewPrivileges, which stops sudo. It asks by creating
+/run/monitor/restore-wgN instead. systemd watches for that file (hnw-restore-tunnel@wgN.path) and runs
+restore_tunnel.sh as root (hnw-restore-tunnel@wgN.service), which writes how it went to
+/run/hnw-restore-wgN.result and removes the request.
 
 When the ISP was down, a restore may have re-pinned routes against an empty default
 gateway. After the access plane recovers, retry quickly so the measurement tunnel comes
@@ -18,7 +23,11 @@ from pathlib import Path
 
 import agent_state as state
 
-RESTORE = Path(os.environ.get("MONITOR_RESTORE_TUNNEL", "/opt/monitor/restore_tunnel.sh"))
+# Where the agent leaves a request (its own runtime folder) and where the root helper leaves the outcome.
+REQUEST_DIR = Path(os.environ.get("MONITOR_RUN_DIR", "/run/monitor"))
+RESULT_DIR = Path(os.environ.get("MONITOR_RESTORE_RESULT_DIR", "/run"))
+RESTORE_WAIT_S = 90
+RESTORE_POLL_S = 0.5
 FAILS_BEFORE_RESTORE = 2
 # While the home internet path is also down, do not thrash wg-quick.
 COOLDOWN_OUTAGE_S = 15 * 60
@@ -147,30 +156,42 @@ def _peer_ok(host: str, iface: str) -> bool:
     return _ping(host)
 
 
-def _restore(iface: str) -> bool:
+def _restore_failed(iface: str, why: str) -> bool:
+    print(f"tunnel_watch: restore {iface} failed: {why}", flush=True)
     try:
-        completed = subprocess.run(
-            ["sudo", "-n", str(RESTORE), iface],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        print(f"tunnel_watch: restore {iface} failed: {exc}", flush=True)
-        try:
-            state.note_log("tunnel", "warning", f"Could not restore {iface}: {exc}"[:200])
-        except Exception:
-            pass
+        state.note_log("tunnel", "warning", f"Restore {iface} failed: {why}"[:200])
+    except Exception:
+        pass
+    return False
+
+
+def _restore(iface: str) -> bool:
+    """Ask the root helper to restart one tunnel and wait for it. True when the helper reported success."""
+    if iface not in _fail_counts:
         return False
-    if completed.returncode != 0:
-        err = (completed.stderr or completed.stdout or "restore failed").strip()[:200]
-        print(f"tunnel_watch: restore {iface} exit {completed.returncode}: {err}", flush=True)
+    request = REQUEST_DIR / f"restore-{iface}"
+    try:
+        request.write_text("", encoding="ascii")
+    except OSError as exc:
+        return _restore_failed(iface, f"could not leave a request in {REQUEST_DIR} ({exc}); run update.sh again")
+    picked_up = False
+    for _ in range(int(RESTORE_WAIT_S / RESTORE_POLL_S)):
+        time.sleep(RESTORE_POLL_S)
+        if not request.exists():
+            picked_up = True
+            break
+    if not picked_up:
         try:
-            state.note_log("tunnel", "warning", f"Restore {iface} failed: {err}")
-        except Exception:
+            request.unlink()
+        except OSError:
             pass
-        return False
+        return _restore_failed(iface, f"nothing answered the request; check hnw-restore-tunnel@{iface}.path")
+    try:
+        result = (RESULT_DIR / f"hnw-restore-{iface}.result").read_text(encoding="ascii").strip()
+    except OSError:
+        result = "no result"
+    if result != "success":
+        return _restore_failed(iface, f"the helper reported {result[:60]}; see journalctl -u hnw-restore-tunnel@{iface}")
     print(f"tunnel_watch: restored {iface}", flush=True)
     try:
         state.note_log("tunnel", "info", f"Restarted {iface} after tunnel timeout")
@@ -202,7 +223,7 @@ def check_once(now: float | None = None) -> None:
         last = _last_restore_at.get(iface)
         if last is not None and moment - last < cooldown:
             continue
-        # Record the attempt time even when restore fails, so we do not spin sudo.
+        # Record the attempt time even when restore fails, so we do not ask again at once.
         _last_restore_at[iface] = moment
         if not _restore(iface):
             continue
@@ -226,14 +247,6 @@ def check_once(now: float | None = None) -> None:
             )
         except Exception:
             pass
-
-
-def restore_all_configured() -> None:
-    """Best-effort bounce of every configured tunnel (used after a probe restart)."""
-    for _link, (_host, _port, _table, iface) in state._TUNNELS.items():
-        if not _configured(iface):
-            continue
-        _restore(iface)
 
 
 def tunnel_loop() -> None:

@@ -33,12 +33,8 @@ def honor_restart(config: dict, restart: bool) -> None:
             config.get("name"),
         )
         synthetic.stop_all()
-        try:
-            from tunnel_watch import restore_all_configured
-
-            restore_all_configured()
-        except Exception:
-            pass
+        # The tunnels are left alone: the watch loop checks them as soon as the agent is back and restarts
+        # only one that is really dead.
         os.execv(sys.executable, [sys.executable, *sys.argv])
     except (OSError, urllib.error.URLError, TimeoutError, ValueError):
         with state._lock:

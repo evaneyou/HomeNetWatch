@@ -12,6 +12,10 @@ ExecStart=/usr/bin/python3 /opt/monitor/agent.py
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
+# /run/monitor: where the agent asks the root helper (hnw-restore-tunnel@) to restart a tunnel.
+RuntimeDirectory=monitor
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 
 [Install]
 WantedBy=multi-user.target

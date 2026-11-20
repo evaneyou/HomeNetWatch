@@ -189,6 +189,12 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **The Pi can restart a dead tunnel again (Pi agent 0.8.19):** the agent restarted a WireGuard tunnel that stopped
+  answering through `sudo`, but its service sets `NoNewPrivileges`, which blocks `sudo`, so every attempt failed. The
+  agent now leaves a request in `/run/monitor` and a root systemd unit (`hnw-restore-tunnel@`) does the restart. The
+  unused sudoers rule is removed. A **Restart probe** no longer tries to bounce both tunnels first.
+- **The Pi's traffic sender is installed as a root-owned program:** install and update set the owner of
+  `/opt/monitor/rtnp-send` to root and warn when the file there is not the real program.
 - **The Pi no longer stops every real-time flow about every 93 minutes (Pi agent 0.8.18):** the agent stopped a flow
   after 2 GiB "per run", but kept one count for all flows together. Six continuous flows reach that in about 93
   minutes, so every healthy flow was stopped and relaunched sixteen times a day, and a flow restarted that way

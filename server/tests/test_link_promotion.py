@@ -13,7 +13,18 @@ from app.schemas import HealthCell
 def _setup(wifi: dict[str, str], wired: dict[str, str]):
     group = uuid4()
     now = datetime.now(timezone.utc)
-    monitor = SimpleNamespace(id=uuid4(), group_id=group, last_seen_at=now, status=SimpleNamespace(value="online"), health_interval_seconds=60)
+    # Both tunnels are set up and shook hands a moment ago, so nothing here reads as a dead tunnel.
+    monitor = SimpleNamespace(
+        id=uuid4(),
+        group_id=group,
+        last_seen_at=now,
+        status=SimpleNamespace(value="online"),
+        health_interval_seconds=60,
+        wg_address="10.7.0.2",
+        wg_wireless_address="10.7.1.2",
+        last_handshake_at=now,
+        last_wireless_handshake_at=now,
+    )
     networks = [SimpleNamespace(id=uuid4(), group_id=group, slug=slug) for slug in ("wifi", "wired")]
     cells = {}
     for network, statuses in zip(networks, (wifi, wired)):

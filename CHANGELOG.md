@@ -96,10 +96,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
-- **Video conference runs in bursts:** the continuous Video conference check sends for 75 seconds every 5 minutes
-  on every agent, in place of all day. It was most of the roughly 2 TB a month the checks moved through a home
-  line. Voice and Remote desktop still run all the time. The server leaves the job out of an agent's assignment
-  between bursts, so no agent update is needed.
+- **Checks can run in bursts (off for now):** the server can leave a continuous check out of an agent's
+  assignment between bursts (`BURSTS` in `app/synthetic.py`). It was tried for Video conference, 75 seconds every
+  5 minutes, and switched off the same day: on the Pi's Wi-Fi a sender that has just started often loses every
+  packet, so most bursts filed "stopped in the monitor". Video conference runs all the time again.
 - **The path trace runs every 15 minutes, and at once when a path check fails (Pi agent 0.8.21):** it ran every
   2 minutes, took about 10 seconds and held up every other check while it ran.
 - **Checks keep their interval (Pi agent 0.8.21):** an interval is counted from when a check began, not from

@@ -84,6 +84,12 @@ INTERNET_SLUGS = frozenset(
 )
 
 
+# A trace takes about 10 seconds and holds up every other check on the agent while it runs, and its result
+# never decides a status. Every 2 minutes was 1,300 traces a day for each link. The agent also runs one at once
+# when a path check fails, which is when a trace is wanted.
+MTR_MIN_INTERVAL_SECONDS = 900
+
+
 def _ensure_test(
     monitor: Monitor,
     network: Network,
@@ -247,7 +253,7 @@ def _sync_link_tests(db: Session, monitor: Monitor, network: Network, server_ip:
             interval = path_interval
         else:
             enabled = path.mtr_enabled
-            interval = max(path_interval, 120)
+            interval = max(path_interval, MTR_MIN_INTERVAL_SECONDS)
         _ensure_test(monitor, network, existing_rows, rows, slug, name, kind, target, interval, enabled)
     for service in load_web_services(db):
         interval = max(service.interval_seconds, 60)

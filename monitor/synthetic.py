@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import threading
+import urllib.error
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -659,9 +660,18 @@ def flow_state(flow: dict) -> str:
     return ""
 
 
-# Interval reports waiting to be sent, per flow. At one report every 10 seconds this is ten minutes; beyond
-# that the oldest are dropped.
-SAMPLE_BACKLOG = 60
+# Interval reports waiting to be sent, for all flows together. With six flows reporting every 10 seconds
+# this is about seven minutes; beyond that the oldest are dropped.
+SAMPLE_BACKLOG = 240
+# Reports are sent together. After the first one arrives the sender waits this long for the other flows'
+# reports, then sends what there is: about two requests every 10 seconds in place of one for every report.
+BATCH_LINGER_S = 5.0
+BATCH_MAX = 100
+_outbox: "queue.Queue[Optional[dict]]" = queue.Queue(maxsize=SAMPLE_BACKLOG)
+_poster_started = False
+_post_config: dict = {}
+# False once a server answered that it has no batch address (an older server): reports then go one at a time.
+_batch_ok = True
 
 
 def _drain_stderr(proc: subprocess.Popen, tail: list[str]) -> None:
@@ -690,17 +700,70 @@ def _queue_sample(outbox: "queue.Queue[Optional[dict]]", body: Optional[dict]) -
                 pass
 
 
-def _post_samples(config: dict, outbox: "queue.Queue[Optional[dict]]") -> None:
-    """Send queued reports one at a time. A slow or unreachable server holds up this thread, never the reader."""
+def _send_batch(config: dict, batch: list[dict]) -> None:
+    """Send reports in one request. An older server has no batch address: they then go one at a time."""
+    global _batch_ok
     base = str(config.get("server_url") or "").rstrip("/")
-    while True:
-        body = outbox.get()
-        if body is None:
-            return
+    post = config["post_json"]
+    if _batch_ok:
         try:
-            config["post_json"](f"{base}/api/v1/synthetic/samples", body, config.get("token"), config.get("name"))
+            reply = post(f"{base}/api/v1/synthetic/samples/batch", {"samples": batch}, config.get("token"), config.get("name"))
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (404, 405):
+                return
+            _batch_ok = False
+        except Exception:
+            return
+        else:
+            if isinstance(reply, dict) and reply.get("speedtest"):
+                try:
+                    import agent_state
+
+                    agent_state.speedtest_wake.set()
+                except Exception:
+                    pass
+            return
+    for body in batch:
+        try:
+            post(f"{base}/api/v1/synthetic/samples", body, config.get("token"), config.get("name"))
         except Exception:
             continue
+
+
+def _post_samples(config: dict, outbox: "queue.Queue[Optional[dict]]") -> None:
+    """Send queued reports in batches until a None arrives. A slow or unreachable server holds up this thread,
+    never a flow's reader."""
+    while True:
+        first = outbox.get()
+        if first is None:
+            return
+        if BATCH_LINGER_S > 0:
+            time.sleep(BATCH_LINGER_S)
+        batch = [first]
+        ended = False
+        while len(batch) < BATCH_MAX:
+            try:
+                body = outbox.get_nowait()
+            except queue.Empty:
+                break
+            if body is None:
+                ended = True
+                break
+            batch.append(body)
+        _send_batch(_post_config or config, batch)
+        if ended:
+            return
+
+
+def _ensure_poster(config: dict) -> None:
+    """Start the one thread that sends every flow's reports, and keep the settings it sends with current."""
+    global _poster_started, _post_config
+    with _lock:
+        _post_config = config
+        if _poster_started:
+            return
+        _poster_started = True
+    threading.Thread(target=_post_samples, args=(config, _outbox), name="rtnp-post", daemon=True).start()
 
 
 def _read_output(
@@ -714,12 +777,10 @@ def _read_output(
     run_id, link = item
     assert proc.stdout is not None
     missing_rx = 0
-    # Reports are sent from their own thread. Sending here took up to 10 seconds a report while the server
-    # could not be reached, which is as long as a report interval: the reader fell behind, the sender's output
-    # pipe filled, and the restart checks below ran minutes late.
-    outbox: "queue.Queue[Optional[dict]]" = queue.Queue(maxsize=SAMPLE_BACKLOG)
-    poster = threading.Thread(target=_post_samples, args=(config, outbox), name=f"rtnp-post-{link}", daemon=True)
-    poster.start()
+    # Reports are sent from one thread for all flows. Sending here took up to 10 seconds a report while the
+    # server could not be reached, which is as long as a report interval: the reader fell behind, the sender's
+    # output pipe filled, and the restart checks below ran minutes late.
+    _ensure_poster(config)
     for line in proc.stdout:
         payload = _json_line(line)
         if payload is None or payload.get("type") not in {None, "interval"}:
@@ -765,7 +826,7 @@ def _read_output(
         if isinstance(unix_ms, (int, float)):
             recorded = datetime.fromtimestamp(unix_ms / 1000, tz=timezone.utc).isoformat()
         _queue_sample(
-            outbox,
+            _outbox,
             {
                 "run_id": run_id,
                 "link": link,
@@ -774,8 +835,6 @@ def _read_output(
                 "metrics": payload,
             },
         )
-    _queue_sample(outbox, None)
-    poster.join(timeout=3)
     try:
         code = proc.wait(timeout=5)
     except subprocess.TimeoutExpired:

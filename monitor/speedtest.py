@@ -240,8 +240,19 @@ def run(config: dict, test: dict, post_json: Callable[..., Any]) -> None:
                 pass
 
 
-def poll_loop(stop: threading.Event, load_config: Callable[[], dict], get_json: Callable[..., Any], post_json: Callable[..., Any]) -> None:
-    """Ask the server every few seconds whether someone started a speed test."""
+# With a wake event the agent asks only when the server said a test is waiting (the hint rides on answers
+# to requests the agent makes anyway), and this often besides, in case the hint was missed.
+IDLE_POLL_SECONDS = 30
+
+
+def poll_loop(
+    stop: threading.Event,
+    load_config: Callable[[], dict],
+    get_json: Callable[..., Any],
+    post_json: Callable[..., Any],
+    wake: Optional[threading.Event] = None,
+) -> None:
+    """Ask the server whether someone started a speed test: every few seconds, or when `wake` is set."""
     while not stop.is_set():
         config = load_config()
         if config.get("token") and config.get("name") and config.get("server_url"):
@@ -252,4 +263,8 @@ def poll_loop(stop: threading.Event, load_config: Callable[[], dict], get_json: 
                     run(dict(config), test, post_json)
             except Exception:
                 pass
-        stop.wait(POLL_SECONDS)
+        if wake is None:
+            stop.wait(POLL_SECONDS)
+        else:
+            wake.wait(IDLE_POLL_SECONDS)
+            wake.clear()

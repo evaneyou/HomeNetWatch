@@ -680,7 +680,9 @@ def _post_sample(client, token, run_id, link, when, rtt, jitter, loss, passed, i
     )
 
 
-def test_a_blackout_beside_a_healthy_check_is_a_software_issue(client, db, monitor_token):
+def test_a_blackout_beside_a_healthy_check_is_a_software_issue(client, db, monitor_token, monkeypatch):
+    # Video runs in bursts on the clock. This test is about restarts, so the burst is always on here.
+    monkeypatch.setattr("app.api.synthetic_routes.burst_on", lambda _slug, _mode, _now: True)
     monitor = _monitor(db)
     voice = SyntheticRun(
         monitor_id=monitor.id, profile_slug="voip-g711a", mode="continuous", links=["wireless"], options={}, status="running", finished_links=[]
@@ -1159,3 +1161,97 @@ def test_retired_presets_cannot_start_and_running_ones_stop(client, db):
     # Stored history for a retired preset can still be filtered.
     history = client.get(f"/api/v1/monitors/{monitor.id}/log?probe=rtnp:fortnite")
     assert history.status_code == 200, history.text
+
+
+def test_video_conference_is_on_for_75_seconds_of_every_five_minutes():
+    from app.synthetic import burst_on
+
+    start = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+    assert burst_on("video-conference", "continuous", start)
+    assert burst_on("video-conference", "continuous", start + timedelta(seconds=74))
+    assert not burst_on("video-conference", "continuous", start + timedelta(seconds=75))
+    assert not burst_on("video-conference", "continuous", start + timedelta(seconds=299))
+    assert burst_on("video-conference", "continuous", start + timedelta(seconds=300))
+    # Voice and remote desktop run all the time, and a run someone started by hand is never cut short.
+    assert burst_on("voip-g711a", "continuous", start + timedelta(seconds=200))
+    assert burst_on("remote-desktop", "continuous", start + timedelta(seconds=200))
+    assert burst_on("video-conference", "manual", start + timedelta(seconds=200))
+    assert burst_on("video-conference", "stress", start + timedelta(seconds=200))
+
+
+def test_between_bursts_the_video_job_is_left_out_of_the_assignment(client, db, monitor_token, monkeypatch):
+    monitor = _monitor(db)
+    voice = SyntheticRun(monitor_id=monitor.id, profile_slug="voip-g711a", mode="continuous", links=["wired"], options={}, status="running", finished_links=[])
+    video = SyntheticRun(monitor_id=monitor.id, profile_slug="video-conference", mode="continuous", links=["wired"], options={}, status="running", finished_links=[])
+    db.add_all([voice, video])
+    db.commit()
+
+    def jobs_at(second: int) -> set[str]:
+        moment = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc) + timedelta(seconds=second)
+        monkeypatch.setattr("app.api.synthetic_routes._now", lambda: moment)
+        answer = client.get("/api/v1/synthetic/assignment", headers=_headers(monitor_token))
+        assert answer.status_code == 200, answer.text
+        return {job["profile_slug"] for job in answer.json()["jobs"]}
+
+    assert jobs_at(10) == {"voip-g711a", "video-conference"}
+    assert jobs_at(120) == {"voip-g711a"}
+    assert jobs_at(310) == {"voip-g711a", "video-conference"}
+
+
+def _report(run_id, link: str, when: datetime, index: int) -> dict:
+    return {
+        "run_id": str(run_id),
+        "link": link,
+        "interval_index": index,
+        "recorded_at": when.isoformat(),
+        "metrics": {"type": "interval", "index": index, "flows": [{"rtt": {"avg_ms": 40, "jitter_ms": 2}, "loss_pct": 0, "verdict": {"pass": True}}]},
+    }
+
+
+def test_a_batch_stores_every_report_and_skips_one_for_a_run_that_is_not_the_agents(client, db, monitor_token):
+    import uuid as uuid_module
+
+    from app.models import SpeedTest
+
+    monitor = _monitor(db)
+    voice = SyntheticRun(monitor_id=monitor.id, profile_slug="voip-g711a", mode="continuous", links=["wired", "wireless"], options={}, status="running", finished_links=[])
+    db.add(voice)
+    db.commit()
+    when = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+    body = {
+        "samples": [
+            _report(voice.id, "wired", when, 1),
+            _report(voice.id, "wireless", when, 1),
+            _report(uuid_module.uuid4(), "wired", when, 1),
+            _report(voice.id, "wired", when + timedelta(seconds=10), 2),
+            # The same report twice, as after a retry: kept once.
+            _report(voice.id, "wired", when + timedelta(seconds=10), 2),
+        ]
+    }
+    answer = client.post("/api/v1/synthetic/samples/batch", headers=_headers(monitor_token), json=body)
+    assert answer.status_code == 200, answer.text
+    assert answer.json() == {"status": "ok", "stored": 4, "speedtest": False}
+    db.expire_all()
+    rows = db.scalars(select(SyntheticSample).where(SyntheticSample.run_id == voice.id)).all()
+    assert sorted((row.link, row.interval_index) for row in rows) == [("wired", 1), ("wired", 2), ("wireless", 1)]
+    assert all(row.verdict == "pass" for row in rows)
+
+    # With a speed test waiting, both the batch answer and the command answer say so.
+    db.add(SpeedTest(monitor_id=monitor.id, link="wired", status="pending", requested_by="admin", down_seconds=15, up_seconds=15))
+    db.commit()
+    again = client.post("/api/v1/synthetic/samples/batch", headers=_headers(monitor_token), json={"samples": []})
+    assert again.status_code == 200, again.text
+    assert again.json()["speedtest"] is True
+    command = client.get("/api/v1/monitors/command", headers=_headers(monitor_token))
+    assert command.status_code == 200, command.text
+    assert command.json()["speedtest"] is True
+
+
+def test_the_path_trace_is_scheduled_every_15_minutes(db):
+    from app.models import Test
+
+    monitor = _monitor(db)
+    ensure_internet_tests(db, monitor)
+    db.commit()
+    traces = db.scalars(select(Test).where(Test.monitor_id == monitor.id, Test.slug == "mtr-path")).all()
+    assert traces and all(test.interval_seconds == 900 for test in traces)

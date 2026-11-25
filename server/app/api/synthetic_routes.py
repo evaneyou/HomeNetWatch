@@ -15,8 +15,22 @@ from app.api.common import _resolve_monitor_identity, require_agent_links
 from app.auth import get_current_user, require_admin_csrf
 from app.config import get_settings
 from app.db import get_db
-from app.models import Monitor, Network, NetworkKind, ResultStatus, StressRun, SyntheticProfile, SyntheticRun, SyntheticSample, Test, TestResult, User
+from app.models import (
+    Monitor,
+    Network,
+    NetworkKind,
+    ResultStatus,
+    SpeedTest,
+    StressRun,
+    SyntheticProfile,
+    SyntheticRun,
+    SyntheticSample,
+    Test,
+    TestResult,
+    User,
+)
 from app.synthetic import (
+    burst_on,
     PRESETS,
     SOFTWARE,
     apply_options,
@@ -68,6 +82,10 @@ class SampleIn(BaseModel):
     interval_index: int = Field(ge=0)
     recorded_at: datetime
     metrics: dict[str, Any]
+
+
+class SampleBatchIn(BaseModel):
+    samples: list[SampleIn] = Field(max_length=200)
 
 
 class FinishIn(BaseModel):
@@ -649,6 +667,8 @@ def assignment(
     for run in runs:
         if run.mode == "stress" and (run.stress_id not in ends or run.status not in ("running", "pending")):
             continue
+        if not burst_on(run.profile_slug, run.mode, _now()):
+            continue
         for link in run.links:
             job = {
                 "run_id": run.id,
@@ -682,6 +702,37 @@ def post_sample(
     x_monitor_name: Annotated[Optional[str], Header()] = None,
 ) -> dict[str, str]:
     monitor = _resolve_monitor_identity(db, authorization, x_monitor_name)
+    _store_sample(db, monitor, body)
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/samples/batch")
+def post_sample_batch(
+    body: SampleBatchIn,
+    db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[Optional[str], Header()] = None,
+    x_monitor_name: Annotated[Optional[str], Header()] = None,
+) -> dict[str, Any]:
+    """Reports from all of an agent's flows in one request, in place of one request for each report.
+
+    A report for a run this agent does not have is skipped and the rest are kept. The answer also says
+    whether a speed test is waiting for this agent, so it does not have to ask every few seconds.
+    """
+    monitor = _resolve_monitor_identity(db, authorization, x_monitor_name)
+    stored = 0
+    for item in body.samples:
+        try:
+            _store_sample(db, monitor, item)
+        except HTTPException:
+            continue
+        stored += 1
+    waiting = db.scalar(select(SpeedTest.id).where(SpeedTest.monitor_id == monitor.id, SpeedTest.status == "pending").limit(1))
+    db.commit()
+    return {"status": "ok", "stored": stored, "speedtest": waiting is not None}
+
+
+def _store_sample(db: Session, monitor: Monitor, body: SampleIn) -> None:
     run = db.get(SyntheticRun, body.run_id)
     if run is None or run.monitor_id != monitor.id:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -690,7 +741,7 @@ def post_sample(
     # A quiet remote-desktop interval is the traffic model, not a blackout. Keeping it would
     # file "stopped in the monitor" and would record a round trip of 0.
     if idle_remote_desktop(run.profile_slug, body.metrics):
-        return {"status": "ok"}
+        return
     extracted = classify_software(
         db, monitor, run, body.link, body.recorded_at, metrics_from_interval(body.metrics)
     )
@@ -729,8 +780,6 @@ def post_sample(
         # loses its TCP control channel and reports rx=None until restarted.
         if monitor.restart_requested_at is None:
             monitor.restart_requested_at = _now()
-    db.commit()
-    return {"status": "ok"}
 
 
 @router.post("/runs/{run_id}/finish")

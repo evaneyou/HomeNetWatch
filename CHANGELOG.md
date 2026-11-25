@@ -96,6 +96,17 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Video conference runs in bursts:** the continuous Video conference check sends for 75 seconds every 5 minutes
+  on every agent, in place of all day. It was most of the roughly 2 TB a month the checks moved through a home
+  line. Voice and Remote desktop still run all the time. The server leaves the job out of an agent's assignment
+  between bursts, so no agent update is needed.
+- **The path trace runs every 15 minutes, and at once when a path check fails (Pi agent 0.8.21):** it ran every
+  2 minutes, took about 10 seconds and held up every other check while it ran.
+- **Checks keep their interval (Pi agent 0.8.21):** an interval is counted from when a check began, not from
+  when it ended. About one run in ten of the 60-second checks was going missing each day.
+- **Fewer requests from the Pi (Pi agent 0.8.21):** the reports of all real-time flows go in one request, and
+  the agent asks for a speed test when the server says one is waiting instead of every 3 seconds. A Speed Test
+  can now take up to about 15 seconds to start.
 - **Android agent 0.5.2 includes the traffic sender.** Voice, video conference and remote desktop can start again. The 0.5.1 build was packed without `librtnp_send.so`, so the Shield reported the sender missing and those tests never started.
 - **Database backups are kept for 7 days.** WireGuard and agent TLS backups still keep 14 copies. `DB_KEEP` overrides the database count.
 - **Raw measurements are kept for 60 days.** From 60 days to 12 months, including months 10 through 12, each hour is one average. From 12 months to 2 years, each day is one average. Server Health states that schedule, and says database backups keep 7 copies while WireGuard and agent TLS keep 14.

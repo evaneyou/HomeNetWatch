@@ -68,21 +68,97 @@ def test_a_full_queue_of_reports_loses_the_oldest():
     assert [outbox.get_nowait()["interval_index"] for _ in range(3)] == [2, 3, 4]
 
 
-def test_a_failing_upload_does_not_stop_the_reports_behind_it():
-    synthetic = _module("synthetic")
-    sent: list[int] = []
-
-    def post(_url, body, *_rest):
-        if body["interval_index"] == 0:
-            raise OSError("server unreachable")
-        sent.append(body["interval_index"])
-
+def _batch_setup(synthetic, monkeypatch):
+    monkeypatch.setattr(synthetic, "BATCH_LINGER_S", 0)
+    monkeypatch.setattr(synthetic, "_batch_ok", True)
+    monkeypatch.setattr(synthetic, "_post_config", {})
     outbox: queue.Queue = queue.Queue()
     for index in range(3):
         outbox.put({"interval_index": index})
     outbox.put(None)
-    synthetic._post_samples({"server_url": "http://10.7.0.1:8847", "post_json": post}, outbox)
-    assert sent == [1, 2]
+    return outbox
+
+
+CONFIG = {"server_url": "http://10.7.0.1:8847", "token": "t", "name": "pi"}
+
+
+def test_the_reports_of_all_flows_go_in_one_request(monkeypatch):
+    synthetic = _module("synthetic")
+    outbox = _batch_setup(synthetic, monkeypatch)
+    calls: list[tuple[str, dict]] = []
+    synthetic._post_samples(dict(CONFIG, post_json=lambda url, body, *_rest: calls.append((url, body)) or {}), outbox)
+    assert [url for url, _body in calls] == ["http://10.7.0.1:8847/api/v1/synthetic/samples/batch"]
+    assert [item["interval_index"] for item in calls[0][1]["samples"]] == [0, 1, 2]
+
+
+def test_an_older_server_gets_the_reports_one_at_a_time(monkeypatch):
+    synthetic = _module("synthetic")
+    outbox = _batch_setup(synthetic, monkeypatch)
+    single: list[int] = []
+    batches = 0
+
+    def post(url, body, *_rest):
+        nonlocal batches
+        if url.endswith("/batch"):
+            batches += 1
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        if body["interval_index"] == 0:
+            raise OSError("server unreachable")
+        single.append(body["interval_index"])
+        return {}
+
+    config = dict(CONFIG, post_json=post)
+    synthetic._post_samples(config, outbox)
+    # One failed report does not stop the ones behind it, and the batch address is not tried again.
+    assert single == [1, 2]
+    synthetic._send_batch(config, [{"interval_index": 7}])
+    assert single == [1, 2, 7] and batches == 1
+
+
+def test_a_server_error_does_not_fall_back_to_single_reports(monkeypatch):
+    synthetic = _module("synthetic")
+    outbox = _batch_setup(synthetic, monkeypatch)
+    urls: list[str] = []
+
+    def post(url, _body, *_rest):
+        urls.append(url)
+        raise urllib.error.HTTPError(url, 502, "Bad Gateway", {}, None)
+
+    synthetic._post_samples(dict(CONFIG, post_json=post), outbox)
+    assert len(urls) == 1 and synthetic._batch_ok is True
+
+
+def test_the_batch_answer_can_say_a_speed_test_is_waiting(monkeypatch):
+    state = _module("agent_state")
+    synthetic = _module("synthetic")
+    outbox = _batch_setup(synthetic, monkeypatch)
+    state.speedtest_wake.clear()
+    synthetic._post_samples(dict(CONFIG, post_json=lambda *_args: {"status": "ok", "speedtest": True}), outbox)
+    assert state.speedtest_wake.is_set()
+    state.speedtest_wake.clear()
+
+
+def test_the_speed_test_loop_waits_for_the_hint_instead_of_asking_every_few_seconds():
+    speedtest = _module("speedtest")
+    stop = threading.Event()
+    asked: list[str] = []
+    waits: list[float] = []
+
+    class Wake:
+        def wait(self, seconds):
+            waits.append(seconds)
+            stop.set()
+
+        def clear(self):
+            return None
+
+    def get_json(url, *_rest):
+        asked.append(url)
+        return {"test": None}
+
+    speedtest.poll_loop(stop, lambda: dict(CONFIG), get_json, lambda *_args: {}, Wake())
+    assert asked == ["http://10.7.0.1:8847/api/v1/monitors/speedtest"]
+    assert waits == [speedtest.IDLE_POLL_SECONDS] and speedtest.IDLE_POLL_SECONDS >= 30
 
 
 def test_reading_a_sender_reports_every_interval_and_keeps_its_last_error(monkeypatch):
@@ -101,13 +177,16 @@ def test_reading_a_sender_reports_every_interval_and_keeps_its_last_error(monkey
     proc = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     item = ("run-1", "wired")
     monkeypatch.setitem(synthetic._running, item, {"args": [], "proc": proc, "mode": "continuous", "restart_token": 0})
-    posted: list[dict] = []
-    config = {"server_url": "http://10.7.0.1:8847", "post_json": lambda _url, body, *_rest: posted.append(body) or {}}
+    # The reports are queued for the one sender thread, which is not started here.
+    outbox: queue.Queue = queue.Queue()
+    monkeypatch.setattr(synthetic, "_outbox", outbox)
+    monkeypatch.setattr(synthetic, "_ensure_poster", lambda _config: None)
     tail: list[str] = []
     drain = threading.Thread(target=synthetic._drain_stderr, args=(proc, tail), daemon=True)
     drain.start()
-    synthetic._read_output(config, item, proc, tail, drain)
-    assert [body["interval_index"] for body in posted] == [0, 1, 2]
+    synthetic._read_output(dict(CONFIG), item, proc, tail, drain)
+    queued = [outbox.get_nowait() for _ in range(outbox.qsize())]
+    assert [(body["run_id"], body["link"], body["interval_index"]) for body in queued] == [("run-1", "wired", 0), ("run-1", "wired", 1), ("run-1", "wired", 2)]
     assert synthetic.last_failure() == "wired: Error: gave up"
     monkeypatch.setattr(synthetic, "_last_failure", "")
 

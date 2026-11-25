@@ -189,6 +189,24 @@ def route_is_physical(route_text: str, interface: str) -> bool:
     return device == interface
 
 
+# Continuous checks that send in bursts, as (seconds on, seconds from one start to the next), on the clock.
+# Video conference is by far the heaviest flow: sent all day from every link it was most of the roughly
+# 2 TB a month the checks moved through a home line. In a burst every five minutes it still catches a path
+# that cannot carry video, at about a quarter of the data. Between bursts the job is left out of the
+# assignment, so every agent stops the flow and starts it again with no change on its side. An agent looks
+# for its assignment every 15 seconds, which is why the burst is 75 seconds and not 60.
+BURSTS: dict[str, tuple[int, int]] = {"video-conference": (75, 300)}
+
+
+def burst_on(profile_slug: str, mode: str, now: datetime) -> bool:
+    """False while a continuous check that runs in bursts is between two of them."""
+    burst = BURSTS.get(profile_slug) if mode == "continuous" else None
+    if burst is None:
+        return True
+    on_seconds, every_seconds = burst
+    return int(now.timestamp()) % every_seconds < on_seconds
+
+
 VOICE_PRESETS = {"voip-g711", "voip-g711a", "voip-g729", "voip-g723"}
 PRESETS = {item["slug"] for item in PROFILES}
 # Presets taken off Real-Time Application Health. Their stored results can still be read,

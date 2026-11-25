@@ -14,7 +14,7 @@ from app.api.common import TRACE_WAIT, _resolve_monitor_identity
 from app.db import get_db
 from app.internet_tests import ensure_internet_tests, scheduled_tests
 from app.link_trust import remember_association
-from app.models import AdhocTrace, ApInventory, Monitor, MonitorHealth, MonitorStatus, SystemLog
+from app.models import AdhocTrace, ApInventory, Monitor, MonitorHealth, MonitorStatus, SpeedTest, SystemLog
 from app.schemas import (
     DeviceConfigOut,
     DeviceHealthIn,
@@ -212,4 +212,6 @@ def probe_command(
         lan_scan=monitor.lan_scan_requested_at is not None,
         traces=_take_trace_requests(db, monitor),
         trusted_bssids=_trusted_bssids(db, monitor.id),
+        speedtest=db.scalar(select(SpeedTest.id).where(SpeedTest.monitor_id == monitor.id, SpeedTest.status == "pending").limit(1))
+        is not None,
     )

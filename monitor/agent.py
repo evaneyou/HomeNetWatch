@@ -282,7 +282,7 @@ def ensure_health_loop() -> None:
 
         threading.Thread(
             target=speedtest.poll_loop,
-            args=(state._stop, _locked_config, health.get_json, health.post_json),
+            args=(state._stop, _locked_config, health.get_json, health.post_json, state.speedtest_wake),
             name="speedtest",
             daemon=True,
         ).start()

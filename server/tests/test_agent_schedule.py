@@ -232,3 +232,48 @@ def test_unsent_results_are_capped_keeping_the_newest(agent, monkeypatch):
     assert len(module._unsent) == module.MAX_UNSENT
     assert module._unsent[-1]["id"] == "newest"
     assert module._unsent[0]["id"] == "old-101"
+
+
+def test_an_interval_is_counted_from_when_the_check_began(agent):
+    module = agent()
+    # A check that took 4 seconds: the next is 56 seconds on, so runs stay 60 seconds apart.
+    module._mark_ran(PING, 0.0, time.monotonic() - 4.0)
+    assert _left(module, "wired:icmp-path") == pytest.approx(56, abs=1)
+    # One that took longer than its interval is due again at once, never in the past by more than that.
+    module._mark_ran(PING, 0.0, time.monotonic() - 90.0)
+    assert _left(module, "wired:icmp-path") == pytest.approx(0, abs=1)
+
+
+TRACE = {"slug": "mtr-path", "kind": "mtr", "target": "203.0.113.5", "network_slug": "wired", "link": "wired", "interval_seconds": 900}
+WIFI_TRACE = dict(TRACE, network_slug="wifi", link="wireless")
+
+
+def test_a_failed_path_check_runs_the_trace_for_that_link_at_once(agent):
+    module = agent()
+    module.remember_tests([PING, TRACE, WIFI_TRACE])
+    failed = [{"test_slug": "icmp-path", "network_slug": "wired", "status": "fail"}]
+    assert module._with_failure_traces([], failed, 1000.0) == [TRACE]
+    # Still down a minute later: no second trace until five minutes have gone by.
+    assert module._with_failure_traces([], failed, 1060.0) == []
+    assert module._with_failure_traces([], failed, 1000.0 + module.FAILURE_TRACE_GAP + 1) == [TRACE]
+
+
+def test_a_trace_is_not_added_when_it_is_not_wanted(agent):
+    module = agent()
+    module.remember_tests([PING, TRACE, WIFI_TRACE])
+    # A slow path, a failed web check, or a path that is fine: no trace.
+    assert module._with_failure_traces([], [{"test_slug": "icmp-path", "network_slug": "wired", "status": "degraded"}], 5000.0) == []
+    assert module._with_failure_traces([], [{"test_slug": "http-google", "network_slug": "wired", "status": "fail"}], 5000.0) == []
+    # Already in this batch: not run twice.
+    failed = [{"test_slug": "http-path", "network_slug": "wired", "status": "fail"}]
+    assert module._with_failure_traces([TRACE], failed, 5000.0) == [TRACE]
+
+
+def test_the_command_answer_can_say_a_speed_test_is_waiting(agent, monkeypatch):
+    module = agent()
+    module.state.speedtest_wake.clear()
+    monkeypatch.setattr(module, "get_json", lambda *_args: {"restart": False, "speedtest": True})
+    monkeypatch.setattr(module, "remember_trusted", lambda _body: None)
+    module.poll_restart({"server_url": "http://10.7.0.1:8847", "token": "t", "name": "pi"})
+    assert module.state.speedtest_wake.is_set()
+    module.state.speedtest_wake.clear()

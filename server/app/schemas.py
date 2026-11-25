@@ -376,6 +376,9 @@ class HealthCell(BaseModel):
     failing_tests: int = 0
     quorum: Optional[dict[str, int]] = None
     cause: Optional[str] = None
+    # True when this link cell's own path checks pass and its status was raised only because the web or
+    # app checks on the same link are bad while the other link is healthy.
+    promoted: bool = False
 
 
 class IssueSummary(BaseModel):

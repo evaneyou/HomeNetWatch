@@ -195,6 +195,12 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **Checks recover sooner after an outage:** a check left "failing" needed its good results in a row, so one slow
+  reading restarted the count and held the Wi-Fi or Wired row amber for another 20 minutes. It now recovers when
+  the newest result is good, nothing in the window failed and the window holds enough good results.
+- **Home says what is wrong on a link:** when a link's own path passes and only its web or app checks are not
+  passing, the row reads "Web checks not passing on Wi-Fi" instead of "Packet loss / slow", and the card no
+  longer says the link is running slow.
 - **Remote desktop no longer files "stopped in the monitor" when it goes quiet:** that check's packet gaps are heavy-tailed, so a whole 10-second report sometimes contains no packets. The receiver scored the one packet still unaccounted from the previous report as 100% loss, and the server opened a software issue while voice and video on the same link were fine. An interval that sent nothing is now discarded.
 - **Android agent uptime on the TV (Android agent 0.5.1):** the Shield screen timed the agent and the tunnel with the wall clock. That clock is often wrong at boot and then jumps when the time syncs, so the screen showed hundreds of days and a time of day with no date. Those durations now follow the monotonic clock, and a start that was not today includes the date.
 - **The Pi can restart a dead tunnel again (Pi agent 0.8.19):** the agent restarted a WireGuard tunnel that stopped

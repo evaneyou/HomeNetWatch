@@ -73,3 +73,16 @@ if __name__ == "__main__":
     test_presets_differ()
     test_custom_window_is_honored()
     print("ok")
+
+
+def test_one_slow_result_does_not_restart_recovery():
+    # Four good results out of five, none failed, the newest good: recovered, as a healthy check would read.
+    assert next_state(DOWN, [OK, OK, OK, SLOW, OK], RELAXED) == OK
+    assert next_state(SLOW, [OK, OK, OK, SLOW, OK], RELAXED) == OK
+    # Still failing somewhere in the window, or the newest result is not good: not yet.
+    assert next_state(DOWN, [OK, OK, OK, DOWN, OK], RELAXED) == DOWN
+    assert next_state(DOWN, [SLOW, OK, OK, OK, OK], RELAXED) == DOWN
+    assert next_state(DOWN, [SLOW, OK, OK, OK, DOWN], RELAXED) == DOWN
+    # Too few good results for the preset.
+    assert next_state(DOWN, [OK, SLOW, OK, SLOW, OK], RELAXED) == DOWN
+    assert next_state(SLOW, [OK, SLOW, OK, SLOW, OK], RELAXED) == SLOW

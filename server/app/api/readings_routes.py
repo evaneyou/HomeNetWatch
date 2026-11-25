@@ -394,9 +394,12 @@ def _attribute_root_causes(
                 link_degraded = True
 
             if link_degraded:
+                promoted = False
                 if a_inet is not None and rank[worst_promoted] > rank[a_inet.status]:
                     a_inet.status = worst_promoted
                     a_inet.cause = cause_key
+                    a_inet.promoted = True
+                    promoted = True
                     if a_inet.failing_tests == 0:
                         a_inet.failing_tests = 1
                 elif a_inet is not None and a_inet.cause is None:
@@ -405,7 +408,13 @@ def _attribute_root_causes(
                     diagnoses[str(monitor.id)] = {
                         "cause": cause_key,
                         "title": title,
-                        "summary": f"Checks on {a_label} experienced packet loss or elevated latency while {b_label} remained healthy.",
+                        "summary": (
+                            # The link's own path to the server passes: do not call it packet loss or latency.
+                            f"Web or app checks on {a_label} are not passing while {b_label} is healthy. "
+                            f"The {a_label} path to the server itself is passing."
+                            if promoted
+                            else f"Checks on {a_label} experienced packet loss or elevated latency while {b_label} remained healthy."
+                        ),
                     }
 
         # Case 4: Remaining bad service cells where ISP path is OK on that link -> service fault

@@ -18,6 +18,8 @@ export type HealthCell = {
   failing_tests: number;
   quorum?: { bad: number; total: number } | null;
   cause?: "wifi" | "wired" | "wan" | "bandwidth" | "tunnel" | "server" | "agent" | "service" | null;
+  /** The link's own path checks pass; it is raised only because its web or app checks are bad. */
+  promoted?: boolean;
 };
 
 export type IssueSummary = {

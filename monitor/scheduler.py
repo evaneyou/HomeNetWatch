@@ -80,6 +80,8 @@ def poll_restart(config: dict) -> None:
     except (OSError, urllib.error.URLError, TimeoutError, ValueError):
         return
     remember_trusted(body)
+    if body.get("speedtest"):
+        state.speedtest_wake.set()
     honor_restart(config, bool(body.get("restart")))
     for request in body.get("traces") or []:
         if isinstance(request, dict) and request.get("id") and request.get("target"):
@@ -193,15 +195,20 @@ def _hold(test: dict, retry_after: object) -> float:
         return 0.0
     return min(retry_after + RETRY_MARGIN, _interval_seconds(test) + MAX_EXTRA_WAIT)
 
-def _mark_ran(test: dict, hold: float = 0.0) -> None:
+def _mark_ran(test: dict, hold: float = 0.0, started: float | None = None) -> None:
+    """Set the next run. `started` is the monotonic time this run began."""
     interval = _interval_seconds(test)
     wall = time.time()
+    mono = time.monotonic()
     if _aligned(test):
         delay = _next_mark(interval, wall + max(hold, 1.0)) - wall
     else:
-        delay = max(float(interval), hold)
+        # The interval is counted from when the run began, not from when it ended. Counted from the end, a
+        # check that takes 3 seconds every 60 ran every 63, and about one run in ten went missing each day.
+        took = 0.0 if started is None else max(mono - started, 0.0)
+        delay = max(max(float(interval), hold) - took, 0.0)
     with state._lock:
-        state._next_run[_test_key(test)] = time.monotonic() + delay
+        state._next_run[_test_key(test)] = mono + delay
     if interval >= PERSIST_MIN_INTERVAL:
         # Saved as the run time that would give this wait, so a restart waits out the same time.
         _save_run(_test_key(test), wall + delay - interval)
@@ -209,6 +216,7 @@ def _mark_ran(test: dict, hold: float = 0.0) -> None:
 def _run_one(test: dict) -> dict | None:
     result = None
     hold = 0.0
+    started = time.monotonic()
     try:
         result = run_check(test)
     except (OSError, TimeoutError, ValueError) as exc:
@@ -216,7 +224,7 @@ def _run_one(test: dict) -> dict | None:
             state._last_error = str(exc)
         hold = _hold(test, getattr(exc, "retry_after", None))
     finally:
-        _mark_ran(test, hold)
+        _mark_ran(test, hold, started)
     return result
 
 def _idle_seconds() -> float:
@@ -228,6 +236,16 @@ def _idle_seconds() -> float:
     if not upcoming:
         return 15
     return min(15.0, max(0.5, min(upcoming) - now))
+
+# Results the server has not taken yet. A batch that could not be uploaded is sent again with the next one,
+# so an outage shows as failed checks, not as a gap with no data. The server ignores a result it already has
+# (each carries its own id), so sending one twice is safe.
+MAX_UNSENT = 500
+# Answers that mean the server will never take this batch: keeping it would block every later result.
+REJECTED = {400, 413, 422}
+_unsent: list[dict] = []
+_unsent_lock = threading.Lock()
+
 
 def run_due_tests(config: dict) -> None:
     ready = due_tests(time.monotonic())
@@ -241,17 +259,66 @@ def _run_due_tests(config: dict, ready: list[dict]) -> None:
     traces = [test for test in ready if test.get("kind") == "mtr"]
     heavy = [test for test in ready if test.get("kind") in state.HEAVY_KINDS]
     results = [result for result in state._probes.map(_run_one, latency) if result]
+    traces = _with_failure_traces(traces, results, time.monotonic())
     # A trace shares the link with nothing else, so its timing is the path, not the other probes.
     results.extend(result for result in state._probes.map(_run_one, traces) if result)
     results.extend(result for result in (_run_one(test) for test in heavy) if result)
-    if not results:
+    with _unsent_lock:
+        batch = _unsent + results
+        _unsent.clear()
+    if not batch:
         return
-    post_json(
-        f"{config['server_url'].rstrip('/')}/api/v1/ingest",
-        {"results": results},
-        config.get("token"),
-        config.get("name"),
-    )
+    try:
+        post_json(
+            f"{config['server_url'].rstrip('/')}/api/v1/ingest",
+            {"results": batch},
+            config.get("token"),
+            config.get("name"),
+        )
+    except urllib.error.HTTPError as exc:
+        if exc.code not in REJECTED:
+            _keep_unsent(batch)
+        raise
+    except Exception:
+        _keep_unsent(batch)
+        raise
+
+
+PATH_CHECKS = {"icmp-path", "http-path"}
+# A path that stays down gets a fresh trace this often, not one with every failed check.
+FAILURE_TRACE_GAP = 300
+_last_failure_trace: dict[str, float] = {}
+
+
+def _with_failure_traces(traces: list[dict], results: list[dict], now: float) -> list[dict]:
+    """Add the trace for each link whose path check just failed: that is the moment a trace is worth having.
+
+    The scheduled trace runs only every 15 minutes, because it holds up every other check while it runs.
+    """
+    failed = {result.get("network_slug") for result in results if result.get("test_slug") in PATH_CHECKS and result.get("status") == "fail"}
+    if not failed:
+        return traces
+    with state._lock:
+        assigned = list(state._assigned_tests)
+    queued = {_test_key(test) for test in traces}
+    extra = []
+    for test in assigned:
+        key = _test_key(test)
+        if test.get("kind") != "mtr" or test.get("network_slug") not in failed or key in queued:
+            continue
+        last = _last_failure_trace.get(key)
+        if last is not None and now - last < FAILURE_TRACE_GAP:
+            continue
+        _last_failure_trace[key] = now
+        extra.append(test)
+    return traces + extra
+
+
+def _keep_unsent(batch: list[dict]) -> None:
+    """Put a batch back for the next upload, newest kept when there are too many."""
+    with _unsent_lock:
+        _unsent[:0] = batch
+        del _unsent[:-MAX_UNSENT]
 
 def test_loop() -> None:
     while not state._stop.is_set():

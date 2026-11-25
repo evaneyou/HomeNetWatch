@@ -52,26 +52,35 @@ if command -v nmcli >/dev/null 2>&1; then
   done
 fi
 
-# 2. Disable 802.11 power save and pin the active 5 GHz band + BSSID on the link Wi-Fi connection.
+# 2. Disable 802.11 power save and keep the link Wi-Fi connection on 5 GHz.
+# A saved Wi-Fi connection is never tied to one access point. An earlier version of this script wrote the
+# BSSID the Pi was on into the connection. When that access point restarted or steered the Pi away there was
+# nothing else it was allowed to join: the handshake failed, NetworkManager took the password for wrong and
+# gave up, and the Pi stayed off Wi-Fi for hours. A pin left by that version is removed here.
+if command -v nmcli >/dev/null 2>&1; then
+  for saved_uuid in $(nmcli -t -f UUID,TYPE connection show 2>/dev/null | awk -F: '$2 == "802-11-wireless" {print $1}'); do
+    pinned="$(nmcli -g 802-11-wireless.bssid connection show uuid "$saved_uuid" 2>/dev/null || true)"
+    if [ -n "$pinned" ]; then
+      nmcli connection modify uuid "$saved_uuid" 802-11-wireless.bssid "" 2>/dev/null || true
+    fi
+  done
+fi
+
 if [ -n "$link_wifi" ] && command -v iw >/dev/null 2>&1; then
   iw dev "$link_wifi" set power_save off 2>/dev/null || true
 
   if command -v nmcli >/dev/null 2>&1; then
     link_info="$(iw dev "$link_wifi" link 2>/dev/null || true)"
-    bssid="$(printf '%s\n' "$link_info" | awk '/Connected to / {print toupper($3); exit}')"
     freq="$(printf '%s\n' "$link_info" | awk '/freq:/ {print int($2); exit}')"
     con_uuid="$(nmcli -g GENERAL.CON-UUID device show "$link_wifi" 2>/dev/null | head -n 1 || true)"
 
-    if [ -n "$con_uuid" ] && [ -n "$bssid" ] && [ -n "$freq" ] && [ "$freq" -ge 5000 ] 2>/dev/null; then
+    if [ -n "$con_uuid" ] && [ -n "$freq" ] && [ "$freq" -ge 5000 ] 2>/dev/null; then
       cur_band="$(nmcli -g 802-11-wireless.band connection show uuid "$con_uuid" 2>/dev/null || true)"
-      cur_bssid="$(nmcli -g 802-11-wireless.bssid connection show uuid "$con_uuid" 2>/dev/null | tr '[:lower:]' '[:upper:]' || true)"
       cur_ps="$(nmcli -g 802-11-wireless.powersave connection show uuid "$con_uuid" 2>/dev/null | awk '{print $1}' || true)"
 
-      if [ "$cur_band" != "a" ] || [ "$cur_bssid" != "$bssid" ]; then
-        nmcli connection modify uuid "$con_uuid" \
-          802-11-wireless.band a \
-          802-11-wireless.bssid "$bssid" 2>/dev/null || true
-        nmcli device reapply "$link_wifi" 2>/dev/null || true
+      # The band is saved for the next time the Pi joins. The live link is left alone.
+      if [ "$cur_band" != "a" ]; then
+        nmcli connection modify uuid "$con_uuid" 802-11-wireless.band a 2>/dev/null || true
       fi
       if [ "$cur_ps" != "2" ]; then
         nmcli connection modify uuid "$con_uuid" \

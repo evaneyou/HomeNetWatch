@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-AGENT_VERSION = "0.8.19"
+AGENT_VERSION = "0.8.21"
 # Latency checks wait on the network, so a few of them run at once.
 # Bandwidth Test stays alone: running it beside others would slow them all down.
 PROBE_WORKERS = 6
@@ -35,6 +35,8 @@ _TUNNELS = {
 _lock = threading.Lock()
 _scan_lock = threading.Lock()
 _stop = threading.Event()
+# Set when the server says a speed test is waiting, so the agent need not ask every few seconds.
+speedtest_wake = threading.Event()
 _health_started = False
 _enroll_started = False
 _tests_started = False

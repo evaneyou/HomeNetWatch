@@ -23,7 +23,9 @@ missing, `wireguard` when a tunnel config is present, and Kismet with `--kismet`
 The real-time flows need the `rtnp-send` binary from
 [RTN_PackGen](https://github.com/evaneyou/RTN_PackGen). It is not committed: build it once with
 `./scripts/build-rtnp.sh` (Docker, cross-compiles for 64-bit ARM into `monitor/rtnp-send`) and
-`pack.sh` includes it. Use the same RTN_PackGen release as the server's receiver. Install and update put it at
+`pack.sh` includes it. Use the same RTN_PackGen release as the server's receiver.
+
+The reports of all flows are sent together, about two requests every 10 seconds, to `/api/v1/synthetic/samples/batch` (one report at a time to `/api/v1/synthetic/samples` on a server that has no batch address). The server leaves a check that runs in bursts (Video conference: 75 seconds every 5 minutes) out of the assignment between bursts, and the agent stops and starts that flow as the assignment changes. Install and update put it at
 `/opt/monitor/rtnp-send` owned by root, and warn when the file there is not the real program (for example a script
 that starts a copy kept somewhere else).
 
@@ -82,6 +84,8 @@ The agent pings `10.7.0.1` (wired `wg0`) and `10.7.1.1` (Wi-Fi `wg1`) about ever
 
 The agent runs as user `monitor` with `NoNewPrivileges`, so it cannot use `sudo`. It asks by creating `/run/monitor/restore-wgN`. systemd watches for that file (`hnw-restore-tunnel@wgN.path`) and runs the script as root (`hnw-restore-tunnel@wgN.service`), which writes the outcome to `/run/hnw-restore-wgN.result` and removes the request. Install and update enable both path units. `journalctl -u 'hnw-restore-tunnel@*'` shows each restart.
 
+The same loop watches the Wi-Fi link on a Pi that has a Wi-Fi tunnel. After a failed security handshake NetworkManager treats the saved password as wrong, finds nobody to ask for a new one and stops retrying, so the Pi stays off Wi-Fi. When the Wi-Fi adapter has had no link for four checks (about two minutes) the agent creates `/run/monitor/restore-wifi`, and `hnw-restore-wifi.path` runs `restore_wifi.sh` as root, which tells NetworkManager to connect each disconnected Wi-Fi adapter again with its saved network. It asks at most once every 5 minutes. Capture radios (`hnwradio*`, monitor mode) are left alone. `journalctl -u hnw-restore-wifi` shows each attempt.
+
 ## Airwave memory
 
 Kismet's Linux capture helper grows while it channel-hops. A first install with `--kismet` already caps that cgroup and restarts Kismet once a day. On a Pi that was set up earlier, run the repair from an unpacked package (enrollment and tunnels stay as they are):
@@ -135,8 +139,10 @@ Setup accepts HTTPS, or HTTP to a private LAN address.
 | `synthetic.py` | Real-time application traffic on the physical NIC |
 | `tunnel_watch.py` | Pings tunnel peers and restarts a dead `wg0` / `wg1` |
 | `restore_tunnel.sh` | Root helper that restarts one WireGuard unit |
+| `restore_wifi.sh` | Root helper that tells NetworkManager to rejoin Wi-Fi on a disconnected adapter |
+| `hnw-restore-wifi.path`, `hnw-restore-wifi.service` | Run `restore_wifi.sh` as root when the agent leaves a request in `/run/monitor` |
 | `hnw-restore-tunnel@.path`, `hnw-restore-tunnel@.service` | Run `restore_tunnel.sh` as root when the agent leaves a request in `/run/monitor` |
-| `tune_wifi.sh` | Unmanages `hnwradio*`/`p2p-dev-*`, pins 5 GHz BSSID, and sets multicore IRQ/RPS + `fq_codel` |
+| `tune_wifi.sh` | Unmanages `hnwradio*`/`p2p-dev-*`, keeps the Wi-Fi connection on 5 GHz without tying it to one access point, and sets multicore IRQ/RPS + `fq_codel` |
 | `hnw-wifi-tune.service` | `systemd` oneshot unit that applies `tune_wifi.sh` after boot |
 | `lan_scan.py` | On-demand Scapy ARP + Nmap for Airwaves Security |
 | `rtnp_bind.c` | `LD_PRELOAD` shim that pins a measurement socket to one link; `install.sh` compiles it to `rtnp-bind.so` |

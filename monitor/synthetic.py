@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import queue
 import os
 import signal
 import subprocess
 import sys
 import threading
+import urllib.error
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -588,8 +590,9 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
                 forever=forever,
                 duration_seconds=job.get("duration_seconds"),
             )
-    except (ValueError, KeyError) as exc:
-        _finish(config, run_id, link, "failed", str(exc))
+    except (ValueError, KeyError, TypeError) as exc:
+        # TypeError too: int(None) on a missing option must fail this one job, not stop every later one.
+        _finish(config, run_id, link, "failed", str(exc) or "The job's options are not valid")
         return
     wanted_restart = int(job.get("restart_token") or 0)
     with _lock:
@@ -622,9 +625,14 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
         timer = threading.Timer(seconds, _stop_if_running, args=(item, proc))
         timer.daemon = True
         timer.start()
+    # The sender's error output is read as it comes. Left unread, the pipe fills at about 64 KB, the sender
+    # blocks on its next message and the flow goes silent with nothing to restart it.
+    tail: list[str] = []
+    drain = threading.Thread(target=_drain_stderr, args=(proc, tail), name=f"rtnp-err-{link}", daemon=True)
+    drain.start()
     threading.Thread(
         target=_read_output,
-        args=(config, item, proc),
+        args=(config, item, proc, tail, drain),
         name=f"rtnp-{link}",
         daemon=True,
     ).start()
@@ -652,12 +660,127 @@ def flow_state(flow: dict) -> str:
     return ""
 
 
-def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) -> None:
+# Interval reports waiting to be sent, for all flows together. With six flows reporting every 10 seconds
+# this is about seven minutes; beyond that the oldest are dropped.
+SAMPLE_BACKLOG = 240
+# Reports are sent together. After the first one arrives the sender waits this long for the other flows'
+# reports, then sends what there is: about two requests every 10 seconds in place of one for every report.
+BATCH_LINGER_S = 5.0
+BATCH_MAX = 100
+_outbox: "queue.Queue[Optional[dict]]" = queue.Queue(maxsize=SAMPLE_BACKLOG)
+_poster_started = False
+_post_config: dict = {}
+# False once a server answered that it has no batch address (an older server): reports then go one at a time.
+_batch_ok = True
+
+
+def _drain_stderr(proc: subprocess.Popen, tail: list[str]) -> None:
+    """Read the sender's error output until it ends, keeping only its last line."""
+    if proc.stderr is None:
+        return
+    try:
+        for line in proc.stderr:
+            text = line.strip()
+            if text:
+                tail[:] = [text[:200]]
+    except (OSError, ValueError):
+        return
+
+
+def _queue_sample(outbox: "queue.Queue[Optional[dict]]", body: Optional[dict]) -> None:
+    """Add a report to send (None ends the sender thread). A full queue loses its oldest report."""
+    while True:
+        try:
+            outbox.put_nowait(body)
+            return
+        except queue.Full:
+            try:
+                outbox.get_nowait()
+            except queue.Empty:
+                pass
+
+
+def _send_batch(config: dict, batch: list[dict]) -> None:
+    """Send reports in one request. An older server has no batch address: they then go one at a time."""
+    global _batch_ok
+    base = str(config.get("server_url") or "").rstrip("/")
+    post = config["post_json"]
+    if _batch_ok:
+        try:
+            reply = post(f"{base}/api/v1/synthetic/samples/batch", {"samples": batch}, config.get("token"), config.get("name"))
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (404, 405):
+                return
+            _batch_ok = False
+        except Exception:
+            return
+        else:
+            if isinstance(reply, dict) and reply.get("speedtest"):
+                try:
+                    import agent_state
+
+                    agent_state.speedtest_wake.set()
+                except Exception:
+                    pass
+            return
+    for body in batch:
+        try:
+            post(f"{base}/api/v1/synthetic/samples", body, config.get("token"), config.get("name"))
+        except Exception:
+            continue
+
+
+def _post_samples(config: dict, outbox: "queue.Queue[Optional[dict]]") -> None:
+    """Send queued reports in batches until a None arrives. A slow or unreachable server holds up this thread,
+    never a flow's reader."""
+    while True:
+        first = outbox.get()
+        if first is None:
+            return
+        if BATCH_LINGER_S > 0:
+            time.sleep(BATCH_LINGER_S)
+        batch = [first]
+        ended = False
+        while len(batch) < BATCH_MAX:
+            try:
+                body = outbox.get_nowait()
+            except queue.Empty:
+                break
+            if body is None:
+                ended = True
+                break
+            batch.append(body)
+        _send_batch(_post_config or config, batch)
+        if ended:
+            return
+
+
+def _ensure_poster(config: dict) -> None:
+    """Start the one thread that sends every flow's reports, and keep the settings it sends with current."""
+    global _poster_started, _post_config
+    with _lock:
+        _post_config = config
+        if _poster_started:
+            return
+        _poster_started = True
+    threading.Thread(target=_post_samples, args=(config, _outbox), name="rtnp-post", daemon=True).start()
+
+
+def _read_output(
+    config: dict,
+    item: tuple[str, str],
+    proc: subprocess.Popen,
+    tail: Optional[list[str]] = None,
+    drain: Optional[threading.Thread] = None,
+) -> None:
     global _last_failure
     run_id, link = item
-    base = str(config.get("server_url") or "").rstrip("/")
     assert proc.stdout is not None
     missing_rx = 0
+    # Reports are sent from one thread for all flows. Sending here took up to 10 seconds a report while the
+    # server could not be reached, which is as long as a report interval: the reader fell behind, the sender's
+    # output pipe filled, and the restart checks below ran minutes late.
+    _ensure_poster(config)
     for line in proc.stdout:
         payload = _json_line(line)
         if payload is None or payload.get("type") not in {None, "interval"}:
@@ -702,22 +825,16 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
         recorded = datetime.now(timezone.utc).isoformat()
         if isinstance(unix_ms, (int, float)):
             recorded = datetime.fromtimestamp(unix_ms / 1000, tz=timezone.utc).isoformat()
-        try:
-            post = config["post_json"]
-            post(
-                f"{base}/api/v1/synthetic/samples",
-                {
-                    "run_id": run_id,
-                    "link": link,
-                    "interval_index": index,
-                    "recorded_at": recorded,
-                    "metrics": payload,
-                },
-                config.get("token"),
-                config.get("name"),
-            )
-        except Exception:
-            continue
+        _queue_sample(
+            _outbox,
+            {
+                "run_id": run_id,
+                "link": link,
+                "interval_index": index,
+                "recorded_at": recorded,
+                "metrics": payload,
+            },
+        )
     try:
         code = proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
@@ -726,8 +843,12 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
     note = ""
     if proc.stderr is not None:
         try:
-            lines = [line for line in proc.stderr.read().splitlines() if line.strip()]
-            note = lines[-1].strip()[:200] if lines else ""
+            if drain is not None:
+                drain.join(timeout=2)
+                note = tail[0] if tail else ""
+            else:
+                lines = [line for line in proc.stderr.read().splitlines() if line.strip()]
+                note = lines[-1].strip()[:200] if lines else ""
         except (OSError, ValueError):
             note = ""
         finally:

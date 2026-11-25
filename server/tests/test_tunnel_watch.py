@@ -187,3 +187,122 @@ def test_the_service_and_the_helper_units_agree():
     assert "hnw-restore-tunnel@.path hnw-restore-tunnel@.service" in packed and "monitor.service" in packed
     for source in ("tunnel_watch.py", "scheduler.py"):
         assert '"sudo"' not in (MONITOR / source).read_text(encoding="utf-8"), source
+
+
+def _adapter(sys_net, name, *, carrier="1", kind="1", wireless=True):
+    path = sys_net / name
+    path.mkdir(parents=True)
+    if wireless:
+        (path / "wireless").mkdir()
+    (path / "type").write_text(kind + "\n")
+    if carrier is not None:
+        (path / "carrier").write_text(carrier + "\n")
+    return path
+
+
+def _wifi_setup(tw, tmp_path, monkeypatch, outcome="success"):
+    sys_net = tmp_path / "sys-net"
+    sys_net.mkdir()
+    monkeypatch.setattr(tw, "SYS_NET", sys_net)
+    monkeypatch.setattr(tw, "_configured", lambda iface: True)
+    _requests, seen = _helper(tw, tmp_path, monkeypatch, outcome)
+    return sys_net, seen
+
+
+def test_wifi_link_down_names_only_a_real_station_adapter(monkeypatch, tmp_path):
+    tw = _load()
+    sys_net, _seen = _wifi_setup(tw, tmp_path, monkeypatch)
+    _adapter(sys_net, "eth0", wireless=False, carrier="1")
+    _adapter(sys_net, "hnwradio0", carrier="0")
+    _adapter(sys_net, "hnwradio0mon", carrier="1", kind="803")
+    _adapter(sys_net, "p2p-dev-wlan0", carrier="0")
+    assert tw._wifi_link_down() is None  # no station adapter at all
+
+    wlan = _adapter(sys_net, "wlan0", carrier="0")
+    assert tw._wifi_link_down() == "wlan0"
+    (wlan / "carrier").write_text("1\n")
+    assert tw._wifi_link_down() is None
+    # An adapter that is switched off cannot be asked for its carrier: that is "down" too.
+    (wlan / "carrier").unlink()
+    assert tw._wifi_link_down() == "wlan0"
+
+
+def test_a_capture_radio_in_monitor_mode_is_never_taken_for_the_link(monkeypatch, tmp_path):
+    tw = _load()
+    sys_net, _seen = _wifi_setup(tw, tmp_path, monkeypatch)
+    _adapter(sys_net, "wlan1", carrier="1", kind="803")
+    _adapter(sys_net, "wlan0", carrier="0")
+    assert tw._wifi_link_down() == "wlan0"
+
+
+def test_wifi_rejoin_is_asked_after_four_checks_and_then_every_five_minutes(monkeypatch, tmp_path):
+    tw = _load()
+    sys_net, seen = _wifi_setup(tw, tmp_path, monkeypatch)
+    _adapter(sys_net, "wlan0", carrier="0")
+
+    for step in range(3):
+        tw.check_wifi(now=100.0 + 30 * step)
+    assert seen == []  # NetworkManager is still given time to retry by itself
+    tw.check_wifi(now=190.0)
+    assert seen == ["restore-wifi"]
+
+    # Still down: no second request inside the cooldown, one after it.
+    tw.check_wifi(now=220.0)
+    tw.check_wifi(now=190.0 + tw.WIFI_REJOIN_COOLDOWN_S - 1)
+    assert seen == ["restore-wifi"]
+    tw.check_wifi(now=190.0 + tw.WIFI_REJOIN_COOLDOWN_S + 1)
+    assert seen == ["restore-wifi", "restore-wifi"]
+
+
+def test_wifi_that_comes_back_resets_the_count(monkeypatch, tmp_path):
+    tw = _load()
+    sys_net, seen = _wifi_setup(tw, tmp_path, monkeypatch)
+    wlan = _adapter(sys_net, "wlan0", carrier="0")
+    for step in range(3):
+        tw.check_wifi(now=100.0 + 30 * step)
+    (wlan / "carrier").write_text("1\n")
+    tw.check_wifi(now=190.0)
+    (wlan / "carrier").write_text("0\n")
+    for step in range(3):
+        tw.check_wifi(now=220.0 + 30 * step)
+    assert seen == []
+
+
+def test_wifi_is_left_alone_on_a_pi_without_a_wifi_tunnel(monkeypatch, tmp_path):
+    tw = _load()
+    sys_net, seen = _wifi_setup(tw, tmp_path, monkeypatch)
+    monkeypatch.setattr(tw, "_configured", lambda iface: iface == "wg0")
+    _adapter(sys_net, "wlan0", carrier="0")
+    for step in range(10):
+        tw.check_wifi(now=100.0 + 30 * step)
+    assert seen == []
+
+
+def test_a_failed_wifi_rejoin_does_not_stop_the_tunnel_checks(monkeypatch, tmp_path):
+    tw = _load()
+    sys_net, seen = _wifi_setup(tw, tmp_path, monkeypatch, outcome="exit-code")
+    _adapter(sys_net, "wlan0", carrier="0")
+    probed: list[str] = []
+    monkeypatch.setattr(tw, "_peer_ok", lambda host, iface: probed.append(iface) or True)
+    for step in range(4):
+        tw.check_once(now=100.0 + 30 * step)
+    assert seen == ["restore-wifi"]
+    assert probed.count("wg0") == 4 and probed.count("wg1") == 4
+
+
+def test_the_wifi_helper_takes_no_input_and_is_installed_everywhere():
+    script = (MONITOR / "restore_wifi.sh").read_text(encoding="utf-8")
+    # The adapters come from NetworkManager: nothing the agent (or the server) says reaches a root command.
+    assert '"$1"' not in script and "${1" not in script and "$@" not in script and "$*" not in script
+    assert 'nmcli --wait 45 device connect "$dev"' in script
+    helper = (MONITOR / "hnw-restore-wifi.service").read_text(encoding="utf-8")
+    assert "ExecStart=/opt/monitor/restore_wifi.sh\n" in helper
+    assert "/run/hnw-restore-wifi.result" in helper and "/run/monitor/restore-wifi" in helper
+    assert "PathExists=/run/monitor/restore-wifi" in (MONITOR / "hnw-restore-wifi.path").read_text(encoding="utf-8")
+    for name in ("install.sh", "update.sh"):
+        text = (MONITOR / name).read_text(encoding="utf-8")
+        assert "restore_wifi.sh /opt/monitor/restore_wifi.sh" in text, name
+        assert "hnw-restore-wifi.path hnw-restore-wifi.service /etc/systemd/system/" in text, name
+        assert "hnw-restore-tunnel@wg1.path hnw-restore-wifi.path" in text, name
+    packed = (MONITOR / "pack.sh").read_text(encoding="utf-8")
+    assert "restore_wifi.sh" in packed and "hnw-restore-wifi.path hnw-restore-wifi.service" in packed

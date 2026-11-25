@@ -275,6 +275,8 @@ class ProbeCommandOut(BaseModel):
     lan_scan: bool = False
     traces: list[dict[str, str]] = Field(default_factory=list)
     trusted_bssids: list[str] = Field(default_factory=list)
+    # A speed test someone started is waiting for this agent.
+    speedtest: bool = False
 
 
 class GuestVisitOut(BaseModel):

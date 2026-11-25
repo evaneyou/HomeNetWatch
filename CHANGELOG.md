@@ -96,6 +96,17 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
+- **Video conference runs in bursts:** the continuous Video conference check sends for 75 seconds every 5 minutes
+  on every agent, in place of all day. It was most of the roughly 2 TB a month the checks moved through a home
+  line. Voice and Remote desktop still run all the time. The server leaves the job out of an agent's assignment
+  between bursts, so no agent update is needed.
+- **The path trace runs every 15 minutes, and at once when a path check fails (Pi agent 0.8.21):** it ran every
+  2 minutes, took about 10 seconds and held up every other check while it ran.
+- **Checks keep their interval (Pi agent 0.8.21):** an interval is counted from when a check began, not from
+  when it ended. About one run in ten of the 60-second checks was going missing each day.
+- **Fewer requests from the Pi (Pi agent 0.8.21):** the reports of all real-time flows go in one request, and
+  the agent asks for a speed test when the server says one is waiting instead of every 3 seconds. A Speed Test
+  can now take up to about 15 seconds to start.
 - **Android agent 0.5.2 includes the traffic sender.** Voice, video conference and remote desktop can start again. The 0.5.1 build was packed without `librtnp_send.so`, so the Shield reported the sender missing and those tests never started.
 - **Database backups are kept for 7 days.** WireGuard and agent TLS backups still keep 14 copies. `DB_KEEP` overrides the database count.
 - **Raw measurements are kept for 60 days.** From 60 days to 12 months, including months 10 through 12, each hour is one average. From 12 months to 2 years, each day is one average. Server Health states that schedule, and says database backups keep 7 copies while WireGuard and agent TLS keep 14.
@@ -201,6 +212,25 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 - **Home says what is wrong on a link:** when a link's own path passes and only its web or app checks are not
   passing, the row reads "Web checks not passing on Wi-Fi" instead of "Packet loss / slow", and the card no
   longer says the link is running slow.
+- **The Pi's Wi-Fi is no longer tied to one access point (Pi agent 0.8.20):** `tune_wifi.sh` wrote the access point
+  the Pi was on (its BSSID) into the saved connection. When that access point restarted or steered the Pi away, it
+  could join nothing else and dropped off Wi-Fi. The pin is no longer set, and one left by an earlier version is
+  removed on update. The 5 GHz band preference stays.
+- **A real-time flow can no longer freeze on its own messages:** the Pi agent now reads a sender's error output as
+  it runs. Unread, that output filled its pipe and the sender stopped with nothing to restart it. Interval reports
+  are also sent from their own thread, so a slow or unreachable server no longer holds up the reader.
+- **An outage shows as failed checks, not as a gap:** check results that could not be uploaded are kept (up to 500)
+  and sent with the next batch.
+- **Wi-Fi checks no longer pass over Ethernet:** with Wi-Fi down the agent named the capture radio as its Wi-Fi
+  link, and with no Wi-Fi adapter a Wi-Fi check left by the default route. The link is now the adapter that would
+  carry traffic, and a Wi-Fi check with no adapter fails.
+- **Smaller Pi agent fixes:** a capture the server rejects no longer blocks the airwave upload queue, a job with a
+  missing option no longer stops later flows from starting, and the setup page answers 400 to a body that is not
+  a JSON object.
+- **The Pi rejoins Wi-Fi by itself (Pi agent 0.8.20):** after a failed security handshake NetworkManager treated the
+  saved password as wrong, found nobody to ask for a new one and stopped retrying, so the Pi stayed off Wi-Fi for
+  hours until it was reconnected by hand. When the Wi-Fi adapter has had no link for about two minutes, the agent
+  now asks a root systemd unit (`hnw-restore-wifi`) to rejoin the saved network, at most once every 5 minutes.
 - **Remote desktop no longer files "stopped in the monitor" when it goes quiet:** that check's packet gaps are heavy-tailed, so a whole 10-second report sometimes contains no packets. The receiver scored the one packet still unaccounted from the previous report as 100% loss, and the server opened a software issue while voice and video on the same link were fine. An interval that sent nothing is now discarded.
 - **Android agent uptime on the TV (Android agent 0.5.1):** the Shield screen timed the agent and the tunnel with the wall clock. That clock is often wrong at boot and then jumps when the time syncs, so the screen showed hundreds of days and a time of day with no date. Those durations now follow the monotonic clock, and a start that was not today includes the date.
 - **The Pi can restart a dead tunnel again (Pi agent 0.8.19):** the agent restarted a WireGuard tunnel that stopped

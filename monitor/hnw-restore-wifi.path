@@ -1,0 +1,8 @@
+[Unit]
+Description=Watch for the HomeNetWatch agent asking to rejoin Wi-Fi
+
+[Path]
+PathExists=/run/monitor/restore-wifi
+
+[Install]
+WantedBy=multi-user.target

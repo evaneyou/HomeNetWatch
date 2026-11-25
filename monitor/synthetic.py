@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import queue
 import os
 import signal
 import subprocess
@@ -588,8 +589,9 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
                 forever=forever,
                 duration_seconds=job.get("duration_seconds"),
             )
-    except (ValueError, KeyError) as exc:
-        _finish(config, run_id, link, "failed", str(exc))
+    except (ValueError, KeyError, TypeError) as exc:
+        # TypeError too: int(None) on a missing option must fail this one job, not stop every later one.
+        _finish(config, run_id, link, "failed", str(exc) or "The job's options are not valid")
         return
     wanted_restart = int(job.get("restart_token") or 0)
     with _lock:
@@ -622,9 +624,14 @@ def _ensure(config: dict, item: tuple[str, str], job: dict[str, Any], target: st
         timer = threading.Timer(seconds, _stop_if_running, args=(item, proc))
         timer.daemon = True
         timer.start()
+    # The sender's error output is read as it comes. Left unread, the pipe fills at about 64 KB, the sender
+    # blocks on its next message and the flow goes silent with nothing to restart it.
+    tail: list[str] = []
+    drain = threading.Thread(target=_drain_stderr, args=(proc, tail), name=f"rtnp-err-{link}", daemon=True)
+    drain.start()
     threading.Thread(
         target=_read_output,
-        args=(config, item, proc),
+        args=(config, item, proc, tail, drain),
         name=f"rtnp-{link}",
         daemon=True,
     ).start()
@@ -652,12 +659,67 @@ def flow_state(flow: dict) -> str:
     return ""
 
 
-def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) -> None:
+# Interval reports waiting to be sent, per flow. At one report every 10 seconds this is ten minutes; beyond
+# that the oldest are dropped.
+SAMPLE_BACKLOG = 60
+
+
+def _drain_stderr(proc: subprocess.Popen, tail: list[str]) -> None:
+    """Read the sender's error output until it ends, keeping only its last line."""
+    if proc.stderr is None:
+        return
+    try:
+        for line in proc.stderr:
+            text = line.strip()
+            if text:
+                tail[:] = [text[:200]]
+    except (OSError, ValueError):
+        return
+
+
+def _queue_sample(outbox: "queue.Queue[Optional[dict]]", body: Optional[dict]) -> None:
+    """Add a report to send (None ends the sender thread). A full queue loses its oldest report."""
+    while True:
+        try:
+            outbox.put_nowait(body)
+            return
+        except queue.Full:
+            try:
+                outbox.get_nowait()
+            except queue.Empty:
+                pass
+
+
+def _post_samples(config: dict, outbox: "queue.Queue[Optional[dict]]") -> None:
+    """Send queued reports one at a time. A slow or unreachable server holds up this thread, never the reader."""
+    base = str(config.get("server_url") or "").rstrip("/")
+    while True:
+        body = outbox.get()
+        if body is None:
+            return
+        try:
+            config["post_json"](f"{base}/api/v1/synthetic/samples", body, config.get("token"), config.get("name"))
+        except Exception:
+            continue
+
+
+def _read_output(
+    config: dict,
+    item: tuple[str, str],
+    proc: subprocess.Popen,
+    tail: Optional[list[str]] = None,
+    drain: Optional[threading.Thread] = None,
+) -> None:
     global _last_failure
     run_id, link = item
-    base = str(config.get("server_url") or "").rstrip("/")
     assert proc.stdout is not None
     missing_rx = 0
+    # Reports are sent from their own thread. Sending here took up to 10 seconds a report while the server
+    # could not be reached, which is as long as a report interval: the reader fell behind, the sender's output
+    # pipe filled, and the restart checks below ran minutes late.
+    outbox: "queue.Queue[Optional[dict]]" = queue.Queue(maxsize=SAMPLE_BACKLOG)
+    poster = threading.Thread(target=_post_samples, args=(config, outbox), name=f"rtnp-post-{link}", daemon=True)
+    poster.start()
     for line in proc.stdout:
         payload = _json_line(line)
         if payload is None or payload.get("type") not in {None, "interval"}:
@@ -702,22 +764,18 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
         recorded = datetime.now(timezone.utc).isoformat()
         if isinstance(unix_ms, (int, float)):
             recorded = datetime.fromtimestamp(unix_ms / 1000, tz=timezone.utc).isoformat()
-        try:
-            post = config["post_json"]
-            post(
-                f"{base}/api/v1/synthetic/samples",
-                {
-                    "run_id": run_id,
-                    "link": link,
-                    "interval_index": index,
-                    "recorded_at": recorded,
-                    "metrics": payload,
-                },
-                config.get("token"),
-                config.get("name"),
-            )
-        except Exception:
-            continue
+        _queue_sample(
+            outbox,
+            {
+                "run_id": run_id,
+                "link": link,
+                "interval_index": index,
+                "recorded_at": recorded,
+                "metrics": payload,
+            },
+        )
+    _queue_sample(outbox, None)
+    poster.join(timeout=3)
     try:
         code = proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
@@ -726,8 +784,12 @@ def _read_output(config: dict, item: tuple[str, str], proc: subprocess.Popen) ->
     note = ""
     if proc.stderr is not None:
         try:
-            lines = [line for line in proc.stderr.read().splitlines() if line.strip()]
-            note = lines[-1].strip()[:200] if lines else ""
+            if drain is not None:
+                drain.join(timeout=2)
+                note = tail[0] if tail else ""
+            else:
+                lines = [line for line in proc.stderr.read().splitlines() if line.strip()]
+                note = lines[-1].strip()[:200] if lines else ""
         except (OSError, ValueError):
             note = ""
         finally:

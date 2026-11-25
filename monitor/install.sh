@@ -23,6 +23,9 @@ install -m 644 agent.py agent_state.py enrollment.py health.py radio.py schedule
 if [ -f restore_tunnel.sh ]; then
   install -m 755 restore_tunnel.sh /opt/monitor/restore_tunnel.sh
 fi
+if [ -f restore_wifi.sh ]; then
+  install -m 755 restore_wifi.sh /opt/monitor/restore_wifi.sh
+fi
 if [ -f tune_wifi.sh ]; then
   install -m 755 tune_wifi.sh /opt/monitor/tune_wifi.sh
 fi
@@ -33,7 +36,7 @@ fi
 # tunnel when the agent leaves a request in /run/monitor.
 rm -f /etc/sudoers.d/hnw-restore-tunnel
 if [ -d /etc/systemd/system ]; then
-  install -m 644 hnw-restore-tunnel@.path hnw-restore-tunnel@.service /etc/systemd/system/
+  install -m 644 hnw-restore-tunnel@.path hnw-restore-tunnel@.service hnw-restore-wifi.path hnw-restore-wifi.service /etc/systemd/system/
 fi
 if [ -f rtnp-send ]; then
   install -o root -g root -m 755 rtnp-send /opt/monitor/rtnp-send
@@ -110,7 +113,7 @@ chmod 755 /usr/local/bin/hnw-reset
 systemctl daemon-reload
 systemctl enable monitor.service
 if [ -f /etc/systemd/system/hnw-restore-tunnel@.path ]; then
-  systemctl enable --now hnw-restore-tunnel@wg0.path hnw-restore-tunnel@wg1.path
+  systemctl enable --now hnw-restore-tunnel@wg0.path hnw-restore-tunnel@wg1.path hnw-restore-wifi.path
 fi
 if [ -f /etc/systemd/system/hnw-wifi-tune.service ]; then
   systemctl enable hnw-wifi-tune.service 2>/dev/null || true

@@ -213,9 +213,26 @@ def _iw_first_interface() -> str | None:
         return None
     for line in completed.stdout.splitlines():
         parts = line.split()
-        if len(parts) >= 2 and parts[0] == "Interface":
+        if len(parts) >= 2 and parts[0] == "Interface" and not _capture_name(parts[1]):
             return parts[1]
     return None
+
+
+def _capture_name(name: str) -> bool:
+    """True for an interface that listens and never carries traffic: the capture radio, its monitor interface, P2P."""
+    if name.startswith(("hnwradio", "p2p-")):
+        return True
+    return _is_monitor_vif(Path("/sys/class/net") / name)
+
+
+def _fallback_link(entries: list[Path]) -> str | None:
+    """The adapter that would carry traffic when none has a link right now. The built-in one first.
+
+    Never a capture radio: with Wi-Fi down the agent used to name the capture radio's monitor interface as its
+    link, report it to the server and bind the Wi-Fi checks to it.
+    """
+    ranked = sorted((0 if _builtin_wifi(entry) else 1, entry.name) for entry in entries if not _capture_name(entry.name))
+    return ranked[0][1] if ranked else None
 
 
 def parse_link_ssid(text: str) -> str:
@@ -245,7 +262,7 @@ def wifi_roles(root: Path | None = None, ipv4_of=None) -> dict[str, str | None]:
     entries = _wireless_entries(sys_root)
     link = _link_from_entries(entries, reader)
     if link is None and root is None:
-        link = _iw_first_interface()
+        link = _fallback_link(entries) or _iw_first_interface()
     return {"link": link, "radio": _radio_from_entries(entries, link)}
 
 
@@ -338,6 +355,31 @@ def _bind_socket(sock: socket.socket, iface: str | None) -> None:
         sock.setsockopt(socket.SOL_SOCKET, option, iface.encode() + b"\0")
     except OSError:
         return
+
+
+def _no_adapter_result(test: dict) -> dict | None:
+    """A failed result for a Wi-Fi check on a Pi with no Wi-Fi adapter to run it on, else None.
+
+    Without this the check ran with no interface named, left by the default route (Ethernet) and passed: the
+    Wi-Fi rows then looked healthy with no Wi-Fi at all. Checks of the tunnel peer follow the tunnel's own route.
+    """
+    if str(test.get("link") or "") != "wireless":
+        return None
+    target = str(test.get("target") or "")
+    if "10.7.0." in target or "10.7.1." in target:
+        return None
+    if _link_interface("wireless") is not None:
+        return None
+    kind = test.get("kind")
+    if kind == "http":
+        stage, metrics = "tcp", {"rtt_ms": 0.0, "loss_pct": 100.0, "total_ms": 0.0}
+    elif kind == "ping":
+        stage, metrics = "icmp", _path_metrics(None, 100.0, 0.0)
+    elif kind == "mtr":
+        stage, metrics = "trace", _trace_metrics([], 0.0)
+    else:
+        return None
+    return _result(test, _now(), "fail", [{"name": stage, "duration_ms": 0.0, "status": "fail"}], metrics, "No Wi-Fi adapter to run this check on")
 
 
 def _threshold_ms(test: dict) -> float | None:
@@ -682,6 +724,9 @@ def _trace_metrics(hops: list[dict], total: float) -> dict:
 
 def run_check(test: dict) -> dict | None:
     kind = test.get("kind")
+    missing = _no_adapter_result(test)
+    if missing is not None:
+        return missing
     if kind == "librespeed":
         return check_librespeed(test)
     if kind == "cloudflare":

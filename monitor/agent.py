@@ -206,6 +206,9 @@ class Handler(BaseHTTPRequestHandler):
         except (UnicodeError, json.JSONDecodeError):
             self._send(400, json.dumps({"detail": "Invalid request"}).encode("utf-8"), "application/json")
             return
+        if not isinstance(incoming, dict):
+            self._send(400, json.dumps({"detail": "Invalid request"}).encode("utf-8"), "application/json")
+            return
         server_url = str(incoming.get("server_url") or "").strip().rstrip("/")
         current_key = str(incoming.get("current_key") or "")
         with state._lock:

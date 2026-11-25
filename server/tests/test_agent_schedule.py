@@ -157,3 +157,78 @@ def test_a_check_that_is_not_on_the_clock_keeps_its_plain_interval(agent):
     module = agent()
     module._mark_ran(PING)
     assert _left(module, "wired:icmp-path") == pytest.approx(60, abs=2)
+
+
+SERVER = {"server_url": "http://10.7.0.1:8847", "token": "t", "name": "pi"}
+
+
+def _results(module, monkeypatch, ids):
+    made = iter({"id": item} for item in ids)
+    monkeypatch.setattr(module, "run_check", lambda _test: next(made))
+
+
+def test_results_that_could_not_be_uploaded_go_with_the_next_batch(agent, monkeypatch):
+    module = agent()
+    _results(module, monkeypatch, ["during-outage", "after"])
+
+    def down(*_args, **_kwargs):
+        raise OSError("tunnel down")
+
+    monkeypatch.setattr(module, "post_json", down)
+    with pytest.raises(OSError):
+        module._run_due_tests(SERVER, [PING])
+    assert [item["id"] for item in module._unsent] == ["during-outage"]
+
+    sent: list[dict] = []
+    monkeypatch.setattr(module, "post_json", lambda _url, body, *_rest: sent.append(body) or {})
+    module._run_due_tests(SERVER, [PING])
+    # The failed check from the outage arrives first, so the dashboard shows it instead of a gap.
+    assert [item["id"] for item in sent[0]["results"]] == ["during-outage", "after"]
+    assert module._unsent == []
+
+
+def test_a_batch_the_server_rejects_is_not_kept(agent, monkeypatch):
+    import urllib.error
+
+    module = agent()
+    _results(module, monkeypatch, ["bad"])
+
+    def rejected(url, *_args, **_kwargs):
+        raise urllib.error.HTTPError(url, 422, "Unprocessable", {}, None)
+
+    monkeypatch.setattr(module, "post_json", rejected)
+    with pytest.raises(urllib.error.HTTPError):
+        module._run_due_tests(SERVER, [PING])
+    # Kept, it would be sent and refused again with every later batch, and nothing new would get through.
+    assert module._unsent == []
+
+
+def test_a_server_error_keeps_the_batch(agent, monkeypatch):
+    import urllib.error
+
+    module = agent()
+    _results(module, monkeypatch, ["kept"])
+
+    def broken(url, *_args, **_kwargs):
+        raise urllib.error.HTTPError(url, 502, "Bad Gateway", {}, None)
+
+    monkeypatch.setattr(module, "post_json", broken)
+    with pytest.raises(urllib.error.HTTPError):
+        module._run_due_tests(SERVER, [PING])
+    assert [item["id"] for item in module._unsent] == ["kept"]
+
+
+def test_unsent_results_are_capped_keeping_the_newest(agent, monkeypatch):
+    module = agent()
+    module._unsent[:] = [{"id": f"old-{index}"} for index in range(module.MAX_UNSENT + 100)]
+    _results(module, monkeypatch, ["newest"])
+
+    def down(*_args, **_kwargs):
+        raise OSError("tunnel down")
+
+    monkeypatch.setattr(module, "post_json", down)
+    with pytest.raises(OSError):
+        module._run_due_tests(SERVER, [PING])
+    assert len(module._unsent) == module.MAX_UNSENT
+    assert module._unsent[-1]["id"] == "newest"
+    assert module._unsent[0]["id"] == "old-101"

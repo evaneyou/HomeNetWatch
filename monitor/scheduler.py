@@ -229,6 +229,16 @@ def _idle_seconds() -> float:
         return 15
     return min(15.0, max(0.5, min(upcoming) - now))
 
+# Results the server has not taken yet. A batch that could not be uploaded is sent again with the next one,
+# so an outage shows as failed checks, not as a gap with no data. The server ignores a result it already has
+# (each carries its own id), so sending one twice is safe.
+MAX_UNSENT = 500
+# Answers that mean the server will never take this batch: keeping it would block every later result.
+REJECTED = {400, 413, 422}
+_unsent: list[dict] = []
+_unsent_lock = threading.Lock()
+
+
 def run_due_tests(config: dict) -> None:
     ready = due_tests(time.monotonic())
     if not ready:
@@ -244,14 +254,32 @@ def _run_due_tests(config: dict, ready: list[dict]) -> None:
     # A trace shares the link with nothing else, so its timing is the path, not the other probes.
     results.extend(result for result in state._probes.map(_run_one, traces) if result)
     results.extend(result for result in (_run_one(test) for test in heavy) if result)
-    if not results:
+    with _unsent_lock:
+        batch = _unsent + results
+        _unsent.clear()
+    if not batch:
         return
-    post_json(
-        f"{config['server_url'].rstrip('/')}/api/v1/ingest",
-        {"results": results},
-        config.get("token"),
-        config.get("name"),
-    )
+    try:
+        post_json(
+            f"{config['server_url'].rstrip('/')}/api/v1/ingest",
+            {"results": batch},
+            config.get("token"),
+            config.get("name"),
+        )
+    except urllib.error.HTTPError as exc:
+        if exc.code not in REJECTED:
+            _keep_unsent(batch)
+        raise
+    except Exception:
+        _keep_unsent(batch)
+        raise
+
+
+def _keep_unsent(batch: list[dict]) -> None:
+    """Put a batch back for the next upload, newest kept when there are too many."""
+    with _unsent_lock:
+        _unsent[:0] = batch
+        del _unsent[:-MAX_UNSENT]
 
 def test_loop() -> None:
     while not state._stop.is_set():

@@ -141,7 +141,9 @@ def test_wifi_tuning_scripts_unmanage_capture_radio_pin_5ghz_and_configure_rps_a
     assert "unmanaged-devices=interface-name:hnwradio*;interface-name:p2p-dev-*" in update
     assert "unmanaged-devices=interface-name:hnwradio*;interface-name:p2p-dev-*" in install
     assert "802-11-wireless.band a" in tune
-    assert "802-11-wireless.bssid" in tune
+    # The band is kept, but the connection is never tied to one access point: an old pin is cleared.
+    assert '802-11-wireless.bssid ""' in tune
+    assert '802-11-wireless.bssid "$bssid"' not in tune
     assert "smp_affinity_list" in tune
     assert "rps_cpus" in tune
     assert "fq_codel quantum 300" in tune

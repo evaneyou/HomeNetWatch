@@ -195,6 +195,21 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **The Pi's Wi-Fi is no longer tied to one access point (Pi agent 0.8.20):** `tune_wifi.sh` wrote the access point
+  the Pi was on (its BSSID) into the saved connection. When that access point restarted or steered the Pi away, it
+  could join nothing else and dropped off Wi-Fi. The pin is no longer set, and one left by an earlier version is
+  removed on update. The 5 GHz band preference stays.
+- **A real-time flow can no longer freeze on its own messages:** the Pi agent now reads a sender's error output as
+  it runs. Unread, that output filled its pipe and the sender stopped with nothing to restart it. Interval reports
+  are also sent from their own thread, so a slow or unreachable server no longer holds up the reader.
+- **An outage shows as failed checks, not as a gap:** check results that could not be uploaded are kept (up to 500)
+  and sent with the next batch.
+- **Wi-Fi checks no longer pass over Ethernet:** with Wi-Fi down the agent named the capture radio as its Wi-Fi
+  link, and with no Wi-Fi adapter a Wi-Fi check left by the default route. The link is now the adapter that would
+  carry traffic, and a Wi-Fi check with no adapter fails.
+- **Smaller Pi agent fixes:** a capture the server rejects no longer blocks the airwave upload queue, a job with a
+  missing option no longer stops later flows from starting, and the setup page answers 400 to a body that is not
+  a JSON object.
 - **The Pi rejoins Wi-Fi by itself (Pi agent 0.8.20):** after a failed security handshake NetworkManager treated the
   saved password as wrong, found nobody to ask for a new one and stopped retrying, so the Pi stayed off Wi-Fi for
   hours until it was reconnected by hand. When the Wi-Fi adapter has had no link for about two minutes, the agent

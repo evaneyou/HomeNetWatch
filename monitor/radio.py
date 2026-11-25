@@ -198,9 +198,18 @@ def _post_capture(config: dict, payload: dict) -> None:
         timeout=30,
     )
 
+# Answers that mean the server will never take this capture, however often it is sent.
+SPOOL_REJECTED = {400, 413, 422}
+
+
 def _drain_spool(config: dict) -> None:
     for row_id, payload in rf_spool.pending(state.SPOOL_PATH):
-        _post_capture(config, payload)
+        try:
+            _post_capture(config, payload)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in SPOOL_REJECTED:
+                raise
+            # Dropped: left at the head of the queue it would hold back every capture behind it for five days.
         rf_spool.drop(state.SPOOL_PATH, row_id)
 
 def kismet_once(config: dict) -> None:

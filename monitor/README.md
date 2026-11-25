@@ -140,7 +140,7 @@ Setup accepts HTTPS, or HTTP to a private LAN address.
 | `restore_wifi.sh` | Root helper that tells NetworkManager to rejoin Wi-Fi on a disconnected adapter |
 | `hnw-restore-wifi.path`, `hnw-restore-wifi.service` | Run `restore_wifi.sh` as root when the agent leaves a request in `/run/monitor` |
 | `hnw-restore-tunnel@.path`, `hnw-restore-tunnel@.service` | Run `restore_tunnel.sh` as root when the agent leaves a request in `/run/monitor` |
-| `tune_wifi.sh` | Unmanages `hnwradio*`/`p2p-dev-*`, pins 5 GHz BSSID, and sets multicore IRQ/RPS + `fq_codel` |
+| `tune_wifi.sh` | Unmanages `hnwradio*`/`p2p-dev-*`, keeps the Wi-Fi connection on 5 GHz without tying it to one access point, and sets multicore IRQ/RPS + `fq_codel` |
 | `hnw-wifi-tune.service` | `systemd` oneshot unit that applies `tune_wifi.sh` after boot |
 | `lan_scan.py` | On-demand Scapy ARP + Nmap for Airwaves Security |
 | `rtnp_bind.c` | `LD_PRELOAD` shim that pins a measurement socket to one link; `install.sh` compiles it to `rtnp-bind.so` |

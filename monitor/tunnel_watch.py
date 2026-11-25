@@ -9,6 +9,11 @@ The agent cannot become root: its service sets NoNewPrivileges, which stops sudo
 restore_tunnel.sh as root (hnw-restore-tunnel@wgN.service), which writes how it went to
 /run/hnw-restore-wgN.result and removes the request.
 
+The same loop watches the Wi-Fi link. After a failed security handshake NetworkManager decides the saved
+password is wrong, finds nobody to ask for a new one and stops trying, so the Pi stays off Wi-Fi until someone
+reconnects it by hand. When the Wi-Fi adapter has been down for about two minutes the agent asks a second root
+helper (hnw-restore-wifi) to rejoin the saved network.
+
 When the ISP was down, a restore may have re-pinned routes against an empty default
 gateway. After the access plane recovers, retry quickly so the measurement tunnel comes
 back without waiting for the long outage cooldown.
@@ -28,6 +33,11 @@ REQUEST_DIR = Path(os.environ.get("MONITOR_RUN_DIR", "/run/monitor"))
 RESULT_DIR = Path(os.environ.get("MONITOR_RESTORE_RESULT_DIR", "/run"))
 RESTORE_WAIT_S = 90
 RESTORE_POLL_S = 0.5
+SYS_NET = Path("/sys/class/net")
+# NetworkManager retries by itself for a while, so leave it four checks (about two minutes) first.
+WIFI_FAILS_BEFORE_REJOIN = 4
+# While the access point is really gone every attempt fails; do not ask more often than this.
+WIFI_REJOIN_COOLDOWN_S = 5 * 60
 FAILS_BEFORE_RESTORE = 2
 # While the home internet path is also down, do not thrash wg-quick.
 COOLDOWN_OUTAGE_S = 15 * 60
@@ -42,6 +52,8 @@ _fail_counts: dict[str, int] = {"wg0": 0, "wg1": 0}
 # None means never restored; do not seed 0.0 or a fresh boot's small monotonic clock
 # looks like "just restored" for the outage cooldown window.
 _last_restore_at: dict[str, float | None] = {"wg0": None, "wg1": None}
+_wifi_down_count = 0
+_last_wifi_rejoin_at: float | None = None
 
 
 def _configured(iface: str) -> bool:
@@ -165,15 +177,16 @@ def _restore_failed(iface: str, why: str) -> bool:
     return False
 
 
-def _restore(iface: str) -> bool:
-    """Ask the root helper to restart one tunnel and wait for it. True when the helper reported success."""
-    if iface not in _fail_counts:
-        return False
-    request = REQUEST_DIR / f"restore-{iface}"
+def _ask_helper(name: str, unit: str) -> str:
+    """Leave a request for one root helper and wait for it. Returns "" on success, else what went wrong.
+
+    `name` is one of a fixed set (wg0, wg1, wifi): it names the request file, never anything the server sent.
+    """
+    request = REQUEST_DIR / f"restore-{name}"
     try:
         request.write_text("", encoding="ascii")
     except OSError as exc:
-        return _restore_failed(iface, f"could not leave a request in {REQUEST_DIR} ({exc}); run update.sh again")
+        return f"could not leave a request in {REQUEST_DIR} ({exc}); run update.sh again"
     picked_up = False
     for _ in range(int(RESTORE_WAIT_S / RESTORE_POLL_S)):
         time.sleep(RESTORE_POLL_S)
@@ -185,13 +198,23 @@ def _restore(iface: str) -> bool:
             request.unlink()
         except OSError:
             pass
-        return _restore_failed(iface, f"nothing answered the request; check hnw-restore-tunnel@{iface}.path")
+        return f"nothing answered the request; check {unit}.path"
     try:
-        result = (RESULT_DIR / f"hnw-restore-{iface}.result").read_text(encoding="ascii").strip()
+        result = (RESULT_DIR / f"hnw-restore-{name}.result").read_text(encoding="ascii").strip()
     except OSError:
         result = "no result"
     if result != "success":
-        return _restore_failed(iface, f"the helper reported {result[:60]}; see journalctl -u hnw-restore-tunnel@{iface}")
+        return f"the helper reported {result[:60]}; see journalctl -u {unit}"
+    return ""
+
+
+def _restore(iface: str) -> bool:
+    """Ask the root helper to restart one tunnel and wait for it. True when the helper reported success."""
+    if iface not in _fail_counts:
+        return False
+    trouble = _ask_helper(iface, f"hnw-restore-tunnel@{iface}")
+    if trouble:
+        return _restore_failed(iface, trouble)
     print(f"tunnel_watch: restored {iface}", flush=True)
     try:
         state.note_log("tunnel", "info", f"Restarted {iface} after tunnel timeout")
@@ -200,9 +223,81 @@ def _restore(iface: str) -> bool:
     return True
 
 
+def _wifi_link_down() -> str | None:
+    """Name of the Wi-Fi adapter that should carry traffic but has no link, or None.
+
+    Capture radios (hnwradio*, anything in monitor mode) and P2P devices are not links. When any Wi-Fi
+    adapter has a link there is nothing to do.
+    """
+    try:
+        paths = sorted(SYS_NET.iterdir())
+    except OSError:
+        return None
+    down: str | None = None
+    for path in paths:
+        name = path.name
+        if name.startswith(("hnwradio", "p2p-", "mon")):
+            continue
+        if not ((path / "wireless").exists() or (path / "phy80211").exists()):
+            continue
+        try:
+            # 1 is an ordinary station interface; a monitor-mode interface reports 803.
+            if (path / "type").read_text(encoding="ascii").strip() != "1":
+                continue
+        except OSError:
+            continue
+        try:
+            carrier = (path / "carrier").read_text(encoding="ascii").strip()
+        except OSError:
+            # Reading the carrier of an interface that is switched off is an error: it has no link.
+            carrier = "0"
+        if carrier == "1":
+            return None
+        down = down or name
+    return down
+
+
+def check_wifi(now: float | None = None) -> None:
+    """Ask for a Wi-Fi rejoin when the link has been down for a while. Only on a Pi with a Wi-Fi tunnel."""
+    global _wifi_down_count, _last_wifi_rejoin_at
+    moment = time.monotonic() if now is None else now
+    if not _configured("wg1"):
+        _wifi_down_count = 0
+        return
+    dev = _wifi_link_down()
+    if dev is None:
+        _wifi_down_count = 0
+        return
+    _wifi_down_count += 1
+    if _wifi_down_count < WIFI_FAILS_BEFORE_REJOIN:
+        return
+    if _last_wifi_rejoin_at is not None and moment - _last_wifi_rejoin_at < WIFI_REJOIN_COOLDOWN_S:
+        return
+    _last_wifi_rejoin_at = moment
+    print(f"tunnel_watch: {dev} has had no Wi-Fi link for {_wifi_down_count} checks, asking to rejoin", flush=True)
+    trouble = _ask_helper("wifi", "hnw-restore-wifi")
+    if trouble:
+        print(f"tunnel_watch: Wi-Fi rejoin failed: {trouble}", flush=True)
+        try:
+            state.note_log("wifi", "warning", f"{dev} is off Wi-Fi and the rejoin failed: {trouble}"[:200])
+        except Exception:
+            pass
+        return
+    print(f"tunnel_watch: asked {dev} to rejoin Wi-Fi", flush=True)
+    try:
+        state.note_log("wifi", "info", f"{dev} had dropped off Wi-Fi and did not retry; asked it to rejoin")
+    except Exception:
+        pass
+
+
 def check_once(now: float | None = None) -> None:
     """Probe each configured tunnel once and restore after consecutive failures."""
     moment = time.monotonic() if now is None else now
+    try:
+        # Wi-Fi first: a tunnel cannot come back over a link that is not there.
+        check_wifi(moment)
+    except Exception as exc:
+        print(f"tunnel_watch: Wi-Fi check failed: {exc}", flush=True)
     for link, (host, _port, _table, iface) in state._TUNNELS.items():
         if not _configured(iface):
             _fail_counts[iface] = 0

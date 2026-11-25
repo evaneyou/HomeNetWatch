@@ -195,6 +195,10 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **The Pi rejoins Wi-Fi by itself (Pi agent 0.8.20):** after a failed security handshake NetworkManager treated the
+  saved password as wrong, found nobody to ask for a new one and stopped retrying, so the Pi stayed off Wi-Fi for
+  hours until it was reconnected by hand. When the Wi-Fi adapter has had no link for about two minutes, the agent
+  now asks a root systemd unit (`hnw-restore-wifi`) to rejoin the saved network, at most once every 5 minutes.
 - **Remote desktop no longer files "stopped in the monitor" when it goes quiet:** that check's packet gaps are heavy-tailed, so a whole 10-second report sometimes contains no packets. The receiver scored the one packet still unaccounted from the previous report as 100% loss, and the server opened a software issue while voice and video on the same link were fine. An interval that sent nothing is now discarded.
 - **Android agent uptime on the TV (Android agent 0.5.1):** the Shield screen timed the agent and the tunnel with the wall clock. That clock is often wrong at boot and then jumps when the time syncs, so the screen showed hundreds of days and a time of day with no date. Those durations now follow the monotonic clock, and a start that was not today includes the date.
 - **The Pi can restart a dead tunnel again (Pi agent 0.8.19):** the agent restarted a WireGuard tunnel that stopped

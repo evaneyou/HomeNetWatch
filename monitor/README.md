@@ -82,6 +82,8 @@ The agent pings `10.7.0.1` (wired `wg0`) and `10.7.1.1` (Wi-Fi `wg1`) about ever
 
 The agent runs as user `monitor` with `NoNewPrivileges`, so it cannot use `sudo`. It asks by creating `/run/monitor/restore-wgN`. systemd watches for that file (`hnw-restore-tunnel@wgN.path`) and runs the script as root (`hnw-restore-tunnel@wgN.service`), which writes the outcome to `/run/hnw-restore-wgN.result` and removes the request. Install and update enable both path units. `journalctl -u 'hnw-restore-tunnel@*'` shows each restart.
 
+The same loop watches the Wi-Fi link on a Pi that has a Wi-Fi tunnel. After a failed security handshake NetworkManager treats the saved password as wrong, finds nobody to ask for a new one and stops retrying, so the Pi stays off Wi-Fi. When the Wi-Fi adapter has had no link for four checks (about two minutes) the agent creates `/run/monitor/restore-wifi`, and `hnw-restore-wifi.path` runs `restore_wifi.sh` as root, which tells NetworkManager to connect each disconnected Wi-Fi adapter again with its saved network. It asks at most once every 5 minutes. Capture radios (`hnwradio*`, monitor mode) are left alone. `journalctl -u hnw-restore-wifi` shows each attempt.
+
 ## Airwave memory
 
 Kismet's Linux capture helper grows while it channel-hops. A first install with `--kismet` already caps that cgroup and restarts Kismet once a day. On a Pi that was set up earlier, run the repair from an unpacked package (enrollment and tunnels stay as they are):
@@ -135,6 +137,8 @@ Setup accepts HTTPS, or HTTP to a private LAN address.
 | `synthetic.py` | Real-time application traffic on the physical NIC |
 | `tunnel_watch.py` | Pings tunnel peers and restarts a dead `wg0` / `wg1` |
 | `restore_tunnel.sh` | Root helper that restarts one WireGuard unit |
+| `restore_wifi.sh` | Root helper that tells NetworkManager to rejoin Wi-Fi on a disconnected adapter |
+| `hnw-restore-wifi.path`, `hnw-restore-wifi.service` | Run `restore_wifi.sh` as root when the agent leaves a request in `/run/monitor` |
 | `hnw-restore-tunnel@.path`, `hnw-restore-tunnel@.service` | Run `restore_tunnel.sh` as root when the agent leaves a request in `/run/monitor` |
 | `tune_wifi.sh` | Unmanages `hnwradio*`/`p2p-dev-*`, pins 5 GHz BSSID, and sets multicore IRQ/RPS + `fq_codel` |
 | `hnw-wifi-tune.service` | `systemd` oneshot unit that applies `tune_wifi.sh` after boot |

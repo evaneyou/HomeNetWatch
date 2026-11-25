@@ -1,0 +1,9 @@
+[Unit]
+Description=Rejoin Wi-Fi for the HomeNetWatch agent
+
+[Service]
+Type=oneshot
+ExecStart=/opt/monitor/restore_wifi.sh
+# The outcome goes where only root can write, then the agent's request is removed so it knows this ran.
+ExecStopPost=/bin/sh -c 'echo "$$SERVICE_RESULT" > /run/hnw-restore-wifi.result; rm -rf /run/monitor/restore-wifi'
+TimeoutStartSec=75

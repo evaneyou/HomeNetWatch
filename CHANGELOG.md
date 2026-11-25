@@ -206,6 +206,12 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **Checks recover sooner after an outage:** a check left "failing" needed its good results in a row, so one slow
+  reading restarted the count and held the Wi-Fi or Wired row amber for another 20 minutes. It now recovers when
+  the newest result is good, nothing in the window failed and the window holds enough good results.
+- **Home says what is wrong on a link:** when a link's own path passes and only its web or app checks are not
+  passing, the row reads "Web checks not passing on Wi-Fi" instead of "Packet loss / slow", and the card no
+  longer says the link is running slow.
 - **The Pi's Wi-Fi is no longer tied to one access point (Pi agent 0.8.20):** `tune_wifi.sh` wrote the access point
   the Pi was on (its BSSID) into the saved connection. When that access point restarted or steered the Pi away, it
   could join nothing else and dropped off Wi-Fi. The pin is no longer set, and one left by an earlier version is

@@ -106,7 +106,31 @@ function columnState(cells: HealthCell[], monitorId: string, key: string, column
   return statuses.reduce<CheckState>((worst, state) => (STATE_RANK[state] > STATE_RANK[worst] ? state : worst), "unknown");
 }
 
+/** The link cell when its own path passes and only its web or app checks raised it, else undefined. */
+function promotedCell(cells: HealthCell[], monitorId: string, key: string, column: string): HealthCell | undefined {
+  if (key !== "wifi" && key !== "wired") return undefined;
+  return checkCells(cells, monitorId, key, column).find((cell) => cell.cause === key && cell.promoted);
+}
+
+/** "Web checks not passing on Wi-Fi": names what is wrong, since the link itself has no loss and is not slow. */
+function promotedDetail(cells: HealthCell[], monitorId: string, key: string): string {
+  const bad = (col: string) =>
+    cells.some(
+      (cell) =>
+        cell.monitor_id === monitorId && cell.network_slug === key && cell.column === col && (cell.status === "degraded" || cell.status === "fail"),
+    );
+  const link = key === "wifi" ? "Wi-Fi" : "Wired";
+  const web = bad("web");
+  const apps = bad("apps");
+  if (web && apps) return `Web and app checks not passing on ${link}`;
+  if (apps) return `App checks not passing on ${link}`;
+  return `Web checks not passing on ${link}`;
+}
+
 function columnDetail(cells: HealthCell[], monitorId: string, key: string, column: string, state: CheckState): string {
+  if ((state === "slow" || state === "down") && promotedCell(cells, monitorId, key, column)) {
+    return promotedDetail(cells, monitorId, key);
+  }
   if ((key === "wifi" || key === "wired") && (state === "slow" || state === "down")) {
     const matches = checkCells(cells, monitorId, key, column);
     if (matches.some((cell) => cell.cause === "bandwidth")) return "Bandwidth drop";
@@ -233,7 +257,7 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
     const checks = CHECKS.filter((check) => !android || ANDROID_CHECKS.has(check.key)).map((check) => {
       if (android && check.key === "wifi") {
         const state = androidWifiState(data.matrix, monitor.id);
-        return { ...check, state, detail: ANDROID_WIFI_DETAIL[state], what: ANDROID_WIFI_WHAT, href: `/monitors/${monitor.id}` };
+        return { ...check, state, detail: ANDROID_WIFI_DETAIL[state], promoted: false, what: ANDROID_WIFI_WHAT, href: `/monitors/${monitor.id}` };
       }
       const state = columnState(data.matrix, monitor.id, check.key, check.column);
       const wifiId = slugNetworkId(data.matrix, monitor.id, "wifi");
@@ -245,6 +269,7 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
         ...check,
         state,
         detail: columnDetail(data.matrix, monitor.id, check.key, check.column, state),
+        promoted: (state === "slow" || state === "down") && promotedCell(data.matrix, monitor.id, check.key, check.column) !== undefined,
         what: CHECK_WHAT[check.key],
         href: checkHref(monitor.id, check.key, networkId),
       };
@@ -285,7 +310,11 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
       reason = diag?.summary ?? `The face is coral red with a frown because ${join(down)} ${down.length === 1 ? "has" : "have"} sustained failures across recent test windows.`;
     } else if (slow.length > 0) {
       mood = "slow";
-      blurb = `${join(slow)} ${slow.length === 1 ? "is" : "are"} running slow.`;
+      const slowChecks = checks.filter((check) => check.state === "slow");
+      // A link raised only by its web or app checks is not slow itself: say what is not passing.
+      blurb = slowChecks.every((check) => check.promoted)
+        ? `${slowChecks.map((check) => check.detail).join(". ")}.`
+        : `${join(slow)} ${slow.length === 1 ? "is" : "are"} running slow.`;
       reason = diag?.summary ?? `The face is amber yellow with a flat expression because ${join(slow)} ${slow.length === 1 ? "is" : "are"} experiencing elevated latency, jitter, or packet loss.`;
     } else if (unknown.length > 0) {
       const ok = labels("ok");

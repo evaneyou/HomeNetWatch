@@ -89,6 +89,13 @@ def next_state(current: ResultStatus, recent: list[ResultStatus], cfg: Stability
         streak += 1
     if streak >= cfg.recover_count:
         return ResultStatus.ok
+    # Also recovered: the newest result is good, nothing in the window failed, and the window holds as many
+    # good results as recovery asks for. One slow result among good ones would not have moved a healthy check
+    # (that needs `degraded_count`), so it must not restart the count for one that is recovering either. After
+    # a long outage one slow reading used to hold a check at "fail" for another 20 minutes.
+    oks = sum(1 for status in window if status == ResultStatus.ok)
+    if window and window[0] == ResultStatus.ok and fails == 0 and oks >= cfg.recover_count:
+        return ResultStatus.ok
     return current
 
 

@@ -768,6 +768,8 @@ def _store_sample(db: Session, monitor: Monitor, body: SampleIn) -> None:
                 **extracted,
             )
         )
+        # Written now, so the same report later in one batch is found by the check above and not added twice.
+        db.flush()
     if run.status == "pending":
         run.status = "running"
     if (

@@ -1271,8 +1271,11 @@ def test_the_path_trace_is_scheduled_every_15_minutes(db):
     assert traces and all(test.interval_seconds == 900 for test in traces)
 
 
-def test_a_video_job_is_sent_how_gently_to_start(client, db, monitor_token):
+def test_a_video_job_is_sent_how_gently_to_start(client, db, monitor_token, monkeypatch):
     from app.synthetic import VIDEO_EASE_IN_MS, with_start_options
+
+    # Video runs in bursts on the clock. This test is about the job's options, so the burst is always on here.
+    monkeypatch.setattr("app.api.synthetic_routes.burst_on", lambda *_args: True)
 
     assert with_start_options({"video": True, "wire": "rtp"})["video_ease_in_ms"] == VIDEO_EASE_IN_MS == 250
     # Voice has no keyframe to spread, and a value someone set is kept.

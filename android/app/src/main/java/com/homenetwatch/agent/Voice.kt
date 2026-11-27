@@ -181,6 +181,7 @@ class Voice(private val context: Context, private val store: Store) {
     }
 
     companion object {
+        const val MAX_EASE_IN_MS = 5000
         const val UDP_PORT = 8998
         const val CONTROL_PORT = 8999
         const val MAX_PPS = 200
@@ -247,7 +248,17 @@ class Voice(private val context: Context, private val store: Store) {
             }
             options.optString("rtp").takeIf { it.isNotEmpty() }?.let { args += listOf("--rtp", it) }
             if (options.optInt("ptime_ms", 0) > 0) args += listOf("--ptime", options.getInt("ptime_ms").toString())
-            if (options.optBoolean("video")) args += "--video"
+            if (options.optBoolean("video")) {
+                args += "--video"
+                // A new video flow that opens with its keyframe back to back had the rest dropped by a home
+                // Wi-Fi gateway. The server says how long to spread that first frame over; the sender packed
+                // with this app (build-sender.sh) has the option.
+                val easeIn = options.optInt("video_ease_in_ms", 0)
+                if (easeIn != 0) {
+                    require(easeIn in 1..MAX_EASE_IN_MS) { "Video ease-in must be between 1 and $MAX_EASE_IN_MS ms" }
+                    args += listOf("--video-ease-in", "${easeIn}ms")
+                }
+            }
             if (options.optBoolean("bidir")) {
                 require(preset in VOICE_PRESETS) { "Two-way traffic is only for the voice profiles" }
                 args += "--bidir"

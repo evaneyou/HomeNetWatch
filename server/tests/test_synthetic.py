@@ -1170,8 +1170,15 @@ def test_video_conference_is_on_for_75_seconds_of_every_five_minutes(monkeypatch
     between = datetime(2026, 11, 24, 12, 2, tzinfo=timezone.utc)
     assert not burst_on("video-conference", "continuous", between)
     assert not burst_on("video-conference", "continuous", between, "pi")
-    # An Android agent does not start video gently yet, so a burst (a restart every five minutes) is not for it.
+    # An Android agent older than 0.5.3 does not start video gently, so a burst (a restart every five
+    # minutes) is not for it. From 0.5.3 it runs in bursts like the Pi.
     assert burst_on("video-conference", "continuous", between, "android")
+    assert burst_on("video-conference", "continuous", between, "android", "0.5.2")
+    assert burst_on("video-conference", "continuous", between, "android", "not a version")
+    assert not burst_on("video-conference", "continuous", between, "android", "0.5.3")
+    assert not burst_on("video-conference", "continuous", between, "android", "0.6.0")
+    assert not burst_on("video-conference", "continuous", between, "android", "1.0")
+    assert burst_on("video-conference", "continuous", between, "something-else", "9.9.9")
     # With no burst set, every check runs all the time.
     monkeypatch.delitem(BURSTS, "video-conference")
     assert burst_on("video-conference", "continuous", between)

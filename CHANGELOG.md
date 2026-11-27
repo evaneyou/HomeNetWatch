@@ -207,6 +207,9 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **The Shield starts video gently too (Android agent 0.5.3):** the app passes the server's ease-in to its
+  sender, which is now built from the RTNP commit that has `--video-ease-in`. An Android agent that reports
+  0.5.3 or newer also runs Video conference in bursts, like the Pi.
 - **Video conference on Wi-Fi no longer blacks out after a restart (Pi agent 0.8.22, RTNP 0.2.2):** a new video
   flow opened with a keyframe of about 25 full-size packets back to back. On a home Wi-Fi gateway everything
   after that first frame was then dropped, about nine times in ten, and the flow was reported as "stopped in

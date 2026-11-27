@@ -1263,3 +1263,28 @@ def test_the_path_trace_is_scheduled_every_15_minutes(db):
     db.commit()
     traces = db.scalars(select(Test).where(Test.monitor_id == monitor.id, Test.slug == "mtr-path")).all()
     assert traces and all(test.interval_seconds == 900 for test in traces)
+
+
+def test_a_video_job_is_sent_how_gently_to_start(client, db, monitor_token):
+    from app.synthetic import VIDEO_EASE_IN_MS, with_start_options
+
+    assert with_start_options({"video": True, "wire": "rtp"})["video_ease_in_ms"] == VIDEO_EASE_IN_MS == 250
+    # Voice has no keyframe to spread, and a value someone set is kept.
+    assert "video_ease_in_ms" not in with_start_options({"rtp": "g711a", "wire": "rtp"})
+    assert with_start_options({"video": True, "video_ease_in_ms": 100})["video_ease_in_ms"] == 100
+    assert with_start_options(None) == {}
+
+    monitor = _monitor(db)
+    stored = {"preset": "video-conference", "wire": "rtp", "video": True, "report_interval_s": 10}
+    video = SyntheticRun(monitor_id=monitor.id, profile_slug="video-conference", mode="continuous", links=["wired"], options=dict(stored), status="running", finished_links=[])
+    voice = SyntheticRun(monitor_id=monitor.id, profile_slug="voip-g711a", mode="continuous", links=["wired"], options={"rtp": "g711a"}, status="running", finished_links=[])
+    db.add_all([video, voice])
+    db.commit()
+    answer = client.get("/api/v1/synthetic/assignment", headers=_headers(monitor_token))
+    assert answer.status_code == 200, answer.text
+    jobs = {job["profile_slug"]: job["options"] for job in answer.json()["jobs"]}
+    assert jobs["video-conference"]["video_ease_in_ms"] == 250
+    assert "video_ease_in_ms" not in jobs["voip-g711a"]
+    # The run itself is not rewritten: the value is added on the way out.
+    db.expire_all()
+    assert db.get(SyntheticRun, video.id).options == stored

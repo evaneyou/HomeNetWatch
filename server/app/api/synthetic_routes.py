@@ -30,6 +30,7 @@ from app.models import (
     User,
 )
 from app.synthetic import (
+    with_start_options,
     burst_on,
     PRESETS,
     SOFTWARE,
@@ -675,7 +676,7 @@ def assignment(
                 "link": link,
                 "mode": run.mode,
                 "profile_slug": run.profile_slug,
-                "options": run.options,
+                "options": with_start_options(run.options),
                 "duration_seconds": run.duration_seconds,
                 "restart_token": restart_token_for(run, link),
             }

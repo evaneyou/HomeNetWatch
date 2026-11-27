@@ -206,6 +206,11 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **Video conference on Wi-Fi no longer blacks out after a restart (Pi agent 0.8.22, RTNP 0.2.2):** a new video
+  flow opened with a keyframe of about 25 full-size packets back to back. On a home Wi-Fi gateway everything
+  after that first frame was then dropped, about nine times in ten, and the flow was reported as "stopped in
+  the monitor". The server now asks a video flow to spread its first frame over 250 ms, and the Pi agent passes
+  that to a sender that has `--video-ease-in`. The Android agent is not changed yet.
 - **A device with no power no longer looks healthy:** a row on Home showed the last result it was sent, however
   old. A device that loses power sends no failures, so its Wi-Fi, Wired and Web rows stayed green while it was
   off. A row now reads "No recent data" once its newest result is older than three of its check intervals

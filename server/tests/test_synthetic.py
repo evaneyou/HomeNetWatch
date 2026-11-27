@@ -1163,8 +1163,13 @@ def test_retired_presets_cannot_start_and_running_ones_stop(client, db):
     assert history.status_code == 200, history.text
 
 
-def test_video_conference_is_on_for_75_seconds_of_every_five_minutes():
-    from app.synthetic import burst_on
+def test_video_conference_is_on_for_75_seconds_of_every_five_minutes(monkeypatch):
+    from app.synthetic import BURSTS, burst_on
+
+    # Bursts are switched off until the Wi-Fi restart fault is fixed: with none set, every check runs all the time.
+    assert BURSTS == {}
+    assert burst_on("video-conference", "continuous", datetime(2026, 11, 24, 12, 2, tzinfo=timezone.utc))
+    monkeypatch.setitem(BURSTS, "video-conference", (75, 300))
 
     start = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
     assert burst_on("video-conference", "continuous", start)
@@ -1185,6 +1190,9 @@ def test_between_bursts_the_video_job_is_left_out_of_the_assignment(client, db, 
     video = SyntheticRun(monitor_id=monitor.id, profile_slug="video-conference", mode="continuous", links=["wired"], options={}, status="running", finished_links=[])
     db.add_all([voice, video])
     db.commit()
+    from app.synthetic import BURSTS
+
+    monkeypatch.setitem(BURSTS, "video-conference", (75, 300))
 
     def jobs_at(second: int) -> set[str]:
         moment = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc) + timedelta(seconds=second)

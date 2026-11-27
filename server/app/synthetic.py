@@ -195,7 +195,11 @@ def route_is_physical(route_text: str, interface: str) -> bool:
 # that cannot carry video, at about a quarter of the data. Between bursts the job is left out of the
 # assignment, so every agent stops the flow and starts it again with no change on its side. An agent looks
 # for its assignment every 15 seconds, which is why the burst is 75 seconds and not 60.
-BURSTS: dict[str, tuple[int, int]] = {"video-conference": (75, 300)}
+#
+# Off for now. Run live on 2026-11-24, three of the Pi's first four Wi-Fi bursts lost every packet after the
+# first 10 seconds and each filed "stopped in the monitor": a burst starts the sender again, and a sender that
+# has just started on Wi-Fi is what sets off that fault. Put ("video-conference": (75, 300)) back once it is fixed.
+BURSTS: dict[str, tuple[int, int]] = {}
 
 
 def burst_on(profile_slug: str, mode: str, now: datetime) -> bool:

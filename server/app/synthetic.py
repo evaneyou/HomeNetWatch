@@ -6,6 +6,7 @@ WireGuard addresses 10.7.0.1 or 10.7.1.1.
 
 from __future__ import annotations
 
+import re
 import ipaddress
 import secrets
 from pathlib import Path
@@ -206,14 +207,16 @@ BURSTS: dict[str, tuple[int, int]] = {"video-conference": (75, 300)}
 GENTLE_START_FROM: dict[str, tuple[int, ...]] = {"pi": (0,), "android": (0, 5, 3)}
 
 
+_VERSION = re.compile(r"\d+(?:\.\d+)*")
+
+
 def _version(text: Optional[str]) -> tuple[int, ...]:
-    """(0, 5, 3) from "0.5.3". Anything that is not numbers and dots reads as the oldest version."""
-    parts = []
-    for piece in str(text or "").strip().split("."):
-        if not piece.isdigit():
-            return (0,) if not parts else tuple(parts)
-        parts.append(int(piece))
-    return tuple(parts) or (0,)
+    """(0, 5, 3) from "0.5.3" or from "android-0.5.3", which is how the Android agent reports itself.
+
+    Text with no version number in it reads as the oldest version.
+    """
+    found = _VERSION.search(str(text or ""))
+    return tuple(int(piece) for piece in found.group().split(".")) if found else (0,)
 
 
 def starts_gently(platform: str, agent_version: Optional[str]) -> bool:

@@ -96,10 +96,11 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Changed
 
-- **Checks can run in bursts (off for now):** the server can leave a continuous check out of an agent's
-  assignment between bursts (`BURSTS` in `app/synthetic.py`). It was tried for Video conference, 75 seconds every
-  5 minutes, and switched off the same day: on the Pi's Wi-Fi a sender that has just started often loses every
-  packet, so most bursts filed "stopped in the monitor". Video conference runs all the time again.
+- **Video conference runs in bursts on the Pi:** the continuous Video conference check sends for 75 seconds
+  every 5 minutes, in place of all day, which about halves the data the Pi's checks move. The server leaves the
+  job out of the agent's assignment between bursts (`BURSTS` in `app/synthetic.py`). A first try was switched off
+  the same day because each burst restarted the flow into the Wi-Fi fault that the gentle start now avoids. An
+  Android agent has no gentle start yet, so its video still runs all the time.
 - **The path trace runs every 15 minutes, and at once when a path check fails (Pi agent 0.8.21):** it ran every
   2 minutes, took about 10 seconds and held up every other check while it ran.
 - **Checks keep their interval (Pi agent 0.8.21):** an interval is counted from when a check began, not from

@@ -196,10 +196,13 @@ def route_is_physical(route_text: str, interface: str) -> bool:
 # assignment, so every agent stops the flow and starts it again with no change on its side. An agent looks
 # for its assignment every 15 seconds, which is why the burst is 75 seconds and not 60.
 #
-# Off for now. Run live on 2026-11-24, three of the Pi's first four Wi-Fi bursts lost every packet after the
-# first 10 seconds and each filed "stopped in the monitor": a burst starts the sender again, and a sender that
-# has just started on Wi-Fi is what sets off that fault. Put ("video-conference": (75, 300)) back once it is fixed.
-BURSTS: dict[str, tuple[int, int]] = {}
+# Every burst starts the sender again. On a home Wi-Fi gateway a video flow that opened with a burst of
+# packets had the rest dropped (see VIDEO_EASE_IN_MS below), so the first try at bursts, on 2026-11-24, filed
+# "stopped in the monitor" on most of them and was switched off. They are on again only where the agent starts
+# video gently: the Pi agent from 0.8.22 with RTNP 0.2.2. The Android agent has no gentle start yet, so its
+# video still runs all the time.
+BURSTS: dict[str, tuple[int, int]] = {"video-conference": (75, 300)}
+BURST_PLATFORMS = frozenset({"pi"})
 
 
 # A video flow spreads the packets of its first frame over this long instead of sending them back to back.
@@ -218,9 +221,9 @@ def with_start_options(options: Optional[dict[str, Any]]) -> dict[str, Any]:
     return found
 
 
-def burst_on(profile_slug: str, mode: str, now: datetime) -> bool:
+def burst_on(profile_slug: str, mode: str, now: datetime, platform: str = "pi") -> bool:
     """False while a continuous check that runs in bursts is between two of them."""
-    burst = BURSTS.get(profile_slug) if mode == "continuous" else None
+    burst = BURSTS.get(profile_slug) if mode == "continuous" and platform in BURST_PLATFORMS else None
     if burst is None:
         return True
     on_seconds, every_seconds = burst

@@ -682,7 +682,7 @@ def _post_sample(client, token, run_id, link, when, rtt, jitter, loss, passed, i
 
 def test_a_blackout_beside_a_healthy_check_is_a_software_issue(client, db, monitor_token, monkeypatch):
     # Video runs in bursts on the clock. This test is about restarts, so the burst is always on here.
-    monkeypatch.setattr("app.api.synthetic_routes.burst_on", lambda _slug, _mode, _now: True)
+    monkeypatch.setattr("app.api.synthetic_routes.burst_on", lambda *_args: True)
     monitor = _monitor(db)
     voice = SyntheticRun(
         monitor_id=monitor.id, profile_slug="voip-g711a", mode="continuous", links=["wireless"], options={}, status="running", finished_links=[]
@@ -1166,9 +1166,15 @@ def test_retired_presets_cannot_start_and_running_ones_stop(client, db):
 def test_video_conference_is_on_for_75_seconds_of_every_five_minutes(monkeypatch):
     from app.synthetic import BURSTS, burst_on
 
-    # Bursts are switched off until the Wi-Fi restart fault is fixed: with none set, every check runs all the time.
-    assert BURSTS == {}
-    assert burst_on("video-conference", "continuous", datetime(2026, 11, 24, 12, 2, tzinfo=timezone.utc))
+    assert BURSTS == {"video-conference": (75, 300)}
+    between = datetime(2026, 11, 24, 12, 2, tzinfo=timezone.utc)
+    assert not burst_on("video-conference", "continuous", between)
+    assert not burst_on("video-conference", "continuous", between, "pi")
+    # An Android agent does not start video gently yet, so a burst (a restart every five minutes) is not for it.
+    assert burst_on("video-conference", "continuous", between, "android")
+    # With no burst set, every check runs all the time.
+    monkeypatch.delitem(BURSTS, "video-conference")
+    assert burst_on("video-conference", "continuous", between)
     monkeypatch.setitem(BURSTS, "video-conference", (75, 300))
 
     start = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
@@ -1265,8 +1271,11 @@ def test_the_path_trace_is_scheduled_every_15_minutes(db):
     assert traces and all(test.interval_seconds == 900 for test in traces)
 
 
-def test_a_video_job_is_sent_how_gently_to_start(client, db, monitor_token):
+def test_a_video_job_is_sent_how_gently_to_start(client, db, monitor_token, monkeypatch):
     from app.synthetic import VIDEO_EASE_IN_MS, with_start_options
+
+    # Video runs in bursts on the clock. This test is about the job's options, so the burst is always on here.
+    monkeypatch.setattr("app.api.synthetic_routes.burst_on", lambda *_args: True)
 
     assert with_start_options({"video": True, "wire": "rtp"})["video_ease_in_ms"] == VIDEO_EASE_IN_MS == 250
     # Voice has no keyframe to spread, and a value someone set is kept.

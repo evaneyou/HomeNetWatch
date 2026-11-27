@@ -20,6 +20,8 @@ export type HealthCell = {
   cause?: "wifi" | "wired" | "wan" | "bandwidth" | "tunnel" | "server" | "agent" | "service" | null;
   /** The link's own path checks pass; it is raised only because its web or app checks are bad. */
   promoted?: boolean;
+  /** The cell has results, but the newest is too old to show as the current state. Its status is "unknown". */
+  stale?: boolean;
 };
 
 export type IssueSummary = {

@@ -381,6 +381,9 @@ class HealthCell(BaseModel):
     # True when this link cell's own path checks pass and its status was raised only because the web or
     # app checks on the same link are bad while the other link is healthy.
     promoted: bool = False
+    # True when the cell has results but the newest is too old to show as the current state. Its status is
+    # then "unknown".
+    stale: bool = False
 
 
 class IssueSummary(BaseModel):

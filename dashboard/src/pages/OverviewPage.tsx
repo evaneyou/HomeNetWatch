@@ -127,7 +127,13 @@ function promotedDetail(cells: HealthCell[], monitorId: string, key: string): st
   return `Web checks not passing on ${link}`;
 }
 
+/** True when the row has results but none recent enough to show as the current state. */
+function isStale(cells: HealthCell[], monitorId: string, key: string, column: string): boolean {
+  return checkCells(cells, monitorId, key, column).some((cell) => cell.stale);
+}
+
 function columnDetail(cells: HealthCell[], monitorId: string, key: string, column: string, state: CheckState): string {
+  if (state === "unknown" && isStale(cells, monitorId, key, column)) return "No recent data";
   if ((state === "slow" || state === "down") && promotedCell(cells, monitorId, key, column)) {
     return promotedDetail(cells, monitorId, key);
   }
@@ -257,7 +263,7 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
     const checks = CHECKS.filter((check) => !android || ANDROID_CHECKS.has(check.key)).map((check) => {
       if (android && check.key === "wifi") {
         const state = androidWifiState(data.matrix, monitor.id);
-        return { ...check, state, detail: ANDROID_WIFI_DETAIL[state], promoted: false, what: ANDROID_WIFI_WHAT, href: `/monitors/${monitor.id}` };
+        return { ...check, state, detail: ANDROID_WIFI_DETAIL[state], promoted: false, stale: false, what: ANDROID_WIFI_WHAT, href: `/monitors/${monitor.id}` };
       }
       const state = columnState(data.matrix, monitor.id, check.key, check.column);
       const wifiId = slugNetworkId(data.matrix, monitor.id, "wifi");
@@ -270,6 +276,7 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
         state,
         detail: columnDetail(data.matrix, monitor.id, check.key, check.column, state),
         promoted: (state === "slow" || state === "down") && promotedCell(data.matrix, monitor.id, check.key, check.column) !== undefined,
+        stale: state === "unknown" && isStale(data.matrix, monitor.id, check.key, check.column),
         what: CHECK_WHAT[check.key],
         href: checkHref(monitor.id, check.key, networkId),
       };
@@ -318,11 +325,19 @@ function viewOf(data: Summary, regionById: Map<string, string | null>) {
       reason = diag?.summary ?? `The face is amber yellow with a flat expression because ${join(slow)} ${slow.length === 1 ? "is" : "are"} experiencing elevated latency, jitter, or packet loss.`;
     } else if (unknown.length > 0) {
       const ok = labels("ok");
+      const quiet = checks.filter((check) => check.key !== "apps" && check.state === "unknown" && check.stale).map((check) => check.label);
       mood = "curious";
-      blurb =
-        (ok.length > 0 ? `${join(ok)} ${ok.length === 1 ? "is" : "are"} fine. ` : "") +
-        `${join(unknown)} ${unknown.length === 1 ? "hasn't" : "haven't"} been tested yet.`;
-      reason = `The face is lavender and mint because ${join(unknown)} ${unknown.length === 1 ? "has" : "have"} not completed a full test window yet.`;
+      if (quiet.length > 0) {
+        // The last results are old: say so, instead of showing them as the current state.
+        blurb =
+          (ok.length > 0 ? `${join(ok)} ${ok.length === 1 ? "is" : "are"} fine. ` : "") + `No recent data for ${join(quiet)}.`;
+        reason = `The face is lavender and mint because the newest results for ${join(quiet)} are too old to show as the current state.`;
+      } else {
+        blurb =
+          (ok.length > 0 ? `${join(ok)} ${ok.length === 1 ? "is" : "are"} fine. ` : "") +
+          `${join(unknown)} ${unknown.length === 1 ? "hasn't" : "haven't"} been tested yet.`;
+        reason = `The face is lavender and mint because ${join(unknown)} ${unknown.length === 1 ? "has" : "have"} not completed a full test window yet.`;
+      }
     }
     const city = (monitor.location_label?.trim() || "").trim();
     const state = (monitor.region ?? regionById.get(monitor.id) ?? "").trim();

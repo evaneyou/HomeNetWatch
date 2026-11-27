@@ -199,10 +199,26 @@ def route_is_physical(route_text: str, interface: str) -> bool:
 # Every burst starts the sender again. On a home Wi-Fi gateway a video flow that opened with a burst of
 # packets had the rest dropped (see VIDEO_EASE_IN_MS below), so the first try at bursts, on 2026-11-24, filed
 # "stopped in the monitor" on most of them and was switched off. They are on again only where the agent starts
-# video gently: the Pi agent from 0.8.22 with RTNP 0.2.2. The Android agent has no gentle start yet, so its
-# video still runs all the time.
+# video gently: the Pi agent from 0.8.22 with RTNP 0.2.2, and the Android agent from 0.5.3. An older Android
+# agent keeps its video running all the time.
 BURSTS: dict[str, tuple[int, int]] = {"video-conference": (75, 300)}
-BURST_PLATFORMS = frozenset({"pi"})
+# The first agent version of each platform that starts video gently. A platform not listed gets no bursts.
+GENTLE_START_FROM: dict[str, tuple[int, ...]] = {"pi": (0,), "android": (0, 5, 3)}
+
+
+def _version(text: Optional[str]) -> tuple[int, ...]:
+    """(0, 5, 3) from "0.5.3". Anything that is not numbers and dots reads as the oldest version."""
+    parts = []
+    for piece in str(text or "").strip().split("."):
+        if not piece.isdigit():
+            return (0,) if not parts else tuple(parts)
+        parts.append(int(piece))
+    return tuple(parts) or (0,)
+
+
+def starts_gently(platform: str, agent_version: Optional[str]) -> bool:
+    first = GENTLE_START_FROM.get(platform)
+    return first is not None and _version(agent_version) >= first
 
 
 # A video flow spreads the packets of its first frame over this long instead of sending them back to back.
@@ -221,9 +237,9 @@ def with_start_options(options: Optional[dict[str, Any]]) -> dict[str, Any]:
     return found
 
 
-def burst_on(profile_slug: str, mode: str, now: datetime, platform: str = "pi") -> bool:
+def burst_on(profile_slug: str, mode: str, now: datetime, platform: str = "pi", agent_version: Optional[str] = None) -> bool:
     """False while a continuous check that runs in bursts is between two of them."""
-    burst = BURSTS.get(profile_slug) if mode == "continuous" and platform in BURST_PLATFORMS else None
+    burst = BURSTS.get(profile_slug) if mode == "continuous" and starts_gently(platform, agent_version) else None
     if burst is None:
         return True
     on_seconds, every_seconds = burst

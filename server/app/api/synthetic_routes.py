@@ -668,7 +668,7 @@ def assignment(
     for run in runs:
         if run.mode == "stress" and (run.stress_id not in ends or run.status not in ("running", "pending")):
             continue
-        if not burst_on(run.profile_slug, run.mode, _now(), monitor.platform):
+        if not burst_on(run.profile_slug, run.mode, _now(), monitor.platform, monitor.agent_version):
             continue
         for link in run.links:
             job = {

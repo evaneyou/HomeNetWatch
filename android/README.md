@@ -2,7 +2,7 @@
 
 An Android (TV) version of the Raspberry Pi agent, for a device such as an NVIDIA Shield. It enrolls like a Pi, then
 runs the Real-Time Application Health flows (voice, video conference, remote desktop) and the Speed Test over Wi-Fi,
-and reports to the server. App version `0.5.2` (`versionName` in `app/build.gradle.kts`).
+and reports to the server. App version `0.5.3` (`versionName` in `app/build.gradle.kts`).
 
 **Status:** running on a real NVIDIA Shield (Android 11) as a live remote agent: enrollment, the WireGuard tunnel,
 health reports, the voice stream, the Speed Test, start on boot and self-updates all work there and on the Android TV
@@ -54,7 +54,7 @@ After the first install, new versions come to the TV by themselves, with your OK
 2. The first time only, Android asks you to allow HomeNetWatch to install apps: choose **Open settings**, turn
    HomeNetWatch on and press Back. (Or: Settings > Device Preferences > Security & restrictions > Unknown sources.)
 3. The app downloads the new version and Android shows its own install screen; choose **Update**. The agent keeps its
-   setup and starts again by itself. The version is shown at the top of the screen (`app 0.5.2`).
+   setup and starts again by itself. The version is shown at the top of the screen (`app 0.5.3`).
 
 Android 11, which the Shield runs, does not let an app update itself without that press on the remote.
 

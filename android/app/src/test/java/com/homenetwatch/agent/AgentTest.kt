@@ -30,6 +30,27 @@ class AgentTest {
     }
 
     @Test
+    fun aVideoFlowStartsGentlyWhenTheServerAsks() {
+        // The server's video-conference profile, with the ease-in it adds to every video job.
+        val video = JSONObject(
+            """{"preset":"video-conference","wire":"rtp","video":true,"rtcp_interval_s":5,"report_interval_s":10,
+               "max_rtt_ms":300,"max_jitter_ms":30,"max_loss_pct":1,"video_ease_in_ms":250}""",
+        )
+        val args = Voice.sendArgs("/b", video, "203.0.113.7", "/k", "/s", forever = true)
+        val at = args.indexOf("--video")
+        assertEquals(listOf("--video", "--video-ease-in", "250ms"), args.subList(at, at + 3))
+        // Without the option the flow starts as it always did, and voice never gets it.
+        val plain = JSONObject(video.toString()).apply { remove("video_ease_in_ms") }
+        assertTrue("--video-ease-in" !in Voice.sendArgs("/b", plain, "203.0.113.7", "/k", "/s", forever = true))
+        assertTrue("--video-ease-in" !in Voice.sendArgs("/b", JSONObject(g711.toString()).put("video_ease_in_ms", 250), "203.0.113.7", "/k", "/s", forever = true))
+        try {
+            Voice.sendArgs("/b", JSONObject(video.toString()).put("video_ease_in_ms", 60000), "203.0.113.7", "/k", "/s", forever = true)
+            fail("an ease-in of a minute must be refused")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
     fun ulawVoiceRunsBothWays() {
         // The server's voip-g711 profile: G.711 u-law, payload type 0, two-way like A-law.
         val ulaw = JSONObject(g711.toString()).put("preset", "voip-g711").put("rtp", "g711")

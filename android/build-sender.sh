@@ -7,7 +7,9 @@
 #   ./build-sender.sh            # arm64 for the Shield, x86 for the Android TV emulator
 set -euo pipefail
 
-TAG="${RTNP_TAG:-v0.2.1}"
+# The commit that added --video-ease-in (evaneyou/RTN_PackGen#20). It is on main after v0.2.1 and has no release
+# tag yet, so it is named by its full hash, which a later push cannot move.
+TAG="${RTNP_TAG:-42b4d31ce056690daea932ef6db3e7edc4195a9c}"
 SRC="${RTNP_SRC:-$HOME/RTN_PackGen}"
 OUT="$(cd "$(dirname "$0")" && pwd)/app/src/main/jniLibs"
 

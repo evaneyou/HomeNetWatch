@@ -202,6 +202,22 @@ def route_is_physical(route_text: str, interface: str) -> bool:
 BURSTS: dict[str, tuple[int, int]] = {}
 
 
+# A video flow spreads the packets of its first frame over this long instead of sending them back to back.
+# On a home Wi-Fi gateway, a new one-way stream that opened with a keyframe of about 25 full-size packets in
+# one burst had everything after that frame dropped, about nine times in ten: the "stopped in the monitor"
+# blackouts of Video conference on Wi-Fi. The same start on Ethernet, or without the burst, was not dropped.
+# Only an agent whose sender has --video-ease-in (RTNP 0.2.2) acts on it; others ignore the option.
+VIDEO_EASE_IN_MS = 250
+
+
+def with_start_options(options: Optional[dict[str, Any]]) -> dict[str, Any]:
+    """The options an agent is sent for a job: a video flow also carries how gently to start."""
+    found = dict(options or {})
+    if found.get("video") and "video_ease_in_ms" not in found:
+        found["video_ease_in_ms"] = VIDEO_EASE_IN_MS
+    return found
+
+
 def burst_on(profile_slug: str, mode: str, now: datetime) -> bool:
     """False while a continuous check that runs in bursts is between two of them."""
     burst = BURSTS.get(profile_slug) if mode == "continuous" else None

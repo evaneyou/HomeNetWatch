@@ -306,3 +306,57 @@ def test_the_setup_page_answers_400_to_a_body_that_is_not_an_object():
     finally:
         server.shutdown()
         server.server_close()
+
+
+# ---- a gentle start for video
+
+
+def _video_args(synthetic, options, forever=True):
+    return synthetic.send_args(
+        "/opt/monitor/rtnp-send",
+        {"preset": "video-conference", "wire": "rtp", "video": True, "report_interval_s": 10, "max_rtt_ms": 300, "max_jitter_ms": 30, "max_loss_pct": 1.0, **options},
+        "203.0.113.5",
+        control_host="10.7.1.1",
+        key_file="/etc/monitor/rtnp.key",
+        srtp_key_file="/etc/monitor/rtnp-srtp.key",
+        forever=forever,
+    )
+
+
+def test_a_video_flow_starts_gently_when_the_sender_can(monkeypatch):
+    synthetic = _module("synthetic")
+    monkeypatch.setattr(synthetic, "_sender_has", lambda _binary, flag: flag == "--video-ease-in")
+    args = _video_args(synthetic, {"video_ease_in_ms": 250})
+    assert args[args.index("--video") + 1 : args.index("--video") + 3] == ["--video-ease-in", "250ms"]
+    # Nothing is added when the server did not ask, and a value out of range is refused.
+    assert "--video-ease-in" not in _video_args(synthetic, {})
+    with pytest.raises(ValueError):
+        _video_args(synthetic, {"video_ease_in_ms": 60000})
+
+
+def test_an_older_sender_is_not_given_an_option_it_would_stop_at(monkeypatch):
+    synthetic = _module("synthetic")
+    monkeypatch.setattr(synthetic, "_sender_has", lambda _binary, _flag: False)
+    assert "--video-ease-in" not in _video_args(synthetic, {"video_ease_in_ms": 250})
+
+
+def test_the_sender_is_asked_once_what_it_knows(monkeypatch):
+    synthetic = _module("synthetic")
+    monkeypatch.setattr(synthetic, "_sender_flags", {})
+    calls: list[list[str]] = []
+
+    def run(args, **_kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="      --video-ease-in <VIDEO_EASE_IN>  Spread the first video frame", stderr="")
+
+    monkeypatch.setattr(synthetic.subprocess, "run", run)
+    assert synthetic._sender_has("/opt/monitor/rtnp-send", "--video-ease-in") is True
+    assert synthetic._sender_has("/opt/monitor/rtnp-send", "--video-ease-in") is True
+    assert synthetic._sender_has("/opt/monitor/rtnp-send", "--made-up") is False
+    assert calls == [["/opt/monitor/rtnp-send", "flow", "--help"], ["/opt/monitor/rtnp-send", "flow", "--help"]]
+
+    def missing(args, **_kwargs):
+        raise FileNotFoundError(args[0])
+
+    monkeypatch.setattr(synthetic.subprocess, "run", missing)
+    assert synthetic._sender_has("/nowhere/rtnp-send", "--video-ease-in") is False

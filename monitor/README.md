@@ -23,7 +23,9 @@ missing, `wireguard` when a tunnel config is present, and Kismet with `--kismet`
 The real-time flows need the `rtnp-send` binary from
 [RTN_PackGen](https://github.com/evaneyou/RTN_PackGen). It is not committed: build it once with
 `./scripts/build-rtnp.sh` (Docker, cross-compiles for 64-bit ARM into `monitor/rtnp-send`) and
-`pack.sh` includes it. Use the same RTN_PackGen release as the server's receiver.
+`pack.sh` includes it. Use the same RTN_PackGen release as the server's receiver. From RTNP 0.2.2 the sender has
+`--video-ease-in`, which the agent uses when the server asks (it checks the sender's help text first, so an older
+sender still runs, without the gentle start).
 
 The reports of all flows are sent together, about two requests every 10 seconds, to `/api/v1/synthetic/samples/batch` (one report at a time to `/api/v1/synthetic/samples` on a server that has no batch address). The server leaves a check that runs in bursts (Video conference: 75 seconds every 5 minutes) out of the assignment between bursts, and the agent stops and starts that flow as the assignment changes. Install and update put it at
 `/opt/monitor/rtnp-send` owned by root, and warn when the file there is not the real program (for example a script

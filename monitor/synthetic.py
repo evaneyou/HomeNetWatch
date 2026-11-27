@@ -84,6 +84,38 @@ def route_is_physical(route_text: str, interface: str) -> bool:
     return device == interface
 
 
+_sender_flags: dict[tuple[str, str], bool] = {}
+
+
+def _sender_has(binary: str, flag: str) -> bool:
+    """True when this rtnp-send knows `flag`. Asked once: an older sender stops at an option it does not know."""
+    key = (binary, flag)
+    if key not in _sender_flags:
+        try:
+            listed = subprocess.run([binary, "flow", "--help"], check=False, capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            listed = ""
+        _sender_flags[key] = flag in listed
+    return _sender_flags[key]
+
+
+def _ease_in_args(binary: str, options: dict[str, Any]) -> list[str]:
+    """Spread a video flow's first frame over the time the server asked for, when the sender can.
+
+    A new one-way stream that opens with a keyframe of two dozen full-size packets back to back was dropped
+    by a home Wi-Fi gateway after that frame. Spread out, the same frame gets through.
+    """
+    value = options.get("video_ease_in_ms")
+    if not value:
+        return []
+    spread = int(value)
+    if spread < 1 or spread > 5000:
+        raise ValueError("Video ease-in must be between 1 and 5000 ms")
+    if not _sender_has(binary, "--video-ease-in"):
+        return []
+    return ["--video-ease-in", f"{spread}ms"]
+
+
 def send_args(
     binary: str,
     options: dict[str, Any],
@@ -145,6 +177,7 @@ def send_args(
         args.extend(["--ptime", str(int(options["ptime_ms"]))])
     if options.get("video"):
         args.append("--video")
+        args.extend(_ease_in_args(binary, options))
     if options.get("bidir"):
         if preset not in VOICE_PRESETS:
             raise ValueError("Two-way traffic is only for the voice profiles")
@@ -237,6 +270,7 @@ def stress_args(
         args += ["--video-gop", str(_int_in(options.get("video_gop"), 1, 600, "Keyframe interval"))]
         args += ["--video-i-size", _dist(options.get("video_i_size"), "Keyframe size")]
         args += ["--video-p-size", _dist(options.get("video_p_size"), "Frame size")]
+        args += _ease_in_args(binary, options)
     if options.get("meter"):
         if options["meter"] != "rtt":
             raise ValueError("Unknown meter")

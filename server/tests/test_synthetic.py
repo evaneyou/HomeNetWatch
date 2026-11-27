@@ -1176,6 +1176,10 @@ def test_video_conference_is_on_for_75_seconds_of_every_five_minutes(monkeypatch
     assert burst_on("video-conference", "continuous", between, "android", "0.5.2")
     assert burst_on("video-conference", "continuous", between, "android", "not a version")
     assert not burst_on("video-conference", "continuous", between, "android", "0.5.3")
+    # The Android agent reports itself with a prefix, "android-0.5.3".
+    assert burst_on("video-conference", "continuous", between, "android", "android-0.5.2")
+    assert not burst_on("video-conference", "continuous", between, "android", "android-0.5.3")
+    assert not burst_on("video-conference", "continuous", between, "android", "android-0.10.0")
     assert not burst_on("video-conference", "continuous", between, "android", "0.6.0")
     assert not burst_on("video-conference", "continuous", between, "android", "1.0")
     assert burst_on("video-conference", "continuous", between, "something-else", "9.9.9")

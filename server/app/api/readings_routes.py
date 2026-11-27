@@ -188,6 +188,58 @@ def _fill_app_cells(db: Session, monitors: list[Monitor], networks: list[Network
                 cell.failing_tests += 1
 
 
+# A device checks in every minute. On the dashboard it reads as offline once it has missed two check-ins and
+# half of a third. It used to take five minutes, during which a device with no power still read as online.
+# (The "offline" alert in app/alerts.py keeps its own, longer wait, so a server restart does not send one.)
+OFFLINE_AFTER_SECONDS = 150
+# A cell goes back to "no data" when its newest result is older than this many of its fastest check's intervals.
+STALE_INTERVALS = 3
+STALE_FLOOR_SECONDS = 180
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def went_quiet(monitor, now_utc: datetime) -> bool:
+    """True when a device has not checked in for long enough to show it as offline."""
+    if monitor.last_seen_at is None:
+        return False
+    wait = max(OFFLINE_AFTER_SECONDS, 2.5 * int(monitor.health_interval_seconds or 60))
+    return now_utc - _aware(monitor.last_seen_at) > timedelta(seconds=wait)
+
+
+def mark_stale(tests: list, cell_map: dict, now_utc: datetime) -> None:
+    """Turn a cell whose newest result is old back to "unknown", marked stale.
+
+    A cell shows the last result it was sent. A device that loses power sends no failures, so its last results
+    are passes, and its Wi-Fi, Wired and Web rows stayed green for as long as it was off. A result older than
+    three intervals of the cell's fastest check (and three minutes) is no longer shown as the current state.
+    """
+    fastest: dict[tuple, int] = {}
+    for test in tests:
+        # The trace runs far less often than the checks that decide the cell, and decides nothing itself.
+        if not test.enabled or test.slug == "mtr-path":
+            continue
+        column = matrix_column(test.network.slug, test.slug)
+        if column is None:
+            continue
+        key = (test.monitor_id, test.network_id, column)
+        interval = int(test.interval_seconds or 60)
+        fastest[key] = min(fastest.get(key, interval), interval)
+    for key, interval in fastest.items():
+        cell = cell_map.get(key)
+        if cell is None or cell.last_test_at is None or cell.status == "unknown":
+            continue
+        limit = timedelta(seconds=max(STALE_FLOOR_SECONDS, STALE_INTERVALS * interval))
+        if now_utc - _aware(cell.last_test_at) > limit:
+            cell.status = "unknown"
+            cell.stale = True
+            cell.failing_tests = 0
+            cell.quorum = None
+            cell.cause = None
+
+
 def _attribute_root_causes(
     monitors: list[Monitor],
     networks: list[Network],
@@ -202,16 +254,7 @@ def _attribute_root_causes(
     diagnoses: dict[str, dict[str, str]] = {}
 
     for monitor in monitors:
-        is_offline = (
-            monitor.last_seen_at is not None
-            and now_utc
-            - (
-                monitor.last_seen_at
-                if monitor.last_seen_at.tzinfo
-                else monitor.last_seen_at.replace(tzinfo=timezone.utc)
-            )
-            > timedelta(seconds=max(300, 3 * int(monitor.health_interval_seconds or 60)))
-        ) or monitor.status.value == "offline"
+        is_offline = went_quiet(monitor, now_utc) or monitor.status.value == "offline"
 
         wired_net = net_by_slug.get((monitor.group_id, "wired"))
         wifi_net = net_by_slug.get((monitor.group_id, "wifi"))
@@ -516,6 +559,7 @@ def summary(
     _fill_web_quorum(tests, latest_by_test, cell_map, stability_config(load_web_stability(db)))
     _fill_app_cells(db, monitors, networks, cell_map)
     now_utc = datetime.now(timezone.utc)
+    mark_stale(tests, cell_map, now_utc)
     diagnoses = _attribute_root_causes(monitors, networks, cell_map, now_utc, bandwidth_bad_links)
 
     open_issues = db.scalars(
@@ -563,17 +607,7 @@ def summary(
                 "slug": s.slug,
                 "name": s.name,
                 "platform": s.platform,
-                "status": (
-                    "offline"
-                    if s.last_seen_at is not None
-                    and now_utc - (
-                        s.last_seen_at
-                        if s.last_seen_at.tzinfo
-                        else s.last_seen_at.replace(tzinfo=timezone.utc)
-                    )
-                    > timedelta(seconds=max(300, 3 * int(s.health_interval_seconds or 60)))
-                    else s.status.value
-                ),
+                "status": "offline" if went_quiet(s, now_utc) else s.status.value,
                 "location_label": s.location_label,
                 "region": s.region,
                 "last_seen_at": s.last_seen_at.isoformat() if s.last_seen_at else None,

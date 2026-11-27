@@ -206,6 +206,12 @@ reports its own `AGENT_VERSION` so it can be updated independently of the server
 
 ### Fixed
 
+- **A device with no power no longer looks healthy:** a row on Home showed the last result it was sent, however
+  old. A device that loses power sends no failures, so its Wi-Fi, Wired and Web rows stayed green while it was
+  off. A row now reads "No recent data" once its newest result is older than three of its check intervals
+  (three minutes for the path checks, 15 for web).
+- **A quiet device reads as offline after two and a half minutes, not five.** The offline alert keeps its
+  five-minute wait, so a server restart does not send one.
 - **Checks recover sooner after an outage:** a check left "failing" needed its good results in a row, so one slow
   reading restarted the count and held the Wi-Fi or Wired row amber for another 20 minutes. It now recovers when
   the newest result is good, nothing in the window failed and the window holds enough good results.
